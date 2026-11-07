@@ -1,0 +1,177 @@
+# IP camera (IPCAM) SoC: a generic mid/high-end network camera, no vendor
+# internals. Instance of the common SoC spec: see socgen/SPEC.md for every key.
+#
+#   MIPI CSI-2 sensor -> ISP -> 4K30 main stream + 1080p sub-stream in DDR
+#   -> H.264/H.265 encoder (both streams) -> Ethernet (RTSP) and SD card
+#   -> JPEG snapshots, NPU object detection on a downscaled copy,
+#   audio in/out over I2S, crypto for secure boot and SRTP/TLS.
+#
+# Bandwidth figures are for the 4K30 configuration (3840x2160 YUV420 = 12.4 MB
+# per frame, 373 MB/s per full-frame pass). A 1080p30 config divides the video
+# masters' bandwidth by 4; see the "resolution" note at the end.
+socgen: 1
+
+soc:
+  name: ipcam_soc
+  prefix: ipcam
+  desc: IP camera SoC with 11 AXI masters, 4 IOMMUs, an AXI crossbar, 2 DDR controller ports, SPI-NOR XIP and an APB peripheral bus
+
+clock: {name: aclk, period_ns: 2.0}          # 500 MHz system/NoC clock
+bus:   {addr_width: 32, data_width: 32, id_width: 4}
+
+# Camera SoCs use a NIC-style crossbar rather than a mesh: every path is 0 hops.
+noc:
+  topology: crossbar
+  rows: 1
+  cols: 1
+  routing: xy
+  timing: {ni_cycles: 1, router_cycles: 2, link_cycles: 0}
+  model: behavioral
+
+traffic:
+  # quad-core application cluster: cache-line refills/evictions, boot code, MMIO
+  cpu:       {read_pct: 70, beats: [1, 8],   targets: [ddr, boot_sram, spi_nor, periph], bandwidth_mbps: 300}
+  # ISP: writes the 4K main + 1080p sub YUV frames, reads/writes the 3DNR reference
+  isp:       {read_pct: 35, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 1200}
+  # H.264/H.265: reads current + reference frames (motion search), writes recon + bitstream
+  venc:      {read_pct: 65, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 1300}
+  # JPEG snapshots of the 1080p sub-stream, a few per second
+  jpeg:      {read_pct: 80, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 60}
+  # NPU: 640x640 detection at 15 fps plus weight fetch
+  npu:       {read_pct: 85, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 300}
+  # GbE MAC DMA: mostly TX of the encoded streams (descriptor + payload reads)
+  eth:       {read_pct: 85, beats: [4, 16],  targets: [ddr], bandwidth_mbps: 125}
+  # SD card recording / eMMC firmware and logs
+  storage:   {read_pct: 30, beats: [4, 16],  targets: [ddr], bandwidth_mbps: 20}
+  # I2S audio DMA: small, periodic, latency sensitive
+  audio:     {read_pct: 50, beats: [1, 4],   targets: [ddr], bandwidth_mbps: 1}
+  # AES/SHA engine: secure-boot image hash from SPI-NOR, SRTP/TLS on the streams
+  crypto:    {read_pct: 55, beats: [4, 16],  targets: [ddr, spi_nor], bandwidth_mbps: 60}
+  # system DMA: OSD overlays, buffer copies, boot image copy from SPI-NOR
+  dma:       {read_pct: 50, beats: [4, 16],  targets: [ddr, spi_nor, boot_sram], bandwidth_mbps: 100}
+
+# latency_target: read latency budget in cycles (500 MHz). Real-time masters
+# (ISP line output, audio) have FIFOs that must not overflow/underflow.
+masters:
+  - {name: cpu,    node: [0, 0], traffic: cpu,     qos: {class: nrt, priority: 10, latency_target: 150}}
+  - {name: isp,    node: [0, 0], traffic: isp,     iommu: iommu_isp,  qos: {class: rt,  priority: 14, latency_target: 200}}
+  - {name: venc,   node: [0, 0], traffic: venc,    iommu: iommu_venc, qos: {class: nrt, priority: 8,  latency_target: 400}}
+  - {name: jpeg,   node: [0, 0], traffic: jpeg,    iommu: iommu_jpeg, qos: {class: nrt, priority: 5}}
+  - {name: npu,    node: [0, 0], traffic: npu,     iommu: iommu_npu,  qos: {class: nrt, priority: 6}}
+  - {name: eth,    node: [0, 0], traffic: eth,     qos: {class: nrt, priority: 9,  latency_target: 300}}
+  - {name: sdmmc,  node: [0, 0], traffic: storage, qos: {class: be,  priority: 3}}
+  - {name: emmc,   node: [0, 0], traffic: storage, qos: {class: be,  priority: 2}}
+  - {name: audio,  node: [0, 0], traffic: audio,   qos: {class: rt,  priority: 12, latency_target: 150}}
+  - {name: crypto, node: [0, 0], traffic: crypto,  qos: {class: nrt, priority: 7}}
+  - {name: dma,    node: [0, 0], traffic: dma,     qos: {class: be,  priority: 4}}
+
+# SMMU-style translation for the media engines (physically scattered frame buffers).
+iommus:
+  - {name: iommu_isp,  tlb_hit_cycles: 2, tlb_entries: 32}
+  - {name: iommu_venc, tlb_hit_cycles: 2, tlb_entries: 64}
+  - {name: iommu_jpeg, tlb_hit_cycles: 2, tlb_entries: 16}
+  - {name: iommu_npu,  tlb_hit_cycles: 2, tlb_entries: 32}
+
+# One 32-bit DDR4/LPDDR4 interface, modelled as two controller ports
+# interleaved on 4 KB with an XOR hash (1 GB).
+memories:
+  - name: ddr
+    kind: ddr
+    base: 0x8000_0000
+    size: 0x4000_0000
+    channels: 2
+    interleave: {granule: 0x1000, hash: xor}
+    access_cycles: 30          # ~60 ns zero-load page-hit at 500 MHz
+    timing: lpddr4-3200        # preset for the DRAM slave VIP (see README: VIP gap)
+    placement: {nodes: [[0, 0], [0, 0]]}
+
+slaves:
+  - {name: boot_sram, kind: memory, base: 0x0000_0000, size: 0x1_0000, node: [0, 0], access_cycles: 2}
+  # Quad-SPI NOR flash, memory-mapped (XIP) window: slow first access
+  - {name: spi_nor,   kind: vip,    base: 0x2000_0000, size: 0x100_0000, node: [0, 0], access_cycles: 40}
+  - name: periph
+    kind: apb_bridge
+    base: 0x1000_0000
+    size: 0x2_0000              # 32 slots of 4 KB
+    node: [0, 0]
+    slot_size: 0x1000
+    peripherals:
+      # --- system ---
+      - {name: gpio,    slot: 0,  ip: GPIO}
+      - {name: uart,    slot: 1,  ip: UART, params: {CLK_FREQ: 500000000, BAUD: 31250000}, pins: {rxd: "1'b1"}}
+      - {name: timer,   slot: 2,  regs: timer_wdt}
+      - {name: apb_ext, slot: 3,  vip: apb}
+      # --- sensor and image ---
+      - {name: csi2,    slot: 4,  ip: CSI_2}                       # MIPI CSI-2 receiver (D-PHY side)
+      - {name: i2c_sns, slot: 5,  ip: I2C, pins: {scl: "1'b1"}}    # sensor control (SCCB)
+      - {name: pwm,     slot: 6,  ip: PWM}                         # IR-cut filter / IR LED
+      - {name: isp,     slot: 7,  regs: mm_engine}
+      - {name: venc,    slot: 8,  regs: mm_engine}
+      - {name: jpeg,    slot: 9,  regs: mm_engine}
+      - {name: npu,     slot: 10, regs: mm_engine}
+      - {name: dma,     slot: 11, regs: mm_engine}
+      # --- network and storage ---
+      - {name: eth,     slot: 12, ip: Ethernet}                    # GbE MAC (GMII)
+      - {name: mdio,    slot: 13, ip: MDIO, pins: {mdc: "1'b0"}}
+      - {name: sd,      slot: 14, ip: SD}
+      - {name: emmc,    slot: 15, ip: eMMC}
+      - {name: qspi,    slot: 16, ip: QSPI, pins: {csn: "1'b1", sclk: "1'b0"}}
+      - {name: spi,     slot: 17, ip: SPI,  pins: {csn: "1'b1"}}  # PTZ motor / pan-tilt driver
+      # --- audio ---
+      - {name: i2s,     slot: 18, ip: I2S}
+      # --- security ---
+      - {name: crypto,  slot: 19, ip: Crypto___Security_Engine}
+      - {name: aes,     slot: 20, ip: AES_GCM}
+      - {name: sha3,    slot: 21, ip: SHA3}
+      - {name: trng,    slot: 22, ip: TRNG}
+      - {name: rot,     slot: 23, ip: Root_of_Trust}               # secure boot / lifecycle
+      # IOMMU register blocks take the next free slots (24..27), in iommus order.
+
+register_blocks:
+  # Control block shared by the media engines that have no open-ip RTL yet
+  # (ISP, video encoder, JPEG, NPU, system DMA). Their AXI traffic comes from
+  # the master VIPs above.
+  mm_engine:
+    desc: Media engine control (frame descriptors, start/status, QoS)
+    regs:
+      - {name: ID,         offset: 0x000, access: RO,  reset: 0x4D450100, desc: "code 0x4D45 ('ME'), version 1.0"}
+      - {name: CTRL,       offset: 0x004, access: RW,  reset: 0x0, fields: [{name: EN, bits: "0"}, {name: IRQ_EN, bits: "1"}, {name: MODE, bits: "7:4"}]}
+      - {name: START,      offset: 0x008, access: WO,  reset: 0x0, desc: "write 1 to start a frame"}
+      - {name: STATUS,     offset: 0x00C, access: RO,  reset: 0x0, volatile: true, fields: [{name: BUSY, bits: "0"}, {name: DONE, bits: "1"}, {name: ERR, bits: "2"}]}
+      - {name: SRC_ADDR,   offset: 0x010, access: RW,  reset: 0x0}
+      - {name: DST_ADDR,   offset: 0x014, access: RW,  reset: 0x0}
+      - {name: STRIDE,     offset: 0x018, access: RW,  reset: 0x0, fields: [{name: BYTES, bits: "15:0"}]}
+      - {name: FRAME_SIZE, offset: 0x01C, access: RW,  reset: 0x0, fields: [{name: WIDTH, bits: "15:0"}, {name: HEIGHT, bits: "31:16"}]}
+      - {name: QOS,        offset: 0x020, access: RW,  reset: 0x0, fields: [{name: PRIO, bits: "3:0"}, {name: OUTSTANDING, bits: "11:8"}]}
+      - {name: IRQ_STATUS, offset: 0x024, access: W1C, reset: 0x0, fields: [{name: DONE, bits: "0"}, {name: ERR, bits: "1"}]}
+  timer_wdt:
+    desc: System timer and watchdog
+    regs:
+      - {name: ID,        offset: 0x000, access: RO,  reset: 0x54570100, desc: "code 0x5457 ('TW'), version 1.0"}
+      - {name: CTRL,      offset: 0x004, access: RW,  reset: 0x0, fields: [{name: TMR_EN, bits: "0"}, {name: WDT_EN, bits: "1"}, {name: IRQ_EN, bits: "2"}]}
+      - {name: LOAD,      offset: 0x008, access: RW,  reset: 0x0}
+      - {name: VALUE,     offset: 0x00C, access: RO,  reset: 0x0, volatile: true}
+      - {name: WDT_LOAD,  offset: 0x010, access: RW,  reset: 0xFFFFFFFF}
+      - {name: WDT_KICK,  offset: 0x014, access: WO,  reset: 0x0}
+      - {name: IRQ_STATUS, offset: 0x018, access: W1C, reset: 0x0, fields: [{name: TMR, bits: "0"}, {name: WDT, bits: "1"}]}
+
+regress:
+  ral_master: cpu
+  lists:
+    testlist:
+      - {test: smoke,        seeds: 1}
+      - {test: ral,          seeds: 1}
+      - {test: path_latency, seeds: 1}
+      - {test: traffic,      seeds: 3}
+    nightly:
+      - {test: smoke,        seeds: 1}
+      - {test: ral,          seeds: 2}
+      - {test: path_latency, seeds: 1}
+      - {test: traffic,      seeds: 10, plusargs: "+SOC_ITEMS=400"}
+      - {test: traffic,      seeds: 5,  plusargs: "+SOC_ITEMS=400 +SOC_TIMING=2"}
+
+report:
+  latency:
+    percentiles: [50, 90, 95, 99]
+    split_rw: true
+    zero_load_slack: 12
