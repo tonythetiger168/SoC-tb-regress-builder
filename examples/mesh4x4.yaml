@@ -1,0 +1,42 @@
+# 4x4 mesh, 6 AXI masters, 5 AXI slaves.
+# node: [x, y] pins an endpoint to a router; "auto" lets nocgen place it to
+# minimise traffic-weighted latency (the memory profile).
+name: soc4x4
+mesh: {rows: 4, cols: 4}
+routing: xy            # xy (dimension-ordered) or shortest (any minimal path, honours disabled_links)
+timing:
+  router_cycles: 2     # per router traversed
+  link_cycles: 1       # per link between routers
+  ni_cycles: 1         # network-interface packetise/inject
+  slave_cycles: 2      # default slave access time
+axi: {addr_width: 40, data_width: 128, id_width: 4}
+
+masters:
+  - {name: cpu0, node: [0, 0]}
+  - {name: cpu1, node: [3, 0]}
+  - {name: gpu,  node: auto}
+  - {name: dma,  node: auto}
+  - {name: npu,  node: auto}
+  - {name: pcie, node: [0, 3]}
+
+slaves:
+  - {name: ddr0,  size: 0x4000_0000, latency: 20, node: [3, 3]}
+  - {name: ddr1,  size: 0x4000_0000, latency: 20, node: auto}
+  - {name: sram0, size: 0x10_0000,   latency: 2,  node: auto}
+  - {name: sram1, size: 0x10_0000,   latency: 2,  node: auto}
+  - {name: regs,  size: 0x1_0000,    latency: 1,  node: auto, base: 0xF0_0000_0000}
+
+# Relative access frequency master -> slave ("calls"). Drives placement and the
+# random traffic mix. Omit for uniform traffic.
+traffic:
+  cpu0: {sram0: 40, ddr0: 10, ddr1: 10, regs: 5}
+  cpu1: {sram1: 40, ddr0: 10, ddr1: 10, regs: 5}
+  gpu:  {ddr0: 30, ddr1: 30, sram1: 5}
+  dma:  {ddr0: 20, ddr1: 20, sram0: 10, sram1: 10}
+  npu:  {sram0: 30, sram1: 30, ddr1: 20}
+  pcie: {ddr0: 10, ddr1: 10, regs: 2}
+
+testbench:
+  num_txns: 200          # per master in noc_traffic_test
+  latency_tolerance: 3.0 # traffic test: warn above 3x the minimum
+  zero_load_slack: 8     # zero-load test: error above minimum + 8

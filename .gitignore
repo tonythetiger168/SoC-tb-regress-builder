@@ -1,0 +1,7 @@
+out/
+__pycache__/
+*.log
+simv*
+csrc/
+xcelium.d/
+work/
