@@ -1,0 +1,11 @@
+# Longer nightly regression: more seeds and more traffic per test
+vip vip_axi4_loopback_test   10  +SOC_ITEMS=1000
+vip vip_apb_loopback_test    10  +SOC_ITEMS=1000
+soc soc_smoke_test           1
+soc soc_sram_test            20  +SOC_ITEMS=200
+soc soc_ddr_test             20  +SOC_ITEMS=200
+soc soc_apb_test             20  +SOC_ITEMS=200
+soc soc_decerr_test          5
+soc soc_concurrent_test      20  +SOC_ITEMS=200
+soc soc_stress_test          20  +SOC_ITEMS=300
+soc soc_concurrent_test      10  +SOC_TIMING=0 +SOC_ITEMS=200

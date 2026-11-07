@@ -1,0 +1,25 @@
+// AMBA SoC UVM testbench file list (paths relative to the repo root)
++incdir+vip/mem
++incdir+vip/axi4
++incdir+vip/apb
++incdir+tb/soc
+rtl/soc/soc_pkg.sv
+rtl/ip/AXI4_top.sv
+rtl/ip/GPIO_top.sv
+rtl/ip/GPIO_apb.sv
+rtl/ip/UART_top.sv
+rtl/ip/UART_apb.sv
+rtl/soc/soc_axi_ic.sv
+rtl/soc/axi2apb_bridge.sv
+rtl/soc/apb_decoder.sv
+rtl/soc/amba_soc_top.sv
+vip/axi4/axi4_if.sv
+vip/apb/apb_if.sv
+vip/axi4/axi4_sva.sv
+vip/apb/apb_sva.sv
+vip/mem/mem_vip_pkg.sv
+vip/axi4/axi4_pkg.sv
+vip/apb/apb_pkg.sv
+tb/soc/soc_env_pkg.sv
+tb/soc/soc_test_pkg.sv
+tb/soc/soc_tb_top.sv
