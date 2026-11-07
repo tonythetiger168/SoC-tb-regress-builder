@@ -1,8 +1,15 @@
-name: ci
-on: [push, pull_request]
+name: nocgen
+on:
+  push:
+    paths: ['nocgen/**', '.github/workflows/nocgen.yml']
+  pull_request:
+    paths: ['nocgen/**', '.github/workflows/nocgen.yml']
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nocgen
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

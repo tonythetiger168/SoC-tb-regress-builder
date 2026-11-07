@@ -1,0 +1,174 @@
+{
+  "name": "tiny",
+  "hole": 1114112,
+  "mesh": {
+    "rows": 2,
+    "cols": 3
+  },
+  "routing": "shortest",
+  "timing": {
+    "router_cycles": 2,
+    "link_cycles": 1,
+    "ni_cycles": 1
+  },
+  "stages": {
+    "before": {
+      "avg": 18.0,
+      "label": "Before: naive placement, data where the config puts it"
+    },
+    "after": {
+      "avg": 12.0,
+      "label": "Endpoint placement only"
+    }
+  },
+  "floor": 9.0,
+  "after_network_cycles": 9.0,
+  "after_access_cycles": 3.0,
+  "placement_before": {
+    "m0": [
+      0,
+      0
+    ],
+    "m1": [
+      1,
+      0
+    ],
+    "mem": [
+      0,
+      0
+    ],
+    "rom": [
+      1,
+      0
+    ]
+  },
+  "placement_after": {
+    "m0": [
+      0,
+      0
+    ],
+    "m1": [
+      0,
+      1
+    ],
+    "mem": [
+      0,
+      1
+    ],
+    "rom": [
+      0,
+      0
+    ]
+  },
+  "weighted_avg_read_latency_before": 18.0,
+  "weighted_avg_read_latency_after": 12.0,
+  "address_map": [
+    {
+      "slave": "mem",
+      "base": 0,
+      "size": 1048576,
+      "node": [
+        0,
+        1
+      ],
+      "access_cycles": 4,
+      "kind": "memory"
+    },
+    {
+      "slave": "rom",
+      "base": 1048576,
+      "size": 65536,
+      "node": [
+        0,
+        0
+      ],
+      "access_cycles": 2,
+      "kind": "memory"
+    }
+  ],
+  "regions": [],
+  "pairs": [
+    {
+      "master": "m0",
+      "slave": "mem",
+      "m_idx": 0,
+      "s_idx": 0,
+      "hops_req": 1,
+      "hops_rsp": 1,
+      "req": 6,
+      "rsp": 6,
+      "slave_cycles": 4,
+      "min_read": 16,
+      "weight": 1.0
+    },
+    {
+      "master": "m0",
+      "slave": "rom",
+      "m_idx": 0,
+      "s_idx": 1,
+      "hops_req": 0,
+      "hops_rsp": 0,
+      "req": 3,
+      "rsp": 3,
+      "slave_cycles": 2,
+      "min_read": 8,
+      "weight": 1.0
+    },
+    {
+      "master": "m1",
+      "slave": "mem",
+      "m_idx": 1,
+      "s_idx": 0,
+      "hops_req": 0,
+      "hops_rsp": 0,
+      "req": 3,
+      "rsp": 3,
+      "slave_cycles": 4,
+      "min_read": 10,
+      "weight": 1.0
+    },
+    {
+      "master": "m1",
+      "slave": "rom",
+      "m_idx": 1,
+      "s_idx": 1,
+      "hops_req": 1,
+      "hops_rsp": 1,
+      "req": 6,
+      "rsp": 6,
+      "slave_cycles": 2,
+      "min_read": 14,
+      "weight": 1.0
+    }
+  ],
+  "ranking": {
+    "m0": [
+      {
+        "slave": "rom",
+        "min_read": 8,
+        "base": 1048576,
+        "size": 65536
+      },
+      {
+        "slave": "mem",
+        "min_read": 16,
+        "base": 0,
+        "size": 1048576
+      }
+    ],
+    "m1": [
+      {
+        "slave": "mem",
+        "min_read": 10,
+        "base": 0,
+        "size": 1048576
+      },
+      {
+        "slave": "rom",
+        "min_read": 14,
+        "base": 1048576,
+        "size": 65536
+      }
+    ]
+  }
+}

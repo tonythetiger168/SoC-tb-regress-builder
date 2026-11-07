@@ -1,4 +1,6 @@
-# SoC-tb-regress-builder: UVM testbench + memory profile for AXI NoC meshes
+# nocgen: UVM testbench + memory profile for AXI NoC meshes
+
+Run everything below from this `nocgen/` directory.
 
 `nocgen.py` reads a config with the mesh size, the AXI masters and slaves, the
 router/link timing and an optional traffic matrix, and writes:
@@ -32,7 +34,7 @@ pytest -q tests                                      # profile consistency on ev
 python3 scripts/lint_tb.py out/soc4x4/tb <uvm-core>/src   # elaborate a generated TB with slang + UVM
 ```
 
-CI runs both on every push (`.github/workflows/ci.yml`).
+CI runs both on every push that touches `nocgen/` (`.github/workflows/nocgen.yml`).
 
 ## Latency model
 
