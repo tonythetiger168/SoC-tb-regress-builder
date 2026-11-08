@@ -396,6 +396,28 @@ package soc_env_pkg;
   endclass
 
   // ==========================================================================
+  // per-path latency: CPU/DMA -> SRAM, GPIO, UART, APBX, APB_HOLE, DDR, DECERR
+  class soc_latency extends axi4_latency;
+    `uvm_component_utils(soc_latency)
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+    function string slave_of(axi4_item t);
+      case (soc_region(t.addr))
+        R_SRAM: return "SRAM";
+        R_DDR:  return "DDR";
+        R_APB:  case (t.addr[15:12])
+                  0: return "GPIO";
+                  1: return "UART";
+                  2: return "APBX";
+                  default: return "APB_HOLE";
+                endcase
+        default: return "DECERR";
+      endcase
+    endfunction
+  endclass
+
+  // ==========================================================================
   class soc_env extends uvm_env;
     `uvm_component_utils(soc_env)
     soc_env_cfg    cfg;
@@ -404,6 +426,7 @@ package soc_env_pkg;
     apb_agent      apbx_agent;
     apb_agent      apb_mon_agent;
     soc_scoreboard sb;
+    soc_latency    lat[2];
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -425,10 +448,15 @@ package soc_env_pkg;
       uvm_config_db#(apb_cfg)::set(this, "apb_mon_agent", "cfg", cfg.apb_mon_cfg);
       uvm_config_db#(soc_env_cfg)::set(this, "sb", "cfg", cfg);
       sb = soc_scoreboard::type_id::create("sb", this);
+      foreach (lat[i]) begin
+        lat[i] = soc_latency::type_id::create($sformatf("m%0d_lat", i), this);
+        lat[i].master = (i == 0) ? "CPU" : "DMA";
+      end
     endfunction
 
     function void connect_phase(uvm_phase phase);
       foreach (m_agent[i]) m_agent[i].ap.connect(sb.mst_imp);
+      foreach (m_agent[i]) m_agent[i].ap.connect(lat[i].analysis_export);
       ddr_agent.ap.connect(sb.ddr_imp);
       apb_mon_agent.ap.connect(sb.apb_imp);
     endfunction
