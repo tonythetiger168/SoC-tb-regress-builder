@@ -49,7 +49,8 @@ def registers(ip_root, ip):
     path = os.path.join(ip_root, "docs", "ip", f"{ip}.md")
     if not os.path.exists(path):
         raise SpecError(f"open-ip IP {ip!r}: {path} not found (check --ip-root)")
-    md = open(path).read()
+    with open(path) as f:
+        md = f.read()
     rmap = _table(md, "Register map")
     if not rmap:
         raise SpecError(f"{path}: no Register map table")
@@ -84,6 +85,18 @@ def registers(ip_root, ip):
         regs.append(Obj(name=name, offset=off, access=ral, volatile=vol or rst is None,
                         testable=testable and rst is not None, core=rst is None,
                         reset=sum(f.reset << f.lsb for f in fl), fields=fl, desc=r[4] if len(r) > 4 else ""))
+    # Only spec kind "rw" registers read back what was written; stream holding
+    # registers (stream_in), bus ports and command pulses do not.
+    jpath = os.path.join(ip_root, "scripts", "apb", "specs", f"{ip}.json")
+    if os.path.exists(jpath):
+        import json
+        with open(jpath) as f:
+            kinds = {r["name"]: r["kind"] for r in json.load(f).get("regs", [])}
+        for r in regs:
+            k = kinds.get(r.name) or kinds.get(re.sub(r"\d+$", "", r.name))
+            if k is not None and k != "rw":
+                r.testable = False
+                r.volatile = True
     idreg = next((r for r in regs if r.name == "ID"), None)
     return Obj(regs=regs, id=idreg.reset if idreg else None, doc=os.path.relpath(path, ip_root))
 
