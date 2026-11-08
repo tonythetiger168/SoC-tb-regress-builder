@@ -1,0 +1,53 @@
+name: socgen
+on:
+  push:
+    paths: ["socgen/**", "vip/**", "rtl/soc/axi2apb_bridge.sv", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
+  pull_request:
+    paths: ["socgen/**", "vip/**", "rtl/soc/axi2apb_bridge.sv", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
+  workflow_dispatch:
+jobs:
+  socgen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VERILATOR_VERSION: v5.052
+      VERILATOR_PREFIX: /opt/verilator
+      OPEN_IP_ROOT: ${{ github.workspace }}/open-ip-portfolio
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: tonythetiger168/open-ip-portfolio
+          path: open-ip-portfolio
+      - name: Python deps
+        run: pip install pyyaml jinja2
+      - name: Unit tests
+        run: python3 -m unittest discover -s socgen/tests -v
+      - name: Specs validate and regenerate
+        run: |
+          for s in socgen/specs/*.yaml; do python3 socgen/socgen.py "$s" --check; done
+          python3 socgen/socgen.py socgen/specs/mini_soc.yaml
+          python3 socgen/socgen.py socgen/specs/phone_soc.yaml
+          git status --short socgen/out regress
+      - name: Cache Verilator
+        uses: actions/cache@v4
+        with:
+          path: /opt/verilator
+          key: verilator-${{ env.VERILATOR_VERSION }}-${{ runner.os }}-ubuntu-24.04
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libfl2 ccache
+          sudo mkdir -p /opt/verilator && sudo chown "$USER" /opt/verilator
+          bash scripts/install_tools.sh
+          echo "/opt/verilator/bin" >> "$GITHUB_PATH"
+      - name: mini_soc regression
+        run: python3 regress/regress.py --list regress/mini_soc_testlist.txt --jobs "$(nproc)"
+      - name: Summary
+        if: always()
+        run: cat regress_out/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: socgen_regress_out
+          path: regress_out/

@@ -14,7 +14,7 @@ mesh, 32 LPDDR5 ports) and `specs/mini_soc.yaml` (small, for CI).
 |---|---|---|
 | `socgen` | yes | schema version, `1` |
 | `soc` | yes | `name` (SV identifier, also the output directory), `prefix` (function prefix, default `name`), `desc` |
-| `clock` | no | `name` (default `aclk`), `period_ns` (default 1.0) |
+| `clock` | no | `name` (default `aclk`), `period_ns` (default 2.0, at least 2: the VIPs drive 1 ns after the edge) |
 | `bus` | no | `addr_width` (32), `data_width` (32), `id_width` (4). The bundled VIPs are 32/32. |
 | `noc` | yes | interconnect, see below |
 | `traffic` | no | named traffic profiles masters refer to |
