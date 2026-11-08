@@ -4,3 +4,4 @@ tv8k_vdec_hevc_test  1  +C1P_VEC=lft4k
 tv8k_vdec_hevc_test  1  +C1P_VEC=lfw4k
 tv8k_vdec_hevc_test  1  +C1P_VEC=b10
 tv8k_vdec_hevc_test  1  +C1P_VEC=aq16 +C1P_BS_GAP=30
+tv8k_vdec_hevc_test  1  +C1P_VEC=w8k10

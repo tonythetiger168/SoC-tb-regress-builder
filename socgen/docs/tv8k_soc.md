@@ -144,6 +144,23 @@ make run TB=tv8k_vdec TEST=tv8k_vdec_hevc_test PLUSARGS=+C1P_VEC=base
 `base` (3 pictures, 200x120) and `lft4k` (16x4208) decode bit-exact. A run is
 about 3 minutes (Verilator, 200k cycles). Suite: `regress/suites/tv8k_vdec.yaml`.
 
+### 8K check (2026-11-08, c1p-codec c24a6ec)
+
+| Item | 8K need | c1p decoder | |
+|---|---|---|---|
+| Picture size | 7680x4320 | `HEVC_MAX_W` 8192 (line buffers), height up to 8192 | ok |
+| 8K-wide decode on the NoC | | `w8k10`: 7680x64 Main10, CTB 64, deblocking + SAO, WPP; 737,280 samples bit-exact (nightly list) | ok |
+| Bit depth / chroma | Main10 4:2:0 | 8/10-bit 4:2:0 and 4:0:0 | ok |
+| Throughput | 8K60: <= 0.17 cycles/sample at 500 MHz (8K30: <= 0.34) | `w8k10` measured 1.59 cycles/sample (1.17 M cycles), about 6 fps at 8K or 25 fps at 4K; the c1p report gives 1.0 on average | 9.5x short |
+| Profile | HEVC Main / Main10 with P/B frames | intra (I slices) only: no inter prediction / motion compensation, no reference frame manager | missing |
+| Other formats | AV1 / VP9 for streaming | AV1 film grain output stage only; no AV1/VP9 entropy, transform or prediction | missing |
+| Memory port | ~6 GB/s of 10-bit output at 8K60, plus reference reads | 64-bit single-beat AXI (no bursts, no 128-bit) | missing |
+
+So the c1p decoder takes 8K pictures and decodes them correctly, but only all-intra HEVC and at about
+a tenth of 8K60. c1p's own plan puts 8K in the Max SKU (multi-core); the Pro target is 4K60.
+VDEC DRAM write latency in the 8K run: avg 23 / p99 38 / max 53 cycles (184,320 single-beat writes,
+spread over the 8 channels); report `tools/tv8k_latency_report.py`.
+
 ## NPU subsystem: the xuanji NPU on the NoC (built now)
 
 `sim/tv8k_npu.f` puts xuanji-core's NPU subsystem (`orca_npu_ss_apb`: 8x8 INT8

@@ -78,7 +78,7 @@ run:
 	$(RUN_CMD)
 
 # HEVC vectors for the tv8k VDEC bench (needs ext/c1p-codec)
-TV8K_VDEC_VEC ?= base lft4k lfw4k b10 aq16
+TV8K_VDEC_VEC ?= base lft4k lfw4k b10 aq16 w8k10
 .PHONY: tv8k_vdec_vec
 tv8k_vdec_vec:
 	@if [ -d ext/c1p-codec ]; then scripts/tv8k_vdec_prep.sh build/tv8k_vdec_vec $(TV8K_VDEC_VEC); \
