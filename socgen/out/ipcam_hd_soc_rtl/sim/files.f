@@ -14,16 +14,16 @@ socgen/out/ipcam_hd_soc_rtl/rtl/ip/Ethernet_top.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/Ethernet_apb.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/GPIO_top.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/GPIO_apb.sv
-socgen/out/ipcam_hd_soc_rtl/rtl/ip/I2C_top.sv
-socgen/out/ipcam_hd_soc_rtl/rtl/ip/I2C_apb.sv
+socgen/out/ipcam_hd_soc_rtl/rtl/ip/I2C_Host_top.sv
+socgen/out/ipcam_hd_soc_rtl/rtl/ip/I2C_Host_apb.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/I2S_top.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/I2S_apb.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/MDIO_top.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/MDIO_apb.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/PWM_top.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/PWM_apb.sv
-socgen/out/ipcam_hd_soc_rtl/rtl/ip/QSPI_top.sv
-socgen/out/ipcam_hd_soc_rtl/rtl/ip/QSPI_apb.sv
+socgen/out/ipcam_hd_soc_rtl/rtl/ip/QSPI_XIP_top.sv
+socgen/out/ipcam_hd_soc_rtl/rtl/ip/QSPI_XIP_apb.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/Root_of_Trust_top.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/Root_of_Trust_apb.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/SD_top.sv
@@ -40,9 +40,11 @@ socgen/out/ipcam_hd_soc_rtl/rtl/ip/eMMC_top.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/eMMC_apb.sv
 -f ext/ipcam_ext.f
 tb/ipcam_soc/devices/csi2_tx_model.sv
+socgen/out/ipcam_hd_soc_rtl/rtl/vip/sccb_model.sv
 tb/ipcam_soc/devices/gmii_phy_model.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/vip/sdc_model.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/vip/emd_model.sv
+socgen/out/ipcam_hd_soc_rtl/rtl/vip/snor_model.sv
 tb/ipcam_soc/devices/i2s_codec_model.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ipcam_hd_soc_pkg.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ipcam_hd_soc_iommu_regs.sv

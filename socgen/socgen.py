@@ -30,6 +30,7 @@ AXI_SIGS = ["awid", "awaddr", "awlen", "awsize", "awburst", "awprot", "awvalid",
             "wdata", "wstrb", "wlast", "wvalid", "wready", "bid", "bresp", "bvalid", "bready",
             "arid", "araddr", "arlen", "arsize", "arburst", "arprot", "arvalid", "arready",
             "rid", "rdata", "rresp", "rlast", "rvalid", "rready"]
+AXI_SLAVE_OUT = {"awready", "wready", "bid", "bresp", "bvalid", "arready", "rid", "rdata", "rresp", "rlast", "rvalid"}
 # repo files every generated bench compiles (from PR #1's VIPs and bridge)
 VIP_ROOT = os.environ.get("OPEN_VIP_ROOT", os.path.join(ROOT, "..", "open-vip-portfolio"))
 COMMON = ["rtl/soc/axi2apb_bridge.sv", "vip/axi4/axi4_if.sv", "vip/apb/apb_if.sv",
@@ -121,6 +122,26 @@ def generate(m, out, ip_root, spec_path, write_repo_files=True, vip_root=None):
                     if p not in [x.name for x in s.wrapper.pins if x.dir == "input"]:
                         raise SpecError(f"peripheral {s.name}: {s.ip}_apb has no input pin {p!r}")
                 s.pin_expr = dict(s.pins)
+                s.axi_ports = []
+                if s.axi_slave:                   # a slave of kind periph: export the IP's AXI port
+                    byname = {x.name: x for x in s.wrapper.pins}
+                    pre = s.axi_slave.prefix
+                    for sig in AXI_SIGS:
+                        p = byname.get(pre + sig)
+                        is_out = sig in AXI_SLAVE_OUT
+                        if p is None:
+                            if is_out:
+                                raise SpecError(f"slave {s.axi_slave.name}: {s.ip}_apb has no AXI output {pre}{sig}")
+                            continue
+                        if p.dir != ("output" if is_out else "input"):
+                            raise SpecError(f"slave {s.axi_slave.name}: {s.ip}_apb {pre}{sig} is {p.dir}")
+                        if p.name in s.pins:
+                            raise SpecError(f"peripheral {s.name}: pin {p.name} is the AXI port of slave "
+                                            f"{s.axi_slave.name}, not a pins entry")
+                        s.axi_ports.append(Obj(sig=sig, pin=p.name, dir=p.dir, width=p.width,
+                                               port=f"{s.name}_axi_{sig}"))
+                        if not is_out:
+                            s.pin_expr[p.name] = f"{s.name}_axi_{sig}"
                 pv = s.pins_vip
                 if pv:
                     if pv.vip:
@@ -157,7 +178,8 @@ def generate(m, out, ip_root, spec_path, write_repo_files=True, vip_root=None):
                vip_slots=vip_slots, ext_slots=ext_slots, axi_slaves=axi_slaves, axi_sigs=AXI_SIGS,
                rtl_axi_sigs=[x for x in AXI_SIGS if not x.endswith("prot")],
                rtl_masters=[x for x in m.masters if x.kind == "rtl"],
-               rtl_slaves=[t for t in m.slaves if t.kind == "rtl"])
+               rtl_slaves=[t for t in m.slaves if t.kind == "rtl"],
+               axi_slots=[s for s in m.apb.slots if s.kind == "ip" and s.axi_slave] if m.apb else [])
 
     if os.path.isdir(out):
         shutil.rmtree(out)

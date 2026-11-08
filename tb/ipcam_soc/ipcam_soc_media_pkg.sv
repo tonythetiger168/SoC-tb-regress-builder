@@ -266,6 +266,8 @@ package ipcam_soc_media_pkg;
       check_csi2();
       check_eth();
       check_i2s();
+      check_xip();
+      check_sccb();
     endtask
 
     // SD and eMMC hosts (open-ip SD / eMMC) run init and write/read-back rounds on its own
@@ -334,6 +336,79 @@ package ipcam_soc_media_pkg;
       for (int unsigned n = 1; n < 20000 && !hit; n++)
         if (r[15:0] == (16'(n * 32'h10123) ^ 16'hA55A)) hit = 1;
       check($sformatf("I2S RX_RIGHT %04h is a codec ADC word", r[15:0]), hit, 1);
+    endtask
+
+    // Boot flash: QSPI_XIP serves the spi_nor window from snor_model (spec pins_vip), whose
+    // array holds mem[i] = i ^ (i >> 8) ^ 0xA5 (16-bit addresses, so the window wraps every
+    // 64 KB). XIP reads go over the NoC; the command port reads the JEDEC ID.
+    function bit [7:0] flash_byte(bit [31:0] a);
+      bit [15:0] i = a[15:0];
+      return 8'(i) ^ 8'(i >> 8) ^ 8'hA5;
+    endfunction
+    task check_xip();
+      bit [31:0] v, n0, B = slot(APB_SLOT_QSPI_XIP);
+      bit [31:0] offs[5] = '{32'h0000_0000, 32'h0000_0104, 32'h0000_1234, 32'h0012_FFFC, 32'h0000_0108};
+      rd32(B + 'h000, v); check("QSPI_XIP ID", v, 32'h5C53_0100);
+      rd32(B + 'h030, n0);
+      foreach (offs[k]) begin
+        bit [31:0] a = SPI_NOR_BASE + (offs[k] & ~32'h3);
+        rd32(a, v);
+        check($sformatf("XIP word at flash %06h", a[23:0]), v,
+              {flash_byte(a + 3), flash_byte(a + 2), flash_byte(a + 1), flash_byte(a)});
+      end
+      rd32(B + 'h030, v);
+      check("XIP_CMDS counts the reads", v[15:0] - n0[15:0] inside {[4:5]}, 1);   // 0x104 -> 0x108 may continue the stream
+      wr32(B + 'h004, 32'h1);                                       // clear PC_DONE
+      wr32(B + 'h018, 32'h9F | (3 << 12));                          // 0x9F read ID, 3 bytes in
+      wr32(B + 'h024, 32'h1);
+      wait_bit("QSPI_XIP 0x9F", B + 'h004, 32'h1, 200);
+      rd32(B + 'h028, v); check("SPI-NOR JEDEC ID (EF 40 18)", v[23:0], 24'h1840EF);
+    endtask
+
+    // Sensor control: I2C_Host on i2c_sns talks SCCB to sccb_model (spec pins_vip) at 0x3C:
+    // 16-bit register pointer, chip ID 0x5A31 at 0x0000, RW registers from 0x0002.
+    localparam bit [7:0] SCCB_ADDR = 8'h3C << 1;
+    task sccb_cmd(bit [31:0] B, bit [7:0] tx, bit [5:0] cmd, string what);
+      wr32(B + 'h004, 32'h1);
+      wr32(B + 'h018, tx);
+      wr32(B + 'h01C, cmd);
+      wait_bit(what, B + 'h004, 32'h1, 200);
+    endtask
+    task sccb_wr(bit [31:0] B, bit [7:0] tx, bit sta, bit sto, string what);
+      bit [31:0] v;
+      sccb_cmd(B, tx, 6'h05 | (sta << 1) | (sto << 4), what);   // valid | wr (| sta) (| sto)
+      rd32(B + 'h020, v); check({what, " ACK"}, v[8], 0);
+    endtask
+    task sccb_read(bit [31:0] B, bit [15:0] r, int n, output bit [7:0] d[$]);
+      bit [31:0] v;
+      d.delete();
+      sccb_wr(B, SCCB_ADDR, 1, 0, $sformatf("SCCB addr W (rd %04h)", r));
+      sccb_wr(B, r[15:8], 0, 0, "SCCB reg hi");
+      sccb_wr(B, r[7:0], 0, 0, "SCCB reg lo");
+      sccb_wr(B, SCCB_ADDR | 8'h1, 1, 0, "SCCB addr R");
+      for (int k = 0; k < n; k++) begin
+        bit last = k == n - 1;
+        sccb_cmd(B, 0, 6'h09 | (last << 5) | (last << 4), "SCCB read byte");   // valid | rd (| nack | sto)
+        rd32(B + 'h020, v);
+        d.push_back(v[7:0]);
+      end
+    endtask
+    task check_sccb();
+      bit [31:0] v, B = slot(APB_SLOT_I2C_SNS);
+      bit [7:0] d[$];
+      rd32(B + 'h000, v); check("I2C_Host ID", v, 32'h5C51_0100);
+      wr32(B + 'h014, 32'h4);                                       // quarter SCL = 5 clocks
+      sccb_read(B, 16'h0000, 2, d);
+      check("SCCB chip ID", {d[0], d[1]}, 16'h5A31);
+      sccb_wr(B, SCCB_ADDR, 1, 0, "SCCB addr W (wr 0100)");
+      sccb_wr(B, 8'h01, 0, 0, "SCCB reg hi");
+      sccb_wr(B, 8'h00, 0, 0, "SCCB reg lo");
+      sccb_wr(B, 8'hC3, 0, 0, "SCCB data 0");
+      sccb_wr(B, 8'h5E, 0, 1, "SCCB data 1");
+      sccb_read(B, 16'h0100, 2, d);
+      check("SCCB reg 0100 read back", d[0], 8'hC3);
+      check("SCCB reg 0101 read back", d[1], 8'h5E);
+      rd32(B + 'h024, v); check("I2C bus released", v[1:0], 0);
     endtask
 
     function void report_phase(uvm_phase phase);

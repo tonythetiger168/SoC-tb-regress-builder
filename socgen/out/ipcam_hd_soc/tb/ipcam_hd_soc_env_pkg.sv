@@ -25,10 +25,10 @@ package ipcam_hd_soc_env_pkg;
   import ipcam_hd_soc_ral_pkg::*;
 
   localparam real TCK = CLK_PERIOD_NS;
-  localparam int NAXI_S = 4;          // NoC ports with an AXI slave agent
-  localparam int AXI_S_PORT [NAXI_S] = '{ 0, 1, 2, 3 };
-  localparam int NAPB_VIP = 4;
-  localparam string APB_VIP_NAME [NAPB_VIP > 0 ? NAPB_VIP : 1] = '{ "apb_ext", "venc_cfg", "jpeg_cfg", "npu_cfg" };
+  localparam int NAXI_S = 3;          // NoC ports with an AXI slave agent
+  localparam int AXI_S_PORT [NAXI_S] = '{ 0, 1, 2 };
+  localparam int NAPB_VIP = 1;
+  localparam string APB_VIP_NAME [NAPB_VIP > 0 ? NAPB_VIP : 1] = '{ "apb_ext" };
   localparam int N_SCN = 0;
   localparam string SCN_NAME [N_SCN > 0 ? N_SCN : 1] = '{ "" };
 
@@ -275,7 +275,7 @@ package ipcam_hd_soc_env_pkg;
         end
         clk(REQ_LAT[mi][si]);
         acquire(0, si, mi);
-        if (S_KIND[si] != "apb_bridge") clk(S_ACCESS[si]);
+        if (S_KIND[si] != "apb_bridge" && S_KIND[si] != "periph") clk(S_ACCESS[si]);   // periph: the IP takes its own time
         s_vif[si].arid <= id; s_vif[si].araddr <= addr; s_vif[si].arlen <= len; s_vif[si].arsize <= size;
         s_vif[si].arburst <= burst; s_vif[si].arprot <= prot; s_vif[si].arcache <= cache;
         s_vif[si].arlock <= 1'b0; s_vif[si].arvalid <= 1'b1;
@@ -349,7 +349,7 @@ package ipcam_hd_soc_env_pkg;
         end else begin
           clk(REQ_LAT[mi][si]);
           acquire(1, si, mi);
-          if (S_KIND[si] != "apb_bridge") clk(S_ACCESS[si]);
+          if (S_KIND[si] != "apb_bridge" && S_KIND[si] != "periph") clk(S_ACCESS[si]);   // periph: the IP takes its own time
           s_vif[si].awid <= id; s_vif[si].awaddr <= addr; s_vif[si].awlen <= len; s_vif[si].awsize <= size;
           s_vif[si].awburst <= burst; s_vif[si].awprot <= prot; s_vif[si].awcache <= cache;
           s_vif[si].awlock <= 1'b0; s_vif[si].awvalid <= 1'b1;
@@ -423,7 +423,7 @@ package ipcam_hd_soc_env_pkg;
         end
         return;
       end
-      if (S_KIND[si] == "rtl") begin      // RTL slave: no reference model here
+      if (S_KIND[si] == "rtl" || S_KIND[si] == "periph") begin   // RTL slave: no reference model here
         n_checks++;
         return;
       end
@@ -495,7 +495,7 @@ package ipcam_hd_soc_env_pkg;
       t_last = t.t_end;
       $display("LAT %s %s %s %0d", M_NAME[t.port], s, t.write ? "W" : "R", cyc);
       if (cfg.zero_load_check && si != S_DEF) begin
-        int lo = REQ_LAT[t.port][si] + RSP_LAT[t.port][si] + (S_KIND[si] == "apb_bridge" ? 0 : S_ACCESS[si]);
+        int lo = REQ_LAT[t.port][si] + RSP_LAT[t.port][si] + ((S_KIND[si] == "apb_bridge" || S_KIND[si] == "periph") ? 0 : S_ACCESS[si]);
         int hi = IDEAL_LAT[t.port][si] + cfg.zero_load_slack + (t.write ? 2 : 1) * int'(t.len);
         if (cyc < lo)
           `uvm_error("LAT", $sformatf("%s -> %s %s: %0d cycles is below the NoC minimum %0d",

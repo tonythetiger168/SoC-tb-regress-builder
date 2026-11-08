@@ -98,7 +98,9 @@ memories:
 slaves:
   - {name: boot_sram, kind: memory, base: 0x0000_0000, size: 0x1_0000, node: [0, 0], access_cycles: 2}
   # Quad-SPI NOR flash, memory-mapped (XIP) window: slow first access
-  - {name: spi_nor,   kind: vip,    base: 0x2000_0000, size: 0x100_0000, node: [0, 0], access_cycles: 40}
+  # served by the QSPI_XIP peripheral's AXI port (qspi_xip below) and a SPI-NOR flash model on its pins;
+  # access_cycles is only the zero-load bound: a one-beat quad read is ~48 SCLKs of 4 clocks
+  - {name: spi_nor,   kind: periph, periph: qspi_xip, base: 0x2000_0000, size: 0x100_0000, node: [0, 0], access_cycles: 220}
   - name: periph
     kind: apb_bridge
     base: 0x1000_0000
@@ -114,7 +116,8 @@ slaves:
       # --- sensor and image ---
       - {name: csi2,       slot: 4,  ip: CSI_2,                       # MIPI CSI-2 receiver, fed by a sensor model
          pins_vip: {model: csi2_tx_model, files: [tb/ipcam_soc/devices/csi2_tx_model.sv], params: {FRAMES: 2, LINES: 4, WIDTH: 16}, map: {en: "1'b1"}}}
-      - {name: i2c_sns,    slot: 5,  ip: I2C, pins: {scl: "1'b1"}}    # sensor control (SCCB)
+      - {name: i2c_sns,    slot: 5,  ip: I2C_Host,                    # sensor control (SCCB), sensor register model on the bus
+         pins_vip: {model: sccb_model, vip: SCCB_Sensor-UVM-VIP, inout: [sda]}}
       - {name: pwm,        slot: 6,  ip: PWM}                         # IR-cut filter / IR LED
       - {name: isp_cfg,    slot: 7,  regs: mm_engine}
       - {name: venc_cfg,   slot: 8,  rtl_master: venc, ral: c1p_hve}     # c1p HEVC encoder registers
@@ -127,7 +130,8 @@ slaves:
       - {name: mdio,       slot: 13, ip: MDIO, pins: {mdc: "1'b0"}}
       - {name: sd,         slot: 14, ip: SD, params: {ID_CLK_DIV: 8}, pins_vip: {model: sdc_model, vip: SD_Card-UVM-VIP, inout: [cmd, dat]}}            # SD card device model
       - {name: emmc_ctl,   slot: 15, ip: eMMC, params: {ID_CLK_DIV: 8, RST_WAIT: 64}, pins_vip: {model: emd_model, vip: eMMC_Device-UVM-VIP, inout: [cmd, {pin: "dat[0]", port: dat0}]}}   # eMMC device model (1-bit)
-      - {name: qspi,       slot: 16, ip: QSPI, pins: {csn: "1'b1", sclk: "1'b0"}}
+      - {name: qspi_xip,   slot: 16, ip: QSPI_XIP,                    # boot / code flash: XIP window (spi_nor) + command port
+         pins_vip: {model: snor_model, vip: SPI_NOR-UVM-VIP, inout: [{pin: io, out: fl_io, oe: fl_oe}]}}
       - {name: spi,        slot: 17, ip: SPI,  pins: {csn: "1'b1"}}  # PTZ motor / pan-tilt driver
       # --- audio ---
       - {name: i2s,        slot: 18, ip: I2S,                         # I2S port, codec model is the clock master

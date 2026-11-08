@@ -10,7 +10,7 @@ NoC: crossbar 1x1, XY routing, one way = 2*1 + (hops+1)*2 + hops*0 cycles, clock
 |---|---|---|---|
 | ddr | 0x80000000 | 0x40000000 | 2 x ddr ports S_DDR0..1, 4 KB granule, hash xor |
 | boot_sram | 0x00000000 | 0x10000 | memory S_BOOT_SRAM |
-| spi_nor | 0x20000000 | 0x1000000 | vip S_SPI_NOR |
+| spi_nor | 0x20000000 | 0x1000000 | periph S_SPI_NOR |
 | periph | 0x10000000 | 0x20000 | apb_bridge S_PERIPH |
 
 ## APB slots (periph)
@@ -22,7 +22,7 @@ NoC: crossbar 1x1, XY routing, one way = 2*1 + (hops+1)*2 + hops*0 cycles, clock
 | 2 | 0x10002000 | timer | register_blocks.timer_wdt | 0x54570100 |
 | 3 | 0x10003000 | apb_ext | APB VIP | - |
 | 4 | 0x10004000 | csi2 | open-ip CSI_2 | 0x43320200 |
-| 5 | 0x10005000 | i2c_sns | open-ip I2C | 0x49430200 |
+| 5 | 0x10005000 | i2c_sns | open-ip I2C_Host | 0x5C510100 |
 | 6 | 0x10006000 | pwm | open-ip PWM | 0x50570200 |
 | 7 | 0x10007000 | isp_cfg | register_blocks.mm_engine | 0x4D450100 |
 | 8 | 0x10008000 | venc_cfg | APB VIP | - |
@@ -33,7 +33,7 @@ NoC: crossbar 1x1, XY routing, one way = 2*1 + (hops+1)*2 + hops*0 cycles, clock
 | 13 | 0x1000D000 | mdio | open-ip MDIO | 0x4D440200 |
 | 14 | 0x1000E000 | sd | open-ip SD | 0x53440200 |
 | 15 | 0x1000F000 | emmc_ctl | open-ip eMMC | 0x654D0300 |
-| 16 | 0x10010000 | qspi | open-ip QSPI | 0x51530200 |
+| 16 | 0x10010000 | qspi_xip | open-ip QSPI_XIP | 0x5C530100 |
 | 17 | 0x10011000 | spi | open-ip SPI | 0x53500200 |
 | 18 | 0x10012000 | i2s | open-ip I2S | 0x49320200 |
 | 19 | 0x10013000 | crypto_eng | open-ip Crypto___Security_Engine | 0x53480200 |
@@ -46,7 +46,7 @@ NoC: crossbar 1x1, XY routing, one way = 2*1 + (hops+1)*2 + hops*0 cycles, clock
 | 26 | 0x1001A000 | iommu_jpeg_regs | register_blocks.iommu | 0x494F0100 |
 | 27 | 0x1001B000 | iommu_npu_regs | register_blocks.iommu | 0x494F0100 |
 
-open-ip-portfolio commit `359f40a67051a7da5dba4d0bf57c01e67bdcf2fa`.
+open-ip-portfolio commit `1529494ab3abf4e39f71ba5a1d15dbbef08d9dd2`.
 
 ## Placement
 
@@ -66,21 +66,21 @@ open-ip-portfolio commit `359f40a67051a7da5dba4d0bf57c01e67bdcf2fa`.
 | port ddr0 | [0, 0] | access 30 |
 | port ddr1 | [0, 0] | access 30 |
 | port boot_sram | [0, 0] | access 2 |
-| port spi_nor | [0, 0] | access 40 |
+| port spi_nor | [0, 0] | access 220 |
 | port periph | [0, 0] | access 4 |
 
 ## Ideal zero-load read latency (cycles, single beat)
 
 | master | ddr0 | ddr1 | boot_sram | spi_nor | periph |
 |---|---|---|---|---|---|
-| cpu | 38 | 38 | 10 | 48 | 12 |
-| isp | 40 | 40 | 12 | 50 | 14 |
-| venc | 40 | 40 | 12 | 50 | 14 |
-| jpeg | 40 | 40 | 12 | 50 | 14 |
-| npu | 40 | 40 | 12 | 50 | 14 |
-| eth | 38 | 38 | 10 | 48 | 12 |
-| sdmmc | 38 | 38 | 10 | 48 | 12 |
-| emmc | 38 | 38 | 10 | 48 | 12 |
-| audio | 38 | 38 | 10 | 48 | 12 |
-| crypto | 38 | 38 | 10 | 48 | 12 |
-| dma | 38 | 38 | 10 | 48 | 12 |
+| cpu | 38 | 38 | 10 | 228 | 12 |
+| isp | 40 | 40 | 12 | 230 | 14 |
+| venc | 40 | 40 | 12 | 230 | 14 |
+| jpeg | 40 | 40 | 12 | 230 | 14 |
+| npu | 40 | 40 | 12 | 230 | 14 |
+| eth | 38 | 38 | 10 | 228 | 12 |
+| sdmmc | 38 | 38 | 10 | 228 | 12 |
+| emmc | 38 | 38 | 10 | 228 | 12 |
+| audio | 38 | 38 | 10 | 228 | 12 |
+| crypto | 38 | 38 | 10 | 228 | 12 |
+| dma | 38 | 38 | 10 | 228 | 12 |

@@ -13,7 +13,7 @@
 
 //   slot  4  0x10004000  csi2             open-ip CSI_2_apb
 
-//   slot  5  0x10005000  i2c_sns          open-ip I2C_apb
+//   slot  5  0x10005000  i2c_sns          open-ip I2C_Host_apb
 
 //   slot  6  0x10006000  pwm              open-ip PWM_apb
 
@@ -35,7 +35,7 @@
 
 //   slot 15  0x1000F000  emmc_ctl         open-ip eMMC_apb
 
-//   slot 16  0x10010000  qspi             open-ip QSPI_apb
+//   slot 16  0x10010000  qspi_xip         open-ip QSPI_XIP_apb (+ AXI port S_SPI_NOR)
 
 //   slot 17  0x10011000  spi              open-ip SPI_apb
 
@@ -96,6 +96,36 @@ module ipcam_soc_apb_subsys (
   output logic        npu_cfg_pwrite, output logic [31:0] npu_cfg_pwdata, output logic [3:0] npu_cfg_pstrb,
   output logic [2:0]  npu_cfg_pprot,
   input  logic [31:0] npu_cfg_prdata, input logic npu_cfg_pready, input logic npu_cfg_pslverr,
+  // AXI4 subordinate port of qspi_xip (QSPI_XIP_apb s_*): NoC port S_SPI_NOR
+  input logic [3:0] qspi_xip_axi_awid,
+  input logic [31:0] qspi_xip_axi_awaddr,
+  input logic [7:0] qspi_xip_axi_awlen,
+  input logic [2:0] qspi_xip_axi_awsize,
+  input logic [1:0] qspi_xip_axi_awburst,
+  input logic [0:0] qspi_xip_axi_awvalid,
+  output logic [0:0] qspi_xip_axi_awready,
+  input logic [31:0] qspi_xip_axi_wdata,
+  input logic [3:0] qspi_xip_axi_wstrb,
+  input logic [0:0] qspi_xip_axi_wlast,
+  input logic [0:0] qspi_xip_axi_wvalid,
+  output logic [0:0] qspi_xip_axi_wready,
+  output logic [3:0] qspi_xip_axi_bid,
+  output logic [1:0] qspi_xip_axi_bresp,
+  output logic [0:0] qspi_xip_axi_bvalid,
+  input logic [0:0] qspi_xip_axi_bready,
+  input logic [3:0] qspi_xip_axi_arid,
+  input logic [31:0] qspi_xip_axi_araddr,
+  input logic [7:0] qspi_xip_axi_arlen,
+  input logic [2:0] qspi_xip_axi_arsize,
+  input logic [1:0] qspi_xip_axi_arburst,
+  input logic [0:0] qspi_xip_axi_arvalid,
+  output logic [0:0] qspi_xip_axi_arready,
+  output logic [3:0] qspi_xip_axi_rid,
+  output logic [31:0] qspi_xip_axi_rdata,
+  output logic [1:0] qspi_xip_axi_rresp,
+  output logic [0:0] qspi_xip_axi_rlast,
+  output logic [0:0] qspi_xip_axi_rvalid,
+  input logic [0:0] qspi_xip_axi_rready,
   output logic [27:0] irq        // one per mapped slot, slot order (0 when the block has none)
 );
   logic [31:0] paddr, pwdata, prdata;
@@ -209,15 +239,26 @@ module ipcam_soc_apb_subsys (
   );
 
   // ---------------- slot 5: i2c_sns ----------------
-  tri1 [0:0] i2c_sns_sda;      // weak pull-up, nothing else drives it
-  I2C_apb u_i2c_sns (
+  logic [0:0] i2c_sns_scl;
+  tri1 [0:0] i2c_sns_sda;      // weak pull-up; the device model drives it too
+  logic [0:0] i2c_sns_vip_sda_s_lo;
+  I2C_Host_apb u_i2c_sns (
     .PCLK(clk), .PRESETN(rst_n), .PSEL(s_psel[5]), .PENABLE(penable), .PWRITE(pwrite),
     .PADDR(paddr[11:0]), .PWDATA(pwdata), .PSTRB(pstrb),
     .PRDATA(s_prdata[5]), .PREADY(s_pready[5]), .PSLVERR(s_pslverr[5]), .irq(irq[5]),
-    .sda(i2c_sns_sda),
-    .scl(1'b1)
+    .scl(i2c_sns_scl),
+    .sda(i2c_sns_sda)
 
   );
+  // pin-level device model on i2c_sns's pins (pins_vip)
+  sccb_model u_i2c_sns_dev (
+    .clk(clk),
+    .rst_n(rst_n),
+    .scl(i2c_sns_scl),
+    .sda_m_lo(~i2c_sns_sda),
+    .sda_s_lo(i2c_sns_vip_sda_s_lo)
+  );
+  assign i2c_sns_sda[0] = i2c_sns_vip_sda_s_lo[0] ? 1'b0 : 1'bz;
 
   // ---------------- slot 6: pwm ----------------
   logic [0:0] pwm_pwm_out;
@@ -432,17 +473,87 @@ module ipcam_soc_apb_subsys (
   assign emmc_ctl_cmd[0] = emmc_ctl_vip_cmd_s_oe[0] ? emmc_ctl_vip_cmd_s[0] : 1'bz;
   assign emmc_ctl_dat[0] = emmc_ctl_vip_dat0_s_oe[0] ? emmc_ctl_vip_dat0_s[0] : 1'bz;
 
-  // ---------------- slot 16: qspi ----------------
-  tri1 [3:0] qspi_io;      // weak pull-up, nothing else drives it
-  QSPI_apb u_qspi (
+  // ---------------- slot 16: qspi_xip ----------------
+  logic [0:0] qspi_xip_sclk;
+  logic [0:0] qspi_xip_csn;
+  tri1 [3:0] qspi_xip_io;      // weak pull-up; the device model drives it too
+  logic [0:0] qspi_xip_s_awready;
+  logic [0:0] qspi_xip_s_wready;
+  logic [3:0] qspi_xip_s_bid;
+  logic [1:0] qspi_xip_s_bresp;
+  logic [0:0] qspi_xip_s_bvalid;
+  logic [0:0] qspi_xip_s_arready;
+  logic [3:0] qspi_xip_s_rid;
+  logic [31:0] qspi_xip_s_rdata;
+  logic [1:0] qspi_xip_s_rresp;
+  logic [0:0] qspi_xip_s_rlast;
+  logic [0:0] qspi_xip_s_rvalid;
+  logic [3:0] qspi_xip_vip_fl_io;
+  logic [3:0] qspi_xip_vip_fl_oe;
+  QSPI_XIP_apb u_qspi_xip (
     .PCLK(clk), .PRESETN(rst_n), .PSEL(s_psel[16]), .PENABLE(penable), .PWRITE(pwrite),
     .PADDR(paddr[11:0]), .PWDATA(pwdata), .PSTRB(pstrb),
     .PRDATA(s_prdata[16]), .PREADY(s_pready[16]), .PSLVERR(s_pslverr[16]), .irq(irq[16]),
-    .sclk(1'b0),
-    .csn(1'b1),
-    .io(qspi_io)
+    .sclk(qspi_xip_sclk),
+    .csn(qspi_xip_csn),
+    .io(qspi_xip_io),
+    .s_awid(qspi_xip_axi_awid),
+    .s_awaddr(qspi_xip_axi_awaddr),
+    .s_awlen(qspi_xip_axi_awlen),
+    .s_awsize(qspi_xip_axi_awsize),
+    .s_awburst(qspi_xip_axi_awburst),
+    .s_awvalid(qspi_xip_axi_awvalid),
+    .s_awready(qspi_xip_s_awready),
+    .s_wdata(qspi_xip_axi_wdata),
+    .s_wstrb(qspi_xip_axi_wstrb),
+    .s_wlast(qspi_xip_axi_wlast),
+    .s_wvalid(qspi_xip_axi_wvalid),
+    .s_wready(qspi_xip_s_wready),
+    .s_bid(qspi_xip_s_bid),
+    .s_bresp(qspi_xip_s_bresp),
+    .s_bvalid(qspi_xip_s_bvalid),
+    .s_bready(qspi_xip_axi_bready),
+    .s_arid(qspi_xip_axi_arid),
+    .s_araddr(qspi_xip_axi_araddr),
+    .s_arlen(qspi_xip_axi_arlen),
+    .s_arsize(qspi_xip_axi_arsize),
+    .s_arburst(qspi_xip_axi_arburst),
+    .s_arvalid(qspi_xip_axi_arvalid),
+    .s_arready(qspi_xip_s_arready),
+    .s_rid(qspi_xip_s_rid),
+    .s_rdata(qspi_xip_s_rdata),
+    .s_rresp(qspi_xip_s_rresp),
+    .s_rlast(qspi_xip_s_rlast),
+    .s_rvalid(qspi_xip_s_rvalid),
+    .s_rready(qspi_xip_axi_rready)
 
   );
+  assign qspi_xip_axi_awready = qspi_xip_s_awready;
+  assign qspi_xip_axi_wready = qspi_xip_s_wready;
+  assign qspi_xip_axi_bid = qspi_xip_s_bid;
+  assign qspi_xip_axi_bresp = qspi_xip_s_bresp;
+  assign qspi_xip_axi_bvalid = qspi_xip_s_bvalid;
+  assign qspi_xip_axi_arready = qspi_xip_s_arready;
+  assign qspi_xip_axi_rid = qspi_xip_s_rid;
+  assign qspi_xip_axi_rdata = qspi_xip_s_rdata;
+  assign qspi_xip_axi_rresp = qspi_xip_s_rresp;
+  assign qspi_xip_axi_rlast = qspi_xip_s_rlast;
+  assign qspi_xip_axi_rvalid = qspi_xip_s_rvalid;
+  // pin-level device model on qspi_xip's pins (pins_vip)
+  snor_model u_qspi_xip_dev (
+    .clk(clk),
+    .rst_n(rst_n),
+    .sclk(qspi_xip_sclk),
+    .csn(qspi_xip_csn),
+    .io_m(qspi_xip_io),
+    .io_m_oe('1),
+    .fl_io(qspi_xip_vip_fl_io),
+    .fl_oe(qspi_xip_vip_fl_oe)
+  );
+  assign qspi_xip_io[0] = qspi_xip_vip_fl_oe[0] ? qspi_xip_vip_fl_io[0] : 1'bz;
+  assign qspi_xip_io[1] = qspi_xip_vip_fl_oe[1] ? qspi_xip_vip_fl_io[1] : 1'bz;
+  assign qspi_xip_io[2] = qspi_xip_vip_fl_oe[2] ? qspi_xip_vip_fl_io[2] : 1'bz;
+  assign qspi_xip_io[3] = qspi_xip_vip_fl_oe[3] ? qspi_xip_vip_fl_io[3] : 1'bz;
 
   // ---------------- slot 17: spi ----------------
   logic [0:0] spi_miso;

@@ -34,14 +34,14 @@ package ipcam_hd_soc_pkg;
   localparam int S_DDR0 = 0;
   localparam int S_DDR1 = 1;
   localparam int S_BOOT_SRAM = 2;   // memory
-  localparam int S_SPI_NOR = 3;   // vip
+  localparam int S_SPI_NOR = 3;   // periph
   localparam int S_PERIPH = 4;   // apb_bridge
   localparam int S_APB = 4;
   localparam int S_DDR_FIRST = 0, DDR_NCH = 2;
 
   localparam string M_NAME [NM] = '{ "cpu", "isp", "venc", "jpeg", "npu", "eth", "sdmmc", "emmc", "audio", "crypto", "dma" };
   localparam string S_NAME [NS+1] = '{ "ddr0", "ddr1", "boot_sram", "spi_nor", "periph", "decerr" };
-  localparam string S_KIND [NS+1] = '{ "channel", "channel", "memory", "vip", "apb_bridge", "default" };
+  localparam string S_KIND [NS+1] = '{ "channel", "channel", "memory", "periph", "apb_bridge", "default" };
 
   // ---------------- address map ----------------
   localparam logic [31:0] DDR_BASE = 32'h80000000, DDR_SIZE = 32'h3FFFFFFF + 1;
@@ -53,7 +53,7 @@ package ipcam_hd_soc_pkg;
   localparam logic [31:0] PERIPH_BASE = 32'h10000000, PERIPH_SIZE = 32'h00020000;
 
   localparam logic [31:0] S_BASE [NS] = '{ 32'h80000000, 32'h80000000, 32'h00000000, 32'h20000000, 32'h10000000 };
-  localparam int S_ACCESS [NS] = '{ 30, 30, 2, 40, 4 };
+  localparam int S_ACCESS [NS] = '{ 30, 30, 2, 220, 4 };
 
   // ddr: channel = off[12:12] ^ off[13:13], off = a - DDR_BASE
   function automatic int ipcam_hd_ddr_channel(logic [31:0] a);
@@ -90,7 +90,7 @@ package ipcam_hd_soc_pkg;
   localparam int APB_SLOT_TIMER = 2;   // 0x10002000 regs timer_wdt
   localparam int APB_SLOT_APB_EXT = 3;   // 0x10003000 vip apb vip
   localparam int APB_SLOT_CSI2 = 4;   // 0x10004000 ip CSI_2
-  localparam int APB_SLOT_I2C_SNS = 5;   // 0x10005000 ip I2C
+  localparam int APB_SLOT_I2C_SNS = 5;   // 0x10005000 ip I2C_Host
   localparam int APB_SLOT_PWM = 6;   // 0x10006000 ip PWM
   localparam int APB_SLOT_ISP_CFG = 7;   // 0x10007000 regs mm_engine
   localparam int APB_SLOT_VENC_CFG = 8;   // 0x10008000 rtl_master c1p_hve
@@ -101,7 +101,7 @@ package ipcam_hd_soc_pkg;
   localparam int APB_SLOT_MDIO = 13;   // 0x1000D000 ip MDIO
   localparam int APB_SLOT_SD = 14;   // 0x1000E000 ip SD
   localparam int APB_SLOT_EMMC_CTL = 15;   // 0x1000F000 ip eMMC
-  localparam int APB_SLOT_QSPI = 16;   // 0x10010000 ip QSPI
+  localparam int APB_SLOT_QSPI_XIP = 16;   // 0x10010000 ip QSPI_XIP
   localparam int APB_SLOT_SPI = 17;   // 0x10011000 ip SPI
   localparam int APB_SLOT_I2S = 18;   // 0x10012000 ip I2S
   localparam int APB_SLOT_CRYPTO_ENG = 19;   // 0x10013000 ip Crypto___Security_Engine
@@ -115,9 +115,9 @@ package ipcam_hd_soc_pkg;
   localparam int APB_SLOT_IOMMU_NPU_REGS = 27;   // 0x1001B000 regs iommu
   localparam int APB_NMAPPED = 28;
   localparam int APB_MAPPED_SLOT [APB_NMAPPED] = '{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27 };
-  localparam string APB_SLOT_NAME [APB_NMAPPED] = '{ "gpio", "uart", "timer", "apb_ext", "csi2", "i2c_sns", "pwm", "isp_cfg", "venc_cfg", "jpeg_cfg", "npu_cfg", "dma_cfg", "eth_mac", "mdio", "sd", "emmc_ctl", "qspi", "spi", "i2s", "crypto_eng", "aes", "sha3", "trng", "rot", "iommu_isp_regs", "iommu_venc_regs", "iommu_jpeg_regs", "iommu_npu_regs" };
+  localparam string APB_SLOT_NAME [APB_NMAPPED] = '{ "gpio", "uart", "timer", "apb_ext", "csi2", "i2c_sns", "pwm", "isp_cfg", "venc_cfg", "jpeg_cfg", "npu_cfg", "dma_cfg", "eth_mac", "mdio", "sd", "emmc_ctl", "qspi_xip", "spi", "i2s", "crypto_eng", "aes", "sha3", "trng", "rot", "iommu_isp_regs", "iommu_venc_regs", "iommu_jpeg_regs", "iommu_npu_regs" };
   // ID register value per mapped slot (0: no ID register)
-  localparam logic [31:0] APB_SLOT_ID [APB_NMAPPED] = '{ 32'h47500200, 32'h55410200, 32'h54570100, 32'h00000000, 32'h43320200, 32'h49430200, 32'h50570200, 32'h4D450100, 32'h00000000, 32'h00000000, 32'h584E0200, 32'h4D450100, 32'h45540200, 32'h4D440200, 32'h53440200, 32'h654D0300, 32'h51530200, 32'h53500200, 32'h49320200, 32'h53480200, 32'h41470100, 32'h53330100, 32'h54520100, 32'h52540100, 32'h494F0100, 32'h494F0100, 32'h494F0100, 32'h494F0100 };
+  localparam logic [31:0] APB_SLOT_ID [APB_NMAPPED] = '{ 32'h47500200, 32'h55410200, 32'h54570100, 32'h00000000, 32'h43320200, 32'h5C510100, 32'h50570200, 32'h4D450100, 32'h00000000, 32'h00000000, 32'h584E0200, 32'h4D450100, 32'h45540200, 32'h4D440200, 32'h53440200, 32'h654D0300, 32'h5C530100, 32'h53500200, 32'h49320200, 32'h53480200, 32'h41470100, 32'h53330100, 32'h54520100, 32'h52540100, 32'h494F0100, 32'h494F0100, 32'h494F0100, 32'h494F0100 };
   function automatic int apb_slot_of(logic [31:0] a);
     return int'((a - APB_BASE) >> 12);
   endfunction
@@ -176,17 +176,17 @@ package ipcam_hd_soc_pkg;
     '{ 4, 4, 4, 4, 4 }
   };
   localparam int IDEAL_LAT [NM][NS] = '{
-    '{ 38, 38, 10, 48, 12 },
-    '{ 40, 40, 12, 50, 14 },
-    '{ 40, 40, 12, 50, 14 },
-    '{ 40, 40, 12, 50, 14 },
-    '{ 40, 40, 12, 50, 14 },
-    '{ 38, 38, 10, 48, 12 },
-    '{ 38, 38, 10, 48, 12 },
-    '{ 38, 38, 10, 48, 12 },
-    '{ 38, 38, 10, 48, 12 },
-    '{ 38, 38, 10, 48, 12 },
-    '{ 38, 38, 10, 48, 12 }
+    '{ 38, 38, 10, 228, 12 },
+    '{ 40, 40, 12, 230, 14 },
+    '{ 40, 40, 12, 230, 14 },
+    '{ 40, 40, 12, 230, 14 },
+    '{ 40, 40, 12, 230, 14 },
+    '{ 38, 38, 10, 228, 12 },
+    '{ 38, 38, 10, 228, 12 },
+    '{ 38, 38, 10, 228, 12 },
+    '{ 38, 38, 10, 228, 12 },
+    '{ 38, 38, 10, 228, 12 },
+    '{ 38, 38, 10, 228, 12 }
   };
   // one way NoC latency: 2*NI + (hops+1)*ROUTER + hops*LINK
   function automatic int noc_lat(int mi, int si);
