@@ -52,9 +52,9 @@ package {{ m.name }}_pkg;
   endfunction
 {% endfor %}{% if m.memories|length == 1 %}{% set mem = m.memories[0] %}  function automatic int dram_channel(logic [31:0] a); return {{ m.prefix }}_{{ mem.name }}_channel(a); endfunction
   function automatic logic [31:0] dram_local(logic [31:0] a); return {{ m.prefix }}_{{ mem.name }}_local(a); endfunction
-  function automatic int {{ m.prefix }}_dram_channel(logic [31:0] a); return {{ m.prefix }}_{{ mem.name }}_channel(a); endfunction
+{% if mem.name != 'dram' %}  function automatic int {{ m.prefix }}_dram_channel(logic [31:0] a); return {{ m.prefix }}_{{ mem.name }}_channel(a); endfunction
   function automatic logic [31:0] {{ m.prefix }}_dram_local(logic [31:0] a); return {{ m.prefix }}_{{ mem.name }}_local(a); endfunction
-{% endif %}
+{% endif %}{% endif %}
   // address -> NoC slave port (S_DEF on a miss)
   function automatic int {{ m.prefix }}_decode(logic [31:0] a);
 {% for mem in m.memories %}    if (a >= {{ mem.name|upper }}_BASE && a - {{ mem.name|upper }}_BASE < 33'({{ mem.name|upper }}_SIZE))
