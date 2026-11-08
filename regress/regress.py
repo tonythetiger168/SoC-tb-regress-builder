@@ -259,7 +259,10 @@ def classify(rc, log, markers):
 
 
 def run_tag(r):
-    return r["test"] + ("__" + "_".join(p.lstrip("+").replace("=", "") for p in r["plus"]) if r["plus"] else "")
+    """File-name-safe tag of a run: test name plus its plusargs (a plusarg may hold a path)."""
+    tag = r["test"] + ("__" + "_".join(p.lstrip("+").replace("=", "") for p in r["plus"]) if r["plus"] else "")
+    tag = re.sub(r"[^A-Za-z0-9_.=-]+", "_", tag).strip("._")
+    return tag[:150] if len(tag) <= 150 else tag[:141] + "_" + hashlib.sha1(tag.encode()).hexdigest()[:8]
 
 
 def run_one(r, s, b, sim, sdir, timeout, cov):
