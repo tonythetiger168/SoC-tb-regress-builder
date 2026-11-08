@@ -68,7 +68,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -151,6 +151,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_gpio_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -224,7 +225,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       F0 = uvm_reg_field::type_id::create("F0");
-      F0.configure(this, 2, 0, "RO", 0, 2'h0, 1, 0, 0);
+      F0.configure(this, 2, 0, "RO", 1, 2'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -294,6 +295,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_uart_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -506,7 +508,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -627,6 +629,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_csi_2_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -710,7 +713,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       F0 = uvm_reg_field::type_id::create("F0");
-      F0.configure(this, 1, 0, "RO", 0, 1'h0, 1, 0, 0);
+      F0.configure(this, 1, 0, "RO", 1, 1'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -793,6 +796,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_i2c_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -866,7 +870,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -936,6 +940,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_pwm_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -2285,7 +2290,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       F0 = uvm_reg_field::type_id::create("F0");
-      F0.configure(this, 2, 0, "RO", 0, 2'h0, 1, 0, 0);
+      F0.configure(this, 2, 0, "RO", 1, 2'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -2422,6 +2427,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_ethernet_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -2508,7 +2514,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -2552,6 +2558,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_mdio_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -2611,7 +2618,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -2655,6 +2662,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_sd_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -2714,7 +2722,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -2758,6 +2766,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_emmc_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -2817,7 +2826,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -2913,6 +2922,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_qspi_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -2992,7 +3002,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -3062,6 +3072,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_spi_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -3131,7 +3142,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -3227,6 +3238,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_i2s_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -3306,7 +3318,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -3612,6 +3624,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_crypto___security_engine_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -3757,7 +3770,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       F0 = uvm_reg_field::type_id::create("F0");
-      F0.configure(this, 2, 0, "RO", 0, 2'h0, 1, 0, 0);
+      F0.configure(this, 2, 0, "RO", 1, 2'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -4244,6 +4257,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_aes_gcm_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -4447,7 +4461,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       F0 = uvm_reg_field::type_id::create("F0");
-      F0.configure(this, 2, 0, "RO", 0, 2'h0, 1, 0, 0);
+      F0.configure(this, 2, 0, "RO", 1, 2'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -4611,6 +4625,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_sha3_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -4714,7 +4729,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       F0 = uvm_reg_field::type_id::create("F0");
-      F0.configure(this, 1, 0, "RO", 0, 1'h0, 1, 0, 0);
+      F0.configure(this, 1, 0, "RO", 1, 1'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -4882,6 +4897,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_trng_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -4973,7 +4989,7 @@ package ipcam_hd_soc_ral_pkg;
     endfunction
     virtual function void build();
       F0 = uvm_reg_field::type_id::create("F0");
-      F0.configure(this, 1, 0, "RO", 0, 1'h0, 1, 0, 0);
+      F0.configure(this, 1, 0, "RO", 1, 1'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -5184,6 +5200,7 @@ package ipcam_hd_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = ipcam_hd_soc_root_of_trust_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();

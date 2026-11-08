@@ -123,7 +123,7 @@ slaves:
       # --- network and storage ---
       - {name: eth_mac,    slot: 12, ip: Ethernet}                    # GbE MAC (GMII)
       - {name: mdio,       slot: 13, ip: MDIO, pins: {mdc: "1'b0"}}
-      - {name: sd,         slot: 14, ip: SD}
+      - {name: sd,         slot: 14, ip: SD, params: {ID_CLK_DIV: 8}, pins_vip: {model: sdc_model, vip: SD_Card-UVM-VIP, inout: [cmd, dat]}}            # SD card device model
       - {name: emmc_ctl,   slot: 15, ip: eMMC}
       - {name: qspi,       slot: 16, ip: QSPI, pins: {csn: "1'b1", sclk: "1'b0"}}
       - {name: spi,        slot: 17, ip: SPI,  pins: {csn: "1'b1"}}  # PTZ motor / pan-tilt driver

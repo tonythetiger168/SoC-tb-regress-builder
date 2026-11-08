@@ -324,9 +324,13 @@ module ipcam_soc_apb_subsys (
 
   // ---------------- slot 14: sd ----------------
   logic [0:0] sd_sd_clk;
-  tri1 [0:0] sd_cmd;      // weak pull-up, nothing else drives it
-  tri1 [3:0] sd_dat;      // weak pull-up, nothing else drives it
-  SD_apb u_sd (
+  tri1 [0:0] sd_cmd;      // weak pull-up; the device model drives it too
+  tri1 [3:0] sd_dat;      // weak pull-up; the device model drives it too
+  logic [0:0] sd_vip_cmd_s;
+  logic [0:0] sd_vip_cmd_s_oe;
+  logic [3:0] sd_vip_dat_s;
+  logic [3:0] sd_vip_dat_s_oe;
+  SD_apb #(.ID_CLK_DIV(8)) u_sd (
     .PCLK(clk), .PRESETN(rst_n), .PSEL(s_psel[14]), .PENABLE(penable), .PWRITE(pwrite),
     .PADDR(paddr[11:0]), .PWDATA(pwdata), .PSTRB(pstrb),
     .PRDATA(s_prdata[14]), .PREADY(s_pready[14]), .PSLVERR(s_pslverr[14]), .irq(irq[14]),
@@ -335,6 +339,25 @@ module ipcam_soc_apb_subsys (
     .dat(sd_dat)
 
   );
+  // pin-level device model on sd's pins (pins_vip)
+  sdc_model u_sd_dev (
+    .clk(clk),
+    .rst_n(rst_n),
+    .sd_clk(sd_sd_clk),
+    .cmd_m(sd_cmd),
+    .cmd_m_oe('1),
+    .dat_m(sd_dat),
+    .dat_m_oe('1),
+    .cmd_s(sd_vip_cmd_s),
+    .cmd_s_oe(sd_vip_cmd_s_oe),
+    .dat_s(sd_vip_dat_s),
+    .dat_s_oe(sd_vip_dat_s_oe)
+  );
+  assign sd_cmd[0] = sd_vip_cmd_s_oe[0] ? sd_vip_cmd_s[0] : 1'bz;
+  assign sd_dat[0] = sd_vip_dat_s_oe[0] ? sd_vip_dat_s[0] : 1'bz;
+  assign sd_dat[1] = sd_vip_dat_s_oe[1] ? sd_vip_dat_s[1] : 1'bz;
+  assign sd_dat[2] = sd_vip_dat_s_oe[2] ? sd_vip_dat_s[2] : 1'bz;
+  assign sd_dat[3] = sd_vip_dat_s_oe[3] ? sd_vip_dat_s[3] : 1'bz;
 
   // ---------------- slot 15: emmc_ctl ----------------
   logic [0:0] emmc_ctl_emmc_clk;

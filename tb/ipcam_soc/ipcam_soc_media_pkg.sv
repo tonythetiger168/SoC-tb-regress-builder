@@ -17,6 +17,8 @@
 // lines must equal the source lines. Buffers sit in the DDR windows the
 // traffic generator assigns to the venc / jpeg / npu ports (unused by VIP
 // traffic, since those ports are RTL), so background traffic cannot touch them.
+// The SD host runs against the SD card model on its pins and must end
+// without IRQ_STATUS.ERR.
 // Latency: the generated lat monitor prints a LAT line for every transaction,
 // including the real IPs' bursts.
 // Without the private IP RTL the ports are VIP masters and this test only
@@ -257,6 +259,16 @@ package ipcam_soc_media_pkg;
         run_venc();
         run_npu();
       join
+      check_sd();
+    endtask
+
+    // SD host (open-ip SD) runs init and write/read-back rounds on its own
+    // against the SD card device model (sdc_model, spec pins_vip); any CRC,
+    // timeout or compare problem sets IRQ_STATUS.ERR.
+    task check_sd();
+      bit [31:0] v, B = slot(APB_SLOT_SD);
+      rd32(B + 'h000, v); check("SD ID", v, 32'h5344_0200);
+      rd32(B + 'h004, v); check("SD IRQ_STATUS.ERR (card model on the pins)", v & 32'h1, 0);
     endtask
 
     function void report_phase(uvm_phase phase);

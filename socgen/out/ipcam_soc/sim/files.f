@@ -38,6 +38,7 @@ socgen/out/ipcam_soc/rtl/ip/UART_top.sv
 socgen/out/ipcam_soc/rtl/ip/UART_apb.sv
 socgen/out/ipcam_soc/rtl/ip/eMMC_top.sv
 socgen/out/ipcam_soc/rtl/ip/eMMC_apb.sv
+socgen/out/ipcam_soc/rtl/vip/sdc_model.sv
 socgen/out/ipcam_soc/rtl/ipcam_soc_pkg.sv
 socgen/out/ipcam_soc/rtl/ipcam_soc_iommu_regs.sv
 socgen/out/ipcam_soc/rtl/ipcam_soc_mm_engine_regs.sv
