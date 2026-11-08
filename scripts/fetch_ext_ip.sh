@@ -32,4 +32,9 @@ fetch() {   # name rev
 }
 fetch c1p-codec   "$C1P_REV"
 fetch xuanji-core "$XJ_REV"
-[ $ok = 1 ]
+[ $ok = 1 ] || exit 1
+# The generated IPCAM SoC benches point their RTL masters at ext/ipcam_ext.f:
+# it exists only after a successful fetch, so without access socgen falls back
+# to VIP traffic models (rtl.fallback: vip in the spec).
+cp "$REPO/sim/ipcam/ext_ip.f" "$REPO/ext/ipcam_ext.f"
+echo "[fetch_ext_ip] wrote ext/ipcam_ext.f"

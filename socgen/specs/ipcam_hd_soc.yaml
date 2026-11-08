@@ -63,11 +63,11 @@ masters:
   # scripts/fetch_ext_ip.sh. Each wrapper also serves its APB slot (apb).
   # Without ext/ the generator falls back to the VIP traffic profile.
   - {name: venc,   node: [0, 0], traffic: venc,    iommu: iommu_venc, qos: {class: nrt, priority: 8,  latency_target: 400},
-     kind: rtl, rtl: {module: ipcam_venc_c1p, filelist: sim/ipcam/ext_ip.f, apb: venc, fallback: vip}}
+     kind: rtl, rtl: {module: ipcam_venc_c1p, filelist: ext/ipcam_ext.f, apb: venc_cfg, fallback: vip}}
   - {name: jpeg,   node: [0, 0], traffic: jpeg,    iommu: iommu_jpeg, qos: {class: nrt, priority: 5},
-     kind: rtl, rtl: {module: ipcam_jpeg_c1p, filelist: sim/ipcam/ext_ip.f, apb: jpeg, fallback: vip}}
+     kind: rtl, rtl: {module: ipcam_jpeg_c1p, filelist: ext/ipcam_ext.f, apb: jpeg_cfg, fallback: vip}}
   - {name: npu,    node: [0, 0], traffic: npu,     iommu: iommu_npu,  qos: {class: nrt, priority: 6},
-     kind: rtl, rtl: {module: ipcam_npu_xj,   filelist: sim/ipcam/ext_ip.f, apb: npu,  fallback: vip}}
+     kind: rtl, rtl: {module: ipcam_npu_xj,   filelist: ext/ipcam_ext.f, apb: npu_cfg, fallback: vip}}
   - {name: eth,    node: [0, 0], traffic: eth,     qos: {class: nrt, priority: 9,  latency_target: 300}}
   - {name: sdmmc,  node: [0, 0], traffic: storage, qos: {class: be,  priority: 3}}
   - {name: emmc,   node: [0, 0], traffic: storage, qos: {class: be,  priority: 2}}
@@ -107,37 +107,51 @@ slaves:
     slot_size: 0x1000
     peripherals:
       # --- system ---
-      - {name: gpio,    slot: 0,  ip: GPIO}
-      - {name: uart,    slot: 1,  ip: UART, params: {CLK_FREQ: 500000000, BAUD: 31250000}, pins: {rxd: "1'b1"}}
-      - {name: timer,   slot: 2,  regs: timer_wdt}
-      - {name: apb_ext, slot: 3,  vip: apb}
+      - {name: gpio,       slot: 0,  ip: GPIO}
+      - {name: uart,       slot: 1,  ip: UART, params: {CLK_FREQ: 500000000, BAUD: 31250000}, pins: {rxd: "1'b1"}}
+      - {name: timer,      slot: 2,  regs: timer_wdt}
+      - {name: apb_ext,    slot: 3,  vip: apb}
       # --- sensor and image ---
-      - {name: csi2,    slot: 4,  ip: CSI_2}                       # MIPI CSI-2 receiver (D-PHY side)
-      - {name: i2c_sns, slot: 5,  ip: I2C, pins: {scl: "1'b1"}}    # sensor control (SCCB)
-      - {name: pwm,     slot: 6,  ip: PWM}                         # IR-cut filter / IR LED
-      - {name: isp,     slot: 7,  regs: mm_engine}
-      - {name: venc,    slot: 8,  rtl_master: venc, ral: c1p_hve}     # c1p HEVC encoder registers
-      - {name: jpeg,    slot: 9,  rtl_master: jpeg, ral: c1p_jpe}     # c1p JPEG encoder registers
-      - {name: npu,     slot: 10, rtl_master: npu,  ral: xj_npu_ss}   # xuanji NPU subsystem registers
-      - {name: dma,     slot: 11, regs: mm_engine}
+      - {name: csi2,       slot: 4,  ip: CSI_2}                       # MIPI CSI-2 receiver (D-PHY side)
+      - {name: i2c_sns,    slot: 5,  ip: I2C, pins: {scl: "1'b1"}}    # sensor control (SCCB)
+      - {name: pwm,        slot: 6,  ip: PWM}                         # IR-cut filter / IR LED
+      - {name: isp_cfg,    slot: 7,  regs: mm_engine}
+      - {name: venc_cfg,   slot: 8,  rtl_master: venc, ral: c1p_hve}     # c1p HEVC encoder registers
+      - {name: jpeg_cfg,   slot: 9,  rtl_master: jpeg, ral: c1p_jpe}     # c1p JPEG encoder registers
+      - {name: npu_cfg,    slot: 10, rtl_master: npu,  ral: xj_npu_ss}   # xuanji NPU subsystem registers
+      - {name: dma_cfg,    slot: 11, regs: mm_engine}
       # --- network and storage ---
-      - {name: eth,     slot: 12, ip: Ethernet}                    # GbE MAC (GMII)
-      - {name: mdio,    slot: 13, ip: MDIO, pins: {mdc: "1'b0"}}
-      - {name: sd,      slot: 14, ip: SD}
-      - {name: emmc,    slot: 15, ip: eMMC}
-      - {name: qspi,    slot: 16, ip: QSPI, pins: {csn: "1'b1", sclk: "1'b0"}}
-      - {name: spi,     slot: 17, ip: SPI,  pins: {csn: "1'b1"}}  # PTZ motor / pan-tilt driver
+      - {name: eth_mac,    slot: 12, ip: Ethernet}                    # GbE MAC (GMII)
+      - {name: mdio,       slot: 13, ip: MDIO, pins: {mdc: "1'b0"}}
+      - {name: sd,         slot: 14, ip: SD}
+      - {name: emmc_ctl,   slot: 15, ip: eMMC}
+      - {name: qspi,       slot: 16, ip: QSPI, pins: {csn: "1'b1", sclk: "1'b0"}}
+      - {name: spi,        slot: 17, ip: SPI,  pins: {csn: "1'b1"}}  # PTZ motor / pan-tilt driver
       # --- audio ---
-      - {name: i2s,     slot: 18, ip: I2S}
+      - {name: i2s,        slot: 18, ip: I2S}
       # --- security ---
-      - {name: crypto,  slot: 19, ip: Crypto___Security_Engine}
-      - {name: aes,     slot: 20, ip: AES_GCM}
-      - {name: sha3,    slot: 21, ip: SHA3}
-      - {name: trng,    slot: 22, ip: TRNG}
-      - {name: rot,     slot: 23, ip: Root_of_Trust}               # secure boot / lifecycle
+      - {name: crypto_eng, slot: 19, ip: Crypto___Security_Engine}
+      - {name: aes,        slot: 20, ip: AES_GCM}
+      - {name: sha3,       slot: 21, ip: SHA3}
+      - {name: trng,       slot: 22, ip: TRNG}
+      - {name: rot,        slot: 23, ip: Root_of_Trust}               # secure boot / lifecycle
       # IOMMU register blocks take the next free slots (24..27), in iommus order.
 
 register_blocks:
+  iommu:
+    desc: IOMMU control, page-table base, TLB maintenance and fault reporting
+    regs:
+      - {name: ID,           offset: 0x000, access: RO,  reset: 0x494F0100, desc: "code 0x494F ('IO'), version 1.0"}
+      - {name: CTRL,         offset: 0x004, access: RW,  reset: 0x0, fields: [{name: EN, bits: "0"}, {name: IRQ_EN, bits: "1"}]}
+      - {name: PT_BASE,      offset: 0x008, access: RW,  reset: 0x0, fields: [{name: PPN, bits: "31:12"}]}
+      - {name: VA_BASE,      offset: 0x00C, access: RW,  reset: 0x0, fields: [{name: VPN, bits: "31:12"}]}
+      - {name: VA_SIZE,      offset: 0x010, access: RW,  reset: 0x0, fields: [{name: PAGES, bits: "31:12"}]}
+      - {name: INV,          offset: 0x014, access: WO,  reset: 0x0, desc: "write 1 to invalidate the TLB"}
+      - {name: FAULT_STATUS, offset: 0x018, access: W1C, reset: 0x0, fields: [{name: VALID, bits: "0"}, {name: WRITE, bits: "1"}, {name: PERM, bits: "2"}]}
+      - {name: FAULT_ADDR,   offset: 0x01C, access: RO,  reset: 0x0}
+      - {name: FAULT_CNT,    offset: 0x020, access: RO,  reset: 0x0}
+      - {name: TLB_HITS,     offset: 0x024, access: RO,  reset: 0x0, volatile: true}
+      - {name: TLB_MISSES,   offset: 0x028, access: RO,  reset: 0x0, volatile: true}
   # Control block for the engines that are still VIP traffic models (ISP,
   # system DMA).
   mm_engine:

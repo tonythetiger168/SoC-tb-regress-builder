@@ -16,6 +16,8 @@ TOP_soc  := soc_tb_top
 TOP_vip  := vip_tb_top
 -include $(wildcard socgen/out/*/socgen.mk)
 TOP_ipcam_ip := ipcam_ip_tb_top
+TOP_ipcam_soc_media    := ipcam_soc_tb_top
+TOP_ipcam_hd_soc_media := ipcam_hd_soc_tb_top
 TOP      := $(TOP_$(TB))
 FLIST    := $(or $(FLIST_$(TB)),sim/$(TB).f)
 JOBS     ?= $(shell nproc)
