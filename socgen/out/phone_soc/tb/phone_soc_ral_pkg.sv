@@ -302,6 +302,7 @@ package phone_soc_ral_pkg;
       TXDATA.configure(this);
       TXDATA.build();
       default_map.add_reg(TXDATA, 'h014, "RW");
+      uvm_resource_db#(bit)::set({"REG::", TXDATA.get_full_name()}, "NO_REG_TESTS", 1, this);
       RXDATA = phone_soc_uart_blk_rxdata::type_id::create("RXDATA");
       RXDATA.configure(this);
       RXDATA.build();

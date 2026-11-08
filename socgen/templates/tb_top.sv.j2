@@ -69,7 +69,7 @@ module {{ m.name }}_tb_top;
   // ---------------- RTL master {{ x.name }}: {{ x.rtl.module }} ----------------
   {{ x.rtl.module }} {% if x.rtl.params %}#({% for k, v in x.rtl.params.items() %}.{{ k }}({{ v }}){{ ', ' if not loop.last }}{% endfor %}) {% endif %}u_{{ x.name }} (
     .{{ x.rtl.clock }}({{ m.clock.name }}), .{{ x.rtl.reset }}(aresetn){% for sig in rtl_axi_sigs %},
-    .{{ x.rtl.prefix }}{{ sig }}(m_if[M_{{ x.name|upper }}].{{ sig }}{% if sig.endswith('id') %}[ID_WIDTH-1:0]{% endif %}){% endfor %}{% if x.rtl.apb %},
+    .{{ x.rtl.prefix }}{{ sig }}(m_if[M_{{ x.name|upper }}].{{ sig }}{% if sig in ('awid', 'bid', 'arid', 'rid') %}[ID_WIDTH-1:0]{% endif %}){% endfor %}{% if x.rtl.apb %},
     .psel({{ x.rtl.apb }}_psel), .penable({{ x.rtl.apb }}_penable), .pwrite({{ x.rtl.apb }}_pwrite),
     .paddr({{ x.rtl.apb }}_paddr[11:0]), .pwdata({{ x.rtl.apb }}_pwdata), .pstrb({{ x.rtl.apb }}_pstrb),
     .pready({{ x.rtl.apb }}_pready), .prdata({{ x.rtl.apb }}_prdata), .pslverr({{ x.rtl.apb }}_pslverr){% endif %}
