@@ -56,7 +56,8 @@ package phone_soc_pkg;
 
   // ---------------------------------------------------------------- address map
   localparam logic [31:0] SRAM_BASE = 32'h0000_0000;   // 64 KB window, 1 KB SRAM
-  localparam logic [31:0] APB_BASE  = 32'h1000_0000;   // 64 KB, 16 x 4 KB slots
+  localparam logic [31:0] APB_BASE  = 32'h1000_0000;   // 128 KB: two 64 KB segments of 16 x 4 KB slots
+  localparam logic [31:0] APB_SS_BASE = 32'h1001_0000; // segment 1: subsystem IP registers (ss APB port)
   localparam logic [31:0] DRAM_BASE = 32'h8000_0000;   // 2 GB LPDDR5, 32 channels
   localparam int unsigned CH_BYTES  = 32'h0400_0000;   // 64 MB per channel
 
@@ -85,7 +86,7 @@ package phone_soc_pkg;
   // NoC port (slave index) of an address
   function automatic int unsigned phone_decode(logic [31:0] a);
     if (a[31:16] == SRAM_BASE[31:16]) return S_SRAM;
-    if (a[31:16] == APB_BASE[31:16])  return S_APB;
+    if (a[31:17] == APB_BASE[31:17])  return S_APB;
     if (a[31])                        return int'(dram_channel(a));
     return S_DEF;
   endfunction
@@ -100,6 +101,35 @@ package phone_soc_pkg;
   localparam int APB_TRNG  = 6;   // open-ip TRNG_apb
   localparam int APB_IOMMU = 7;   // 7..12: IOMMU 0..5 register blocks
   localparam int APB_NSLOTS = APB_IOMMU + NIOMMU;   // 13; slots 13..15 answer PSLVERR
+
+  // Segment 1 (APB_SS_BASE, PADDR[16] = 1) goes out on the ss APB port to the
+  // subsystem IP cluster (phone_ss_ips, open-ip *_apb wrappers, real-IP build).
+  // Without the cluster the testbench answers PSLVERR there.
+  localparam int SS_CPU   = 0;   // CPU_Cluster          -> M_CPU
+  localparam int SS_GPU   = 1;   // GPU                  -> M_GPU
+  localparam int SS_NPU   = 2;   // NPU                  -> M_APU   (IOMMU 0)
+  localparam int SS_ISP   = 3;   // ISP                  -> M_ISP   (IOMMU 1)
+  localparam int SS_DISP  = 4;   // Display_Controller   -> M_DISP  (IOMMU 5)
+  localparam int SS_VDEC  = 5;   // Video_Codec (decode) -> M_VDEC  (IOMMU 3)
+  localparam int SS_VENC  = 6;   // Video_Codec (encode) -> M_VENC  (IOMMU 4)
+  localparam int SS_MODEM = 7;   // Modem                -> M_MODEM
+  localparam int SS_DMA   = 8;   // DMA                  -> M_DMA
+  localparam int SS_ADSP  = 9;   // Audio_DSP            -> M_ADSP
+  localparam int SS_SENS  = 10;  // Sensor_Hub           -> M_SCP (always-on cluster)
+  localparam int SS_INTC  = 11;  // Interrupt_Controller -> M_SCP (always-on cluster)
+  localparam int SS_TMR   = 12;  // Timer_WDT            -> M_SCP (always-on cluster)
+  localparam int SS_NSLOTS = 13;
+
+  function automatic int ss_master(int s);
+    //               CPU    GPU    NPU    ISP    DISP    VDEC    VENC    MODEM    DMA    ADSP    SENS   INTC   TMR
+    int ms[SS_NSLOTS] = '{M_CPU, M_GPU, M_APU, M_ISP, M_DISP, M_VDEC, M_VENC, M_MODEM, M_DMA, M_ADSP, M_SCP, M_SCP, M_SCP};
+    return ms[s];
+  endfunction
+  // master ports driven by the subsystem IP cluster in the real-IP build
+  function automatic bit ss_drives(int m);
+    for (int s = 0; s < SS_NSLOTS; s++) if (ss_master(s) == m) return 1;
+    return 0;
+  endfunction
 
   // ---------------------------------------------------------------- NoC mesh
   // 4 x 4 mesh, XY routing. Rows 0 and 3 carry the memory controllers

@@ -14,6 +14,7 @@
 //                                                      apb_decoder, 4 KB slots:
 //              0 GPIO  1 UART  2 ext APB (VIP)  3 I2C  4 SPI  5 PWM  6 TRNG
 //              7..12 IOMMU 0..5 registers            (GPIO..TRNG: open-ip IPs)
+//              0x1001_0000 segment: ss APB port (subsystem IP cluster registers)
 //
 // One clock (aclk), one active-low async reset. Master ports use 4-bit IDs;
 // the IOMMU-backed masters must keep IDs below 8 (8..15 are the page-table
@@ -105,6 +106,18 @@ module phone_soc_top
   input  logic [31:0] apbx_prdata,
   input  logic        apbx_pready,
   input  logic        apbx_pslverr,
+
+  // ---------------- ss APB port: segment 1 (0x1001_0000, 64 KB) ----------
+  output logic [31:0] ssp_paddr,
+  output logic        ssp_psel,
+  output logic        ssp_penable,
+  output logic        ssp_pwrite,
+  output logic [31:0] ssp_pwdata,
+  output logic [3:0]  ssp_pstrb,
+  output logic [2:0]  ssp_pprot,
+  input  logic [31:0] ssp_prdata,
+  input  logic        ssp_pready,
+  input  logic        ssp_pslverr,
 
   // ---------------- pins ----------------
   inout  tri   [7:0]  gpio,
@@ -307,8 +320,25 @@ module phone_soc_top
   logic        sl_pready  [APB_NSLOTS];
   logic        sl_pslverr [APB_NSLOTS];
 
+  // segment 0 (PADDR[16] = 0): on-chip slots; segment 1: ss APB port
+  logic        seg1, psel0;
+  logic [31:0] prdata0;
+  logic        pready0, pslverr0;
+  assign seg1    = paddr[16];
+  assign psel0   = psel & ~seg1;
+  assign prdata  = seg1 ? ssp_prdata  : prdata0;
+  assign pready  = seg1 ? ssp_pready  : pready0;
+  assign pslverr = seg1 ? ssp_pslverr : pslverr0;
+  assign ssp_paddr   = paddr;
+  assign ssp_psel    = psel & seg1;
+  assign ssp_penable = penable & seg1;
+  assign ssp_pwrite  = pwrite;
+  assign ssp_pwdata  = pwdata;
+  assign ssp_pstrb   = pstrb;
+  assign ssp_pprot   = pprot;
+
   apb_decoder #(.NSLOTS(APB_NSLOTS)) u_apb_dec (
-    .psel, .penable, .paddr, .prdata, .pready, .pslverr,
+    .psel(psel0), .penable, .paddr, .prdata(prdata0), .pready(pready0), .pslverr(pslverr0),
     .s_psel(sl_psel), .s_prdata(sl_prdata), .s_pready(sl_pready), .s_pslverr(sl_pslverr)
   );
 

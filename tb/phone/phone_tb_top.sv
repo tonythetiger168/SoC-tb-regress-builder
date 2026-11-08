@@ -49,6 +49,58 @@ module phone_tb_top;
   logic        uart_txd, spi_miso, pwm_out, pwm_n_out;
   logic [12:0] irq;
 
+  // ss APB port (segment 1, 0x1001_0000)
+  logic [31:0] ssp_paddr, ssp_pwdata, ssp_prdata;
+  logic [3:0]  ssp_pstrb;
+  logic [2:0]  ssp_pprot;
+  logic        ssp_psel, ssp_penable, ssp_pwrite, ssp_pready, ssp_pslverr;
+
+`ifdef PHONE_REAL_IPS
+  // ---------------- real-IP build: subsystem IP cluster ----------------
+  // The open-ip subsystem IPs drive the master ports ss_drives(m) marks; the
+  // testbench's agents on those ports are passive (monitor only).
+  localparam bit REAL_IPS = 1'b1;
+  logic [3:0]  s_awid [NM], s_arid [NM], s_wstrb [NM];
+  logic [31:0] s_awaddr [NM], s_wdata [NM], s_araddr [NM];
+  logic [7:0]  s_awlen [NM], s_arlen [NM];
+  logic [2:0]  s_awsize [NM], s_arsize [NM], s_awprot [NM], s_arprot [NM];
+  logic [1:0]  s_awburst [NM], s_arburst [NM];
+  logic        s_awvalid [NM], s_wlast [NM], s_wvalid [NM], s_bready [NM], s_arvalid [NM], s_rready [NM];
+  logic        cpu_irq, wdt_reset, isp_sns_ready, pix_valid, pix_hsync, pix_vsync;
+  logic [31:0] pix_data;
+  logic [SS_NSLOTS-1:0] ss_irq;
+  logic [15:0] sh_cnt;
+  logic        sh_valid;
+  // sensor-hub samples: one every 16 clocks, a slow ramp
+  always_ff @(posedge aclk or negedge aresetn)
+    if (!aresetn) sh_cnt <= '0; else sh_cnt <= sh_cnt + 16'd1;
+  assign sh_valid = (sh_cnt[3:0] == 4'hF);
+
+  phone_ss_ips u_ss (
+    .aclk, .aresetn,
+    .paddr(ssp_paddr), .psel(ssp_psel), .penable(ssp_penable), .pwrite(ssp_pwrite),
+    .pwdata(ssp_pwdata), .pstrb(ssp_pstrb), .prdata(ssp_prdata), .pready(ssp_pready),
+    .pslverr(ssp_pslverr),
+    .m_awid(s_awid), .m_awaddr(s_awaddr), .m_awlen(s_awlen), .m_awsize(s_awsize),
+    .m_awburst(s_awburst), .m_awprot(s_awprot), .m_awvalid(s_awvalid), .m_awready,
+    .m_wdata(s_wdata), .m_wstrb(s_wstrb), .m_wlast(s_wlast), .m_wvalid(s_wvalid), .m_wready,
+    .m_bid, .m_bresp, .m_bvalid, .m_bready(s_bready),
+    .m_arid(s_arid), .m_araddr(s_araddr), .m_arlen(s_arlen), .m_arsize(s_arsize),
+    .m_arburst(s_arburst), .m_arprot(s_arprot), .m_arvalid(s_arvalid), .m_arready,
+    .m_rid, .m_rdata, .m_rresp, .m_rlast, .m_rvalid, .m_rready(s_rready),
+    .irq_in(irq), .cpu_irq, .wdt_reset, .ss_irq,
+    .isp_sns_valid(1'b0), .isp_sns_data(32'h0), .isp_sns_ready,      // ISP uses its test pattern
+    .pix_valid, .pix_data, .pix_hsync, .pix_vsync, .pix_ready(1'b1),   // panel always ready
+    .sh_sns_valid(sh_valid), .sh_sns_data({4'h0, sh_cnt[15:4]})
+  );
+`else
+  localparam bit REAL_IPS = 1'b0;
+  // no subsystem IP cluster: segment 1 answers PSLVERR
+  assign ssp_prdata  = 32'h0;
+  assign ssp_pready  = 1'b1;
+  assign ssp_pslverr = 1'b1;
+`endif
+
   for (genvar i = 0; i < NM; i++) begin : g_m
     assign m_awid[i]    = m_if[i].awid[3:0];
     assign m_awaddr[i]  = m_if[i].awaddr;
@@ -81,6 +133,22 @@ module phone_tb_top;
     assign m_if[i].rlast  = m_rlast[i];
     assign m_if[i].rvalid = m_rvalid[i];
     assign m_rready[i]  = m_if[i].rready;
+`ifdef PHONE_REAL_IPS
+    if (ss_drives(i)) begin : g_ip       // the IP drives the port, the agent only monitors
+      assign m_if[i].awid = {4'h0, s_awid[i]};   assign m_if[i].awaddr = s_awaddr[i];
+      assign m_if[i].awlen = s_awlen[i];         assign m_if[i].awsize = s_awsize[i];
+      assign m_if[i].awburst = s_awburst[i];     assign m_if[i].awprot = s_awprot[i];
+      assign m_if[i].awvalid = s_awvalid[i];     assign m_if[i].wdata = s_wdata[i];
+      assign m_if[i].wstrb = s_wstrb[i];         assign m_if[i].wlast = s_wlast[i];
+      assign m_if[i].wvalid = s_wvalid[i];       assign m_if[i].bready = s_bready[i];
+      assign m_if[i].arid = {4'h0, s_arid[i]};   assign m_if[i].araddr = s_araddr[i];
+      assign m_if[i].arlen = s_arlen[i];         assign m_if[i].arsize = s_arsize[i];
+      assign m_if[i].arburst = s_arburst[i];     assign m_if[i].arprot = s_arprot[i];
+      assign m_if[i].arvalid = s_arvalid[i];     assign m_if[i].rready = s_rready[i];
+      assign m_if[i].awlock = 1'b0;  assign m_if[i].arlock = 1'b0;
+      assign m_if[i].awcache = 4'h0; assign m_if[i].arcache = 4'h0;
+    end
+`endif
     axi4_sva #(.NAME($sformatf("m%0d", i))) u_sva (m_if[i]);
     initial uvm_config_db#(virtual axi4_if)::set(null, $sformatf("uvm_test_top.env.m%0d_agent*", i),
                                                  "vif", m_if[i]);
@@ -144,6 +212,8 @@ module phone_tb_top;
     .apbx_pwrite(apbx_if.pwrite), .apbx_pwdata(apbx_if.pwdata), .apbx_pstrb(apbx_if.pstrb),
     .apbx_pprot(apbx_if.pprot), .apbx_prdata(apbx_if.prdata), .apbx_pready(apbx_if.pready),
     .apbx_pslverr(apbx_if.pslverr),
+    .ssp_paddr, .ssp_psel, .ssp_penable, .ssp_pwrite, .ssp_pwdata, .ssp_pstrb, .ssp_pprot,
+    .ssp_prdata, .ssp_pready, .ssp_pslverr,
     .gpio, .uart_rxd(uart_txd), .uart_txd,                     // UART looped back
     .i2c_sda, .i2c_scl(1'b1),                                  // I2C bus idle
     .spi_sclk(1'b0), .spi_mosi(1'b0), .spi_miso, .spi_csn(1'b1), // SPI deselected
@@ -168,6 +238,7 @@ module phone_tb_top;
   initial begin
     uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top.env.apbx_agent*", "vif", apbx_if);
     uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top.env.apb_mon_agent*", "vif", apbi_if);
+    uvm_config_db#(bit)::set(null, "uvm_test_top*", "real_ips", REAL_IPS);
     run_test();
   end
 

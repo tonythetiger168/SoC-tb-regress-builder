@@ -46,6 +46,8 @@ package phone_env_pkg;
     lpddr5_cfg   lp_cfg [NCH];
     mem_model    ch_mem [NCH];
     int unsigned max_delay = 2;        // master-side random gaps
+    bit          real_ips;             // subsystem IP cluster drives ss_drives() ports
+    int          host_m = M_CPU;       // port that runs software (RAL frontdoor, job setup)
 
     function new(string name = "phone_env_cfg");
       super.new(name);
@@ -78,6 +80,15 @@ package phone_env_pkg;
         ch_cfg[c].err_ranges.delete();
         ch_cfg[c].add_err_range(ddr_err_lo, ddr_err_hi, AXI4_SLVERR);
       end
+    endfunction
+
+    // real-IP build: the open-ip subsystem IPs drive their ports (agents
+    // passive) and the CPU port carries the CPU_Cluster IP, so software runs
+    // on the SEC port's VIP (the boot / secure processor programs the SoC)
+    function void set_real_ips(bit en);
+      real_ips = en;
+      host_m   = en ? M_SEC : M_CPU;
+      foreach (pm_cfg[m]) pm_cfg[m].is_active = (en && ss_drives(m)) ? UVM_PASSIVE : UVM_ACTIVE;
     endfunction
 
     function void set_speed(lpddr5_speed_e s);
@@ -330,6 +341,13 @@ package phone_env_pkg;
     virtual function void predict_apb_xfer(bit [31:0] a, bit wr, bit [3:0] strb, bit [31:0] wdata,
                                            output bit exp_err, output bit known, output bit [31:0] exp_rdata);
       int unsigned slot = a[15:12];
+      phone_env_cfg pc;
+      if (a[16]) begin                       // segment 1: subsystem IPs (RAL) or nothing (PSLVERR)
+        bit real_ips = $cast(pc, cfg) && pc.real_ips;
+        known = 1; exp_rdata = 0; exp_err = 1;
+        if (real_ips && slot < SS_NSLOTS) begin exp_err = 0; known = 0; end
+        return;
+      end
       if (slot <= APB_EXT) super.predict_apb_xfer(a, wr, strb, wdata, exp_err, known, exp_rdata);
       else if (slot < APB_NSLOTS) begin exp_err = 0; known = 0; exp_rdata = 0; end
       else begin exp_err = 1; known = 1; exp_rdata = 0; end
@@ -512,7 +530,7 @@ package phone_env_pkg;
       perf = phone_perf::type_id::create("perf", this);
 
       regmodel = phone_reg_block::type_id::create("regmodel");
-      regmodel.build();
+      regmodel.build(32'h1000_0000, cfg.real_ips);
       axi_adapter = reg2axi_adapter::type_id::create("axi_adapter");
       apb_adapter = apb2reg_adapter::type_id::create("apb_adapter");
       predictor   = uvm_reg_predictor#(apb_item)::type_id::create("predictor", this);
@@ -529,7 +547,7 @@ package phone_env_pkg;
       apb_mon_agent.ap.connect(sb.apb_imp);
       sb.rm = regmodel;
       sb.perf = perf;
-      regmodel.default_map.set_sequencer(m_agent[M_CPU].sqr, axi_adapter);
+      regmodel.default_map.set_sequencer(m_agent[cfg.host_m].sqr, axi_adapter);
       regmodel.default_map.set_auto_predict(0);
       predictor.map     = regmodel.default_map;
       predictor.adapter = apb_adapter;

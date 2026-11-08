@@ -16,6 +16,8 @@
 //   phone_gaming_test    GPU render / DISP scan-out ping-pong, CPU, MODEM, SCP
 //   phone_ai_test        CPU loads weights, APU inference, ISP frames, SEC, DMA
 //   phone_stress_test    all 15 masters at once, heavy back-pressure, faults
+//   phone_ss_test        real-IP build only: every open-ip subsystem IP runs
+//                        jobs checked against reference models
 // Plusargs: +SOC_ITEMS=<n>, +SOC_TIMING=<0|1|2>, +LP5_SPEED=<0..3>
 // (5500 / 6400 / 7500 / 8533), +LP5_PAGE=<0 open|1 closed>,
 // +LP5_REF=<0 all-bank|1 per-bank>.
@@ -181,6 +183,10 @@ package phone_test_pkg;
       int v;
       super.build_phase(phase);
       cfg = phone_env_cfg::type_id::create("cfg");
+      begin
+        bit r;
+        if (uvm_config_db#(bit)::get(this, "", "real_ips", r)) cfg.set_real_ips(r);
+      end
       configure();
       if ($value$plusargs("SOC_ITEMS=%d", v))  n_items = v;
       if ($value$plusargs("SOC_TIMING=%d", v)) timing = v;
@@ -397,6 +403,7 @@ package phone_test_pkg;
       rd32(M_CPU, 32'h4000_0000, d, AXI4_DECERR);       // IOVA space is unmapped for the NoC
       wr32(M_MODEM, 32'h2000_0000, 32'h1, AXI4_DECERR);
       rd32(M_CPU, APB_BASE + 32'hE000, d, AXI4_SLVERR);   // unmapped APB slot
+      rd32(M_CPU, APB_SS_BASE, d, AXI4_SLVERR);           // subsystem IP segment, no IP cluster
     endtask
   endclass
 
@@ -442,7 +449,7 @@ package phone_test_pkg;
       // a short burst of the RAL mirror against a raw AXI read
       begin
         bit [31:0] d;
-        rd32(M_CPU, APB_BASE + 32'h7000 + 32'h00C, d);
+        rd32(cfg.host_m, APB_BASE + 32'h7000 + 32'h00C, d);
         if (d != 32'h4000_0000) `uvm_error("TEST", $sformatf("raw read of IOMMU0 VA_BASE = %08h", d))
       end
     endtask
@@ -751,5 +758,7 @@ package phone_test_pkg;
       for (int i = 0; i < NIOMMU; i++) check_iommu_regs(i);
     endtask
   endclass
+
+  `include "phone_ss_test.svh"
 endpackage
 `endif

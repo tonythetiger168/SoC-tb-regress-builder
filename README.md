@@ -158,7 +158,8 @@ nightly schedule uses the `nightly` profile.
   interleave with an XOR hash, per-channel bank/page/refresh timing for
   5500/6400/7500/8533 MT/s, open or closed page, all-bank or per-bank refresh.
 - SRAM at 0x0 and the APB peripherals (GPIO, UART, I2C, SPI, PWM, TRNG, the
-  IOMMU registers) at 0x1000_0000, all checked through UVM RAL.
+  IOMMU registers) at 0x1000_0000, all checked through UVM RAL. The segment
+  at 0x1001_0000 is the subsystem IPs' register space (ss APB port).
 
 Build with `make build TB=phone` (about 4 minutes) and run e.g.
 `make run TB=phone TEST=phone_camera_test`. Tests: `phone_smoke_test`,
@@ -168,13 +169,28 @@ and `phone_stress_test` (all 15 masters at once). Plusargs: `+SOC_ITEMS=<n>`,
 `+SOC_TIMING=<0|1|2>`, `+LP5_SPEED=<0..3>`, `+LP5_PAGE=<0 open|1 closed>`,
 `+LP5_REF=<0 all-bank|1 per-bank>`.
 
+**Real-IP build** (`make build TB=phone_real`, i.e. `+define+PHONE_REAL_IPS`;
+suite `phone_real`): `phone_ss_ips` puts the open-ip-portfolio subsystem IPs on
+the master ports instead of the traffic models: CPU_Cluster on CPU, GPU, NPU on
+APU, ISP, Display_Controller on DISP, two Video_Codec instances on VDEC and
+VENC, Modem, DMA, Audio_DSP on ADSP, and Sensor_Hub, Interrupt_Controller and
+Timer_WDT sharing the SCP port through `phone_aon_arb`. Their registers sit in
+a second APB segment at 0x1001_0000 (RAL blocks generated from the IP
+datasheets by `scripts/gen_phone_ss_ral.py`). The agents on those ports become
+monitors, and software (RAL, job setup) runs on the SEC port.
+`phone_ss_test` runs 18 jobs on the 12 IPs at once, VENC through IOMMU 4, and
+compares every output buffer and result register (CRCs, checksums,
+saturation counters, interrupt log) with a reference model taken from the
+IP's datasheet. ICP, CONN, UFS and SEC stay traffic models.
+
 Every burst is a `LAT` sample (master, slave port after IOMMU translation, R/W,
 cycles from the first VALID cycle at the master port to the last R beat or B),
 so the regression report has the per-path latency table, the master x slave
 heatmap and the histograms. The log also prints a per-path table with the
 ideal NoC latency next to the measured one, per-master bandwidth and per-channel
 LPDDR5 page hit / miss / conflict and refresh counts. The suites are
-`phone_soc` (use cases) plus `phone_iommu`, `phone_lpddr5` and `phone_apb`
+`phone_soc` (use cases), `phone_real` (real-IP build) plus `phone_iommu`,
+`phone_lpddr5` and `phone_apb`
 (`python3 regress/regress.py --soc phone`).
 
 ## Results

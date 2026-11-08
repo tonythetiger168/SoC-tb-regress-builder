@@ -39,6 +39,17 @@ package phone_ral_pkg;
       f = uvm_reg_field::type_id::create("f");
       f.configure(this, width, lsb, access, volatile_, reset, has_reset, 0, 0);
     endfunction
+    // multi-field registers (subsystem IPs)
+    string access_ = "RW";
+    bit    no_bash, no_reset;
+    function void add_field(string name, int unsigned lsb, int unsigned width, string access,
+                            uvm_reg_data_t reset, bit volatile_, bit has_reset = 1);
+      uvm_reg_field fl = uvm_reg_field::type_id::create(name);
+      fl.configure(this, width, lsb, access, volatile_, reset, has_reset, 0, 0);
+      if (f == null) f = fl;
+      if (access != "RW" || volatile_) no_bash = 1;
+      if (!has_reset || volatile_)     no_reset = 1;
+    endfunction
   endclass
 
   // ==========================================================================
@@ -75,6 +86,32 @@ package phone_ral_pkg;
       add("IRQ_ENABLE", 'h008, n_irq, "RW", 0);
       add("FLAGS",      'h00C, (n_flags == 0) ? 1 : n_flags, "RO", 0, n_flags != 0);
       add("SCRATCH",    'h010, 32, "RW", 0);
+    endfunction
+
+    virtual function void build();
+    endfunction
+
+    // multi-field register: add_reg, then r.add_field(...) per field, then finish()
+    phone_reg pend[$];
+    uvm_reg_addr_t pend_off[$];
+    function phone_reg add_reg(string name, uvm_reg_addr_t off, string access);
+      phone_reg r = phone_reg::type_id::create(name);
+      r.configure(this, null, "");
+      r.access_ = access;
+      regs[name] = r;
+      pend.push_back(r);
+      pend_off.push_back(off);
+      return r;
+    endfunction
+    function void finish();
+      foreach (pend[i]) begin
+        phone_reg r = pend[i];
+        default_map.add_reg(r, pend_off[i], (r.access_ == "WO") ? "WO" : (r.access_ == "RO") ? "RO" : "RW");
+        if (r.no_bash)  uvm_resource_db#(bit)::set({"REG::", r.get_full_name()}, "NO_REG_BIT_BASH_TEST", 1, this);
+        if (r.no_reset) uvm_resource_db#(bit)::set({"REG::", r.get_full_name()}, "NO_REG_HW_RESET_TEST", 1, this);
+      end
+      pend.delete();
+      pend_off.delete();
     endfunction
 
     function phone_reg r(string name);
@@ -177,6 +214,8 @@ package phone_ral_pkg;
     endfunction
   endclass
 
+  `include "phone_ss_ral.svh"
+
   // ==========================================================================
   class phone_reg_block extends uvm_reg_block;
     `uvm_object_utils(phone_reg_block)
@@ -187,12 +226,26 @@ package phone_ral_pkg;
     pwm_block   pwm;
     trng_block  trng;
     iommu_block iommu[6];
+    // subsystem IPs (real-IP build), segment 1 at base + 0x1_0000, SS_* slots
+    cpu_cluster_ss_block          ss_cpu;
+    gpu_ss_block                  ss_gpu;
+    npu_ss_block                  ss_npu;
+    isp_ss_block                  ss_isp;
+    display_controller_ss_block   ss_disp;
+    video_codec_ss_block          ss_vdec, ss_venc;
+    modem_ss_block                ss_modem;
+    dma_ss_block                  ss_dma;
+    audio_dsp_ss_block            ss_adsp;
+    sensor_hub_ss_block           ss_sens;
+    interrupt_controller_ss_block ss_intc;
+    timer_wdt_ss_block            ss_tmr;
+    phone_ip_block                ss[$];      // in SS_* slot order
 
     function new(string name = "phone_reg_block");
       super.new(name, UVM_NO_COVERAGE);
     endfunction
 
-    function void build(uvm_reg_addr_t base = 32'h1000_0000);
+    function void build(uvm_reg_addr_t base = 32'h1000_0000, bit with_ss = 0);
       default_map = create_map("apb", base, 4, UVM_LITTLE_ENDIAN);
       gpio = gpio_block::type_id::create("gpio"); gpio.configure(this); gpio.build();
       uart = uart_block::type_id::create("uart"); uart.configure(this); uart.build();
@@ -212,6 +265,30 @@ package phone_ral_pkg;
         iommu[i].build();
         default_map.add_submap(iommu[i].default_map, 'h7000 + 'h1000 * i);
       end
+      if (with_ss) begin
+        ss_cpu   = cpu_cluster_ss_block::type_id::create("ss_cpu");
+        ss_gpu   = gpu_ss_block::type_id::create("ss_gpu");
+        ss_npu   = npu_ss_block::type_id::create("ss_npu");
+        ss_isp   = isp_ss_block::type_id::create("ss_isp");
+        ss_disp  = display_controller_ss_block::type_id::create("ss_disp");
+        ss_vdec  = video_codec_ss_block::type_id::create("ss_vdec");
+        ss_venc  = video_codec_ss_block::type_id::create("ss_venc");
+        ss_modem = modem_ss_block::type_id::create("ss_modem");
+        ss_dma   = dma_ss_block::type_id::create("ss_dma");
+        ss_adsp  = audio_dsp_ss_block::type_id::create("ss_adsp");
+        ss_sens  = sensor_hub_ss_block::type_id::create("ss_sens");
+        ss_intc  = interrupt_controller_ss_block::type_id::create("ss_intc");
+        ss_tmr   = timer_wdt_ss_block::type_id::create("ss_tmr");
+        ss = '{ss_cpu, ss_gpu, ss_npu, ss_isp, ss_disp, ss_vdec, ss_venc, ss_modem, ss_dma,
+               ss_adsp, ss_sens, ss_intc, ss_tmr};
+        foreach (ss[i]) begin
+          ss[i].configure(this);
+          ss[i].build();
+          default_map.add_submap(ss[i].default_map, 'h1_0000 + 'h1000 * i);
+          // control registers start engines, timers and the watchdog: reset-checked, not bit-bashed
+          uvm_resource_db#(bit)::set({"REG::", ss[i].get_full_name(), ".*"}, "NO_REG_BIT_BASH_TEST", 1, this);
+        end
+      end
       lock_model();
       reset();
     endfunction
@@ -219,6 +296,7 @@ package phone_ral_pkg;
     function void ip_blocks(ref phone_ip_block q[$]);
       q = '{gpio, uart, i2c, spi, pwm, trng};
       foreach (iommu[i]) q.push_back(iommu[i]);
+      foreach (ss[i]) q.push_back(ss[i]);
     endfunction
   endclass
 
