@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: Display_Controller-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_display_controller
+level: subsystem
+soc: phone
+subsystem: display_controller
+description: "Standalone display controller: scan-out, sync, frame CRC, underruns. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/Display_Controller-UVM-VIP.zip
+filelist: sim/display_controller.f
+top: top_tb
+list: sim/testlist.txt

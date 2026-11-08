@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: Timer_WDT-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_timer_wdt
+level: subsystem
+soc: phone
+subsystem: timer_wdt
+description: "Standalone timer/watchdog: timers, bark/bite, timestamp ring. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/Timer_WDT-UVM-VIP.zip
+filelist: sim/timer_wdt.f
+top: top_tb
+list: sim/testlist.txt

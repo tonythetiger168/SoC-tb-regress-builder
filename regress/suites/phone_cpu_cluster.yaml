@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: CPU_Cluster-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_cpu_cluster
+level: subsystem
+soc: phone
+subsystem: cpu_cluster
+description: "Standalone CPU cluster: write pattern, check, copy. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/CPU_Cluster-UVM-VIP.zip
+filelist: sim/cpu_cluster.f
+top: top_tb
+list: sim/testlist.txt

@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: Audio_DSP-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_audio_dsp
+level: subsystem
+soc: phone
+subsystem: audio_dsp
+description: "Standalone audio DSP: gain, mix, mute, saturation, peak. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/Audio_DSP-UVM-VIP.zip
+filelist: sim/audio_dsp.f
+top: top_tb
+list: sim/testlist.txt

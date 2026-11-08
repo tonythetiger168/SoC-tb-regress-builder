@@ -109,9 +109,15 @@ and a test list per profile. Today's suites:
 | `amba_noc` | subsystem `interconnect` | address decode and DECERR |
 | `vip_selftest` | VIP | AXI4 and APB VIP loopbacks |
 
-The phone, 8K TV and IP-camera SoCs (generated from the common SoC spec) and
-the subsystem VIP benches from open-vip-portfolio join by adding their own
-suite files; nothing in the runner changes.
+| `phone_<subsystem>` (13) | subsystem | standalone benches of the phone SoC subsystem IPs (CPU cluster, GPU, NPU, ISP, video codec, display, audio DSP, modem, sensor hub, SMMU, DMA, interrupt controller, timer/WDT), packaged as `<IP>-UVM-VIP.zip` in open-vip-portfolio |
+| `vip_axim_kit` | VIP | AXI4 manager-port checker kit self-test (from the same zips) |
+
+The `phone_*` and `vip_axim_kit` suites run the zips from
+`ext/open-vip-portfolio/vips/`; fetch them with `bash scripts/fetch_vips.sh`
+(`OPEN_VIP_REF=<branch>` until they are on open-vip-portfolio's main). Without
+them those suites are listed as not run. The phone, 8K TV and IP-camera SoC
+benches (generated from the common SoC spec) join by adding their own suite
+files; nothing in the runner changes.
 
 What each run collects, and how it adds up:
 

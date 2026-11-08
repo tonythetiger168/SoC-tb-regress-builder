@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: Video_Codec-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_video_codec
+level: subsystem
+soc: phone
+subsystem: video_codec
+description: "Standalone video codec: DPCM encode/decode, checksum. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/Video_Codec-UVM-VIP.zip
+filelist: sim/video_codec.f
+top: top_tb
+list: sim/testlist.txt

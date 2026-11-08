@@ -140,10 +140,17 @@ def resolve_requirements(s, build_root):
 
 
 def list_path(s, profile):
+    """Test list for a profile; relative paths are looked up in the repo, then
+    in the suite root (so a packaged bench can use its own sim/testlist.txt)."""
     lst = s.get("list")
     if isinstance(lst, dict):
         lst = lst.get(profile) or lst.get("default")
-    return os.path.join(ROOT, lst) if lst else None
+    if not lst:
+        return None
+    for base in (ROOT, s["root"]):
+        if os.path.exists(os.path.join(base, lst)):
+            return os.path.join(base, lst)
+    sys.exit(f"{s['_path']}: test list {lst} not found")
 
 
 def parse_list(path, seeds_override, filt):
@@ -184,6 +191,26 @@ def suite_runs(s, profile, seeds_override, filt):
 
 
 # --------------------------------------------------------------------------- build
+def mem_gb():
+    """Available memory in GB (cgroup limit if tighter), or a large number if unknown."""
+    avail = 1e9
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    avail = int(line.split()[1]) / 1048576
+    except OSError:
+        pass
+    for p in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            v = open(p).read().strip()
+            if v.isdigit():
+                avail = min(avail, int(v) / 1073741824)
+        except OSError:
+            pass
+    return avail
+
+
 def build_key(s, sim, cov):
     h = hashlib.sha1(json.dumps([sim, s["root"], s["filelist"], s["top"], s["defines"], s["incdirs"],
                                  s["cov_include"] if cov else None, s["uvm"]]).encode()).hexdigest()[:8]
@@ -349,6 +376,8 @@ def main():
     ap.add_argument("--build-dir", default=os.path.join(ROOT, "build", "suites"))
     ap.add_argument("--uvm-home", default=os.environ.get("UVM_HOME", os.path.join(ROOT, "uvm-core", "src")))
     ap.add_argument("--timeout", type=int, default=900)
+    ap.add_argument("--build-jobs", type=int, default=0,
+                    help="compiler processes over all builds (default: CPUs, capped at 1 per 2.5 GB of memory)")
     a = ap.parse_args()
     cov = not a.no_cov and a.sim == "verilator"
 
@@ -401,18 +430,28 @@ def main():
             continue
         plan.append((s2, runs, note))
     build_failed = []
+    todo = {}
     for s, runs, note in plan:
         k = build_key(s, a.sim, cov)
-        if k in builds:
+        if k in todo or k in builds:
             continue
         if a.no_build and a.sim == "verilator":
             bdir = os.path.join(a.build_dir, a.sim, k)
             exe = os.path.join(bdir, "obj", "V" + s["top"])
             builds[k] = dict(key=k, dir=bdir, exe=exe) if os.path.exists(exe) else None
         else:
-            builds[k] = build(s, a.sim, a.jobs, cov, a.build_dir, a.uvm_home)
-        if builds[k] is None:
-            build_failed.append(k)
+            todo[k] = s
+    # several benches build at once, each with a share of the CPUs
+    # (a Verilator+UVM C++ compile needs about 2 GB per compiler process, so
+    # the total is capped by memory as well as by CPUs)
+    total = a.build_jobs or max(1, min(a.jobs, os.cpu_count() or 1, int(mem_gb() // 2.5) or 1))
+    par = max(1, min(len(todo), total // 4)) if a.sim == "verilator" else 1
+    per = max(1, total // par)
+    with cf.ThreadPoolExecutor(max_workers=par) as ex:
+        futs = {k: ex.submit(build, s, a.sim, per, cov, a.build_dir, a.uvm_home) for k, s in todo.items()}
+        for k, fu in futs.items():
+            builds[k] = fu.result()
+    build_failed = [k for k, b in builds.items() if b is None]
 
     t0 = time.time()
     results = {s["name"]: [] for s, _, _ in plan}

@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: GPU-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_gpu
+level: subsystem
+soc: phone
+subsystem: gpu
+description: "Standalone GPU: 2D ops on pixel lines up to 8K. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/GPU-UVM-VIP.zip
+filelist: sim/gpu.f
+top: top_tb
+list: sim/testlist.txt

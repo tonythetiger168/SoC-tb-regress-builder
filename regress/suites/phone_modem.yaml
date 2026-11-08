@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: Modem-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_modem
+level: subsystem
+soc: phone
+subsystem: modem
+description: "Standalone modem: LFSR scrambler, CRC-32. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/Modem-UVM-VIP.zip
+filelist: sim/modem.f
+top: top_tb
+list: sim/testlist.txt

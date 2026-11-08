@@ -46,7 +46,9 @@ def load_suites(dirs):
 
 
 def bench_of(meta):
-    return f"{meta['soc']}:{meta['top']}"
+    """Benches are told apart by filelist + top: suites sharing a bench merge their bins."""
+    fl = os.path.splitext(os.path.basename(meta.get("filelist", "")))[0]
+    return f"{meta['soc']}/{fl}:{meta['top']}"
 
 
 def merge_group(suites, names):

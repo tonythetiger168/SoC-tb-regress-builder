@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: Sensor_Hub-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_sensor_hub
+level: subsystem
+soc: phone
+subsystem: sensor_hub
+description: "Standalone sensor hub: averaging, packing, wake threshold, FIFO drops. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/Sensor_Hub-UVM-VIP.zip
+filelist: sim/sensor_hub.f
+top: top_tb
+list: sim/testlist.txt
