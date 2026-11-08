@@ -7,7 +7,7 @@ soc:
   prefix: phone              # SV function prefix: phone_decode(), ...
   desc: Phone SoC with 15 AXI masters, 6 IOMMUs, a 4x4 mesh NoC, 32 LPDDR5 ports and an APB peripheral bus
 
-clock: {name: aclk, period_ns: 1.0}          # NoC clock, 1 GHz
+clock: {name: aclk, period_ns: 2.0}          # NoC clock, 500 MHz (the VIPs drive 1 ns after the edge: period >= 2 ns)
 bus:   {addr_width: 32, data_width: 32, id_width: 4}
 
 noc:

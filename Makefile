@@ -8,6 +8,7 @@
 #   make suites                      list the suites
 #   make covmerge DIRS="out1 out2" OUT=cumulative
 #   make vip_build / make vip_run TEST=vip_axi4_loopback_test
+#   make build TB=<soc> for a socgen-generated bench (socgen/out/<soc>/socgen.mk)
 # SIM=verilator (default) | vcs | xrun | questa
 SIM      ?= verilator
 TEST     ?= soc_smoke_test
@@ -19,8 +20,9 @@ TOP_soc  := soc_tb_top
 TOP_vip  := vip_tb_top
 TOP_tv8k_noc := tv8k_noc_tb_top
 TOP_tv8k_noc_open := tv8k_noc_tb_top
+-include $(wildcard socgen/out/*/socgen.mk)
 TOP      := $(TOP_$(TB))
-FLIST    := sim/$(TB).f
+FLIST    := $(or $(FLIST_$(TB)),sim/$(TB).f)
 # TB=tv8k_noc needs the xuanji-core router (scripts/fetch_private_ip.sh puts it
 # in ext/); without it the build falls back to the open stand-in router
 ifeq ($(TB),tv8k_noc)

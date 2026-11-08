@@ -12,7 +12,9 @@ soc:
   prefix: tv8k
   desc: 8K HDTV SoC with 12 AXI masters, 5 IOMMUs, a 4x4 mesh NoC, 8 LPDDR5 ports and an APB peripheral bus
 
-clock: {name: aclk, period_ns: 1.0}          # NoC clock, 1 GHz
+# NoC clock is 1 GHz in silicon; simulated at 10 ns because the VIPs drive 1 ns
+# after the edge. Latency is reported in cycles, so it is the same either way.
+clock: {name: aclk, period_ns: 10.0}
 bus:   {addr_width: 32, data_width: 32, id_width: 4}
 
 noc:
