@@ -47,6 +47,7 @@ package tv8k_noc_test_pkg;
     `uvm_component_utils(tv8k_noc_sb)
     uvm_analysis_imp_mst #(axi4_item, tv8k_noc_sb) mst_imp;
     mem_model mem;
+    bit       skip_ep[int];      // endpoints whose bursts are not predicted (RTL register blocks)
     byte unsigned shadow[bit [31:0]];
     int unsigned n_checks, n_errors, n_bursts, n_decerr;
 
@@ -67,6 +68,7 @@ package tv8k_noc_test_pkg;
 
     virtual function void write_mst(axi4_item t);
       string tag = $sformatf("%s %s", ep_name(t.port), t.convert2string());
+      if (skip_ep.exists(int'(decode(t.addr)))) return;
       n_bursts++;
       if (decode(t.addr) == EP_NONE) begin
         n_decerr++;
@@ -123,6 +125,7 @@ package tv8k_noc_test_pkg;
     tv8k_route_chk  rchk;
     tv8k_noc_sb     sb;
     mem_model       mem;
+    bit             c1p_vdec = 0;   // the c1p decoder RTL is the VDEC master and S_VDECR slave
 
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
 
@@ -139,6 +142,9 @@ package tv8k_noc_test_pkg;
         uvm_config_db#(axi4_cfg)::set(this, $sformatf("m%0d_agent", m), "cfg", m_cfg[m]);
         lat[m] = tv8k_lat_mon::type_id::create($sformatf("m%0d_lat", m), this);
         lat[m].master = ep_name(m);
+        if (c1p_vdec && m == M_VDEC) begin       // RTL master: monitor only (64-bit beats)
+          m_cfg[m].is_active = UVM_PASSIVE; m_cfg[m].has_coverage = 0; lat[m].dbytes = 8;
+        end
       end
       for (int s = 0; s < NS; s++) begin
         s_cfg[s] = axi4_cfg::type_id::create($sformatf("s%0d_cfg", s));
@@ -151,16 +157,18 @@ package tv8k_noc_test_pkg;
           s_cfg[s].max_aready_delay = tmode; s_cfg[s].max_wready_delay = tmode;
           s_cfg[s].max_rvalid_gap = tmode;
         end
+        if (c1p_vdec && NM + s == S_VDECR) s_cfg[s].is_active = UVM_PASSIVE;   // c1p registers answer
         s_agent[s] = axi4_agent::type_id::create($sformatf("s%0d_agent", s), this);
         uvm_config_db#(axi4_cfg)::set(this, $sformatf("s%0d_agent", s), "cfg", s_cfg[s]);
       end
       rchk = tv8k_route_chk::type_id::create("rchk", this);
       sb = tv8k_noc_sb::type_id::create("sb", this);
       sb.mem = mem;
+      if (c1p_vdec) sb.skip_ep[S_VDECR] = 1;
     endfunction
 
     function void connect_phase(uvm_phase phase);
-      foreach (m_agent[m]) m_agent[m].ap.connect(sb.mst_imp);
+      foreach (m_agent[m]) if (!(c1p_vdec && m == M_VDEC)) m_agent[m].ap.connect(sb.mst_imp);
       foreach (s_agent[s]) s_agent[s].ap.connect(rchk.analysis_export);
     endfunction
   endclass
@@ -294,6 +302,171 @@ package tv8k_noc_test_pkg;
         axi4_api::run(env.m_agent[m].sqr, t);
       end
     endtask
+  endclass
+
+  // --------------------------------------------------------------------------
+  // VDEC subsystem: the c1p decoder (RTL) decodes an HEVC stream on the NoC.
+  // Build with sim/tv8k_vdec.f. scripts/tv8k_vdec_prep.sh makes, per stream,
+  // the firmware register script (.apb, c1p's fw/host/c1p_hevc_fw_dump) and the
+  // reference planes (.mlf.raw, c1p's scripts/c1p_hevc_model.py).
+  //   +C1P_BS=<s.265> +C1P_APB=<s.apb> +C1P_REF=<s.mlf.raw>  [+VDEC_BG=<items>]
+  // The CPU master VIP replays the script into the decoder's registers through
+  // the NoC (S_VDECR, AXI4 -> AXI4-Lite); the stream is fed on the decoder's
+  // AXI4-Stream port; the decoder writes the final pictures through its 64-bit
+  // master NI into DRAM (frame buffers relocated from the script's 0x0100_0000
+  // to this master's DRAM slice). Every sample is then compared with the model.
+  // The other masters run random background traffic (+VDEC_BG items each).
+  class tv8k_vdec_hevc_test extends tv8k_noc_base_test;
+    `uvm_component_utils(tv8k_vdec_hevc_test)
+    typedef struct { int w, h, bd, mono; int unsigned yb, cbb, crb, ys, cs; } pic_t;
+    pic_t pics[$];
+    bit [31:0] fb_off;
+    int unsigned bg_items = 40;
+    bit fw_done;
+    function new(string name, uvm_component parent); super.new(name, parent); endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      env.c1p_vdec = 1;
+      void'($value$plusargs("VDEC_BG=%d", bg_items));
+      fb_off = slice_lo(M_VDEC, S_DRAM0) - 32'h0100_0000;
+    endfunction
+
+    task wr(bit [15:0] a, bit [31:0] d);
+      axi4_resp_e r;
+      axi4_api::write32(env.m_agent[M_CPU].sqr, VDECR_BASE + a, d, r);
+      if (r != AXI4_OKAY) `uvm_error("VDEC_FW", $sformatf("write %04h=%08h: %s", a, d, r.name()))
+    endtask
+    task rd(bit [15:0] a, output bit [31:0] d);
+      axi4_resp_e r;
+      axi4_api::read32(env.m_agent[M_CPU].sqr, VDECR_BASE + a, d, r);
+      if (r != AXI4_OKAY) `uvm_error("VDEC_FW", $sformatf("read %04h: %s", a, r.name()))
+    endtask
+    task poll(bit [15:0] a, bit [31:0] m, bit [31:0] v, string what);
+      bit [31:0] d;
+      repeat (200000) begin
+        rd(a, d);
+        if ((d & m) == v) return;
+      end
+      `uvm_fatal("VDEC_FW", $sformatf("timeout polling %s (%04h = %08h)", what, a, d))
+    endtask
+
+    // replay the firmware script (same ops as c1p's tb_hevc_file)
+    task firmware();
+      string f, op;
+      int fd, typ, n, k, n_slice = 0, n_nal = 0;
+      int unsigned a, d, m, v;
+      bit [31:0] r;
+      if (!$value$plusargs("C1P_APB=%s", f)) `uvm_fatal("VDEC_FW", "+C1P_APB=<script.apb> not given")
+      fd = $fopen(f, "r");
+      if (fd == 0) `uvm_fatal("VDEC_FW", {"cannot open ", f})
+      wr(16'h0010, 32'h0000_0201);          // CTRL: fmt = HEVC, front end on
+      wr(16'h0404, 32'h0000_0064);          // IRQ_ENABLE: nal_hdr, hevc_done, hevc_err
+      while (!$feof(fd)) begin
+        if ($fscanf(fd, "%s", op) != 1) break;
+        case (op)
+          "N": begin
+            void'($fscanf(fd, "%d", typ));
+            poll(16'h0400, 32'h4, 32'h4, "IRQ_STATUS.nal_hdr");
+            rd(16'h0200, r);
+            if (int'((r[7:0] >> 1) & 8'h3F) != typ)
+              `uvm_error("VDEC_FW", $sformatf("NAL %0d type %0d, expected %0d", n_nal, (r[7:0] >> 1) & 8'h3F, typ))
+            wr(16'h0400, 32'h4);
+            n_nal++;
+          end
+          "K": begin
+            void'($fscanf(fd, "%d", n));
+            wr(16'h0224, 32'(n));
+            poll(16'h0218, 32'h8, 32'h0, "CABAC_STAT.skip");
+          end
+          "F": begin
+            pic_t p;
+            int unsigned dy, dcb, dcr;
+            void'($fscanf(fd, "%d %d %d %d %d %h %h %h %d %d %h %h %h", k, p.w, p.h, p.bd, p.mono, p.yb, p.cbb,
+                          p.crb, p.ys, p.cs, dy, dcb, dcr));
+            p.yb = p.yb + fb_off; p.cbb = p.cbb + fb_off; p.crb = p.crb + fb_off;
+            pics.push_back(p);
+          end
+          "W": begin
+            void'($fscanf(fd, "%h %h", a, d));
+            if (a inside {'h1420, 'h1424, 'h1428}) d = d + fb_off;      // frame buffer bases -> DRAM
+            wr(16'(a), d);
+            if (a == 'h1400 && d[0]) n_slice++;
+          end
+          "P": begin
+            void'($fscanf(fd, "%h %h %h", a, m, v));
+            poll(16'(a), m, v, $sformatf("P %04h", a));
+            if (a == 'h1404 && m == 'h6) begin
+              rd(16'h1404, r);
+              if (r[2]) `uvm_error("VDEC_FW", $sformatf("slice %0d HEVC_STATUS=%08h", n_slice, r))
+              rd(16'h0400, r);
+              if (r[6] || !r[5]) `uvm_error("VDEC_FW", $sformatf("slice %0d IRQ_STATUS=%08h", n_slice, r))
+              wr(16'h0400, 32'h60);
+            end
+          end
+          "X": wr(16'h0208, 32'h4);
+          default: `uvm_fatal("VDEC_FW", {"bad script op ", op})
+        endcase
+      end
+      $fclose(fd);
+      `uvm_info("VDEC_FW", $sformatf("script done: %0d NALs, %0d slices, %0d pictures", n_nal, n_slice,
+                pics.size()), UVM_NONE)
+      #20us;                                // last frame-buffer writes drain through the NoC
+      fw_done = 1;
+    endtask
+
+    virtual task traffic(int m);
+      if (m == M_CPU) firmware();
+      else if (m != M_VDEC && bg_items != 0) begin
+        tv8k_mix_seq s = tv8k_mix_seq::type_id::create($sformatf("bg%0d", m));
+        s.m = m; s.n_items = bg_items; s.decerr_pct = 0;
+        s.start(env.m_agent[m].sqr);
+      end
+    endtask
+
+    function int unsigned rd16(bit [31:0] a);
+      return {env.mem.read_byte(mem_addr_t'(a + 1)), env.mem.read_byte(mem_addr_t'(a))};
+    endfunction
+
+    // the decoded planes in DRAM against the model's final (loop-filtered) planes
+    function void check_phase(uvm_phase phase);
+      string f;
+      int fd, n_bad = 0, i = 0;
+      byte unsigned raw[];
+      int unsigned n_ref;
+      super.check_phase(phase);
+      if (!fw_done) begin `uvm_error("VDEC", "firmware script did not finish") return; end
+      if (!$value$plusargs("C1P_REF=%s", f)) begin `uvm_error("VDEC", "+C1P_REF=<planes.raw> not given") return; end
+      fd = $fopen(f, "rb");
+      if (fd == 0) begin `uvm_error("VDEC", {"cannot open ", f}) return; end
+      void'($fseek(fd, 0, 2)); n_ref = $ftell(fd) / 2; void'($fseek(fd, 0, 0));
+      raw = new[n_ref * 2];
+      foreach (raw[j]) raw[j] = byte'($fgetc(fd));
+      $fclose(fd);
+      foreach (pics[pi]) begin
+        pic_t p = pics[pi];
+        for (int pl = 0; pl < (p.mono ? 1 : 3); pl++) begin
+          int w = pl ? p.w / 2 : p.w, h = pl ? p.h / 2 : p.h;
+          int unsigned base = (pl == 0) ? p.yb : (pl == 1) ? p.cbb : p.crb;
+          int unsigned stride = pl ? p.cs : p.ys;
+          for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) begin
+              int unsigned got = rd16(base + y * stride + 2 * x), exp;
+              if (i >= n_ref) begin i++; continue; end
+              exp = {raw[2 * i + 1], raw[2 * i]};
+              if (got != exp && n_bad++ < 10)
+                `uvm_error("VDEC", $sformatf("pic %0d plane %0d (%0d,%0d) @%08h: %03h, model %03h", pi, pl, x, y,
+                           base + y * stride + 2 * x, got, exp))
+              env.sb.n_checks++;
+              i++;
+            end
+        end
+      end
+      if (n_bad > 10) `uvm_error("VDEC", $sformatf("%0d samples differ in total", n_bad))
+      if (i != n_ref) `uvm_error("VDEC", $sformatf("%0d samples decoded, the model has %0d", i, n_ref))
+      `uvm_info("VDEC", $sformatf("%0d pictures, %0d samples compared with the model, %0d differ", pics.size(), i,
+                n_bad), UVM_NONE)
+    endfunction
   endclass
 endpackage
 `endif

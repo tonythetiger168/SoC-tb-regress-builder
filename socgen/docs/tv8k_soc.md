@@ -116,3 +116,30 @@ read, avg write and p99 read heatmaps (master x target), the DRAM read range
 per master against its budget, bandwidth per master, and per-master CDFs.
 The NoC bench has no QoS arbitration yet, so the hotspot test misses the
 real-time budgets on purpose; that is reported as a warning.
+
+## VDEC subsystem: the c1p decoder on the NoC (built now)
+
+`sim/tv8k_vdec.f` puts the c1p decoder RTL (`c1p_dec_axi_top`, private
+c1p-codec, fetched into `ext/`) on the NoC as the VDEC:
+
+* its 64-bit AXI4 master (single-beat frame-buffer writes, bitstream ring and
+  output-stage reads) on a 64-bit master NI,
+* its 64 KB AXI4-Lite register port behind slave port `vdec_regs`
+  (0x1100_0000) through `rtl/tv8k/tv8k_axi2axil.sv`,
+* the bitstream on its AXI4-Stream port.
+
+`tv8k_vdec_hevc_test` has the CPU master VIP replay the decoder firmware's
+register script (c1p `fw/host/c1p_hevc_fw_dump`) through the NoC, with the
+frame buffers relocated into the VDEC's DRAM slice; the other masters run
+background traffic. After the last slice the pictures are read from DRAM and
+compared sample by sample with c1p's reference model (`c1p_hevc_model.py`).
+
+```sh
+scripts/fetch_private_ip.sh
+make tv8k_vdec_vec                              # build/tv8k_vdec_vec/{base,lft4k}.*
+make build TB=tv8k_vdec
+make run TB=tv8k_vdec TEST=tv8k_vdec_hevc_test PLUSARGS="$(cat build/tv8k_vdec_vec/base.args)"
+```
+
+`base` (3 pictures, 200x120) and `lft4k` (16x4208) decode bit-exact. A run is
+about 3 minutes (Verilator, 200k cycles). Suite: `regress/suites/tv8k_vdec.yaml`.

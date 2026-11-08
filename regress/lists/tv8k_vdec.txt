@@ -1,0 +1,3 @@
+# tv8k VDEC: c1p HEVC decode through the NoC (vectors from scripts/tv8k_vdec_prep.sh)
+tv8k_vdec_hevc_test  1  +C1P_BS=build/tv8k_vdec_vec/base.265 +C1P_APB=build/tv8k_vdec_vec/base.apb +C1P_REF=build/tv8k_vdec_vec/base.mlf.raw
+tv8k_vdec_hevc_test  1  +C1P_BS=build/tv8k_vdec_vec/lft4k.265 +C1P_APB=build/tv8k_vdec_vec/lft4k.apb +C1P_REF=build/tv8k_vdec_vec/lft4k.mlf.raw +VDEC_BG=20

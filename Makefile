@@ -20,6 +20,7 @@ TOP_soc  := soc_tb_top
 TOP_vip  := vip_tb_top
 TOP_tv8k_noc := tv8k_noc_tb_top
 TOP_tv8k_noc_open := tv8k_noc_tb_top
+TOP_tv8k_vdec := tv8k_noc_tb_top
 -include $(wildcard socgen/out/*/socgen.mk)
 TOP      := $(TOP_$(TB))
 FLIST    := $(or $(FLIST_$(TB)),sim/$(TB).f)
@@ -74,7 +75,14 @@ endif
 run:
 	$(RUN_CMD)
 
-regress:
+# HEVC vectors for the tv8k VDEC bench (needs ext/c1p-codec)
+TV8K_VDEC_VEC ?= base lft4k
+.PHONY: tv8k_vdec_vec
+tv8k_vdec_vec:
+	@if [ -d ext/c1p-codec ]; then scripts/tv8k_vdec_prep.sh build/tv8k_vdec_vec $(TV8K_VDEC_VEC); \
+	else echo "ext/c1p-codec not fetched: tv8k_vdec suites will not run"; fi
+
+regress: tv8k_vdec_vec
 	python3 regress/regress.py --sim $(SIM) --jobs $(JOBS) --profile $(PROFILE) --out $(OUT) \
 	  $(if $(LIST),--list $(LIST),) $(foreach s,$(SUITE),--suite '$(s)') $(foreach l,$(LEVEL),--level $(l)) \
 	  $(foreach c,$(SOC),--soc $(c))
