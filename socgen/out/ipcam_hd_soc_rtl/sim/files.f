@@ -39,8 +39,11 @@ socgen/out/ipcam_hd_soc_rtl/rtl/ip/UART_apb.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/eMMC_top.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/eMMC_apb.sv
 -f ext/ipcam_ext.f
+tb/ipcam_soc/devices/csi2_tx_model.sv
+tb/ipcam_soc/devices/gmii_phy_model.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/vip/sdc_model.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/vip/emd_model.sv
+tb/ipcam_soc/devices/i2s_codec_model.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ipcam_hd_soc_pkg.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ipcam_hd_soc_iommu_regs.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ipcam_hd_soc_mm_engine_regs.sv

@@ -185,13 +185,27 @@ module ipcam_hd_soc_apb_subsys (
   assign irq[3] = 1'b0;
 
   // ---------------- slot 4: csi2 ----------------
+  logic [0:0] csi2_vip_rx_valid;
+  logic [0:0] csi2_vip_rx_bit;
+  logic [15:0] csi2_vip_frames_sent;
+  logic [0:0] csi2_vip_done;
   CSI_2_apb u_csi2 (
     .PCLK(clk), .PRESETN(rst_n), .PSEL(s_psel[4]), .PENABLE(penable), .PWRITE(pwrite),
     .PADDR(paddr[11:0]), .PWDATA(pwdata), .PSTRB(pstrb),
     .PRDATA(s_prdata[4]), .PREADY(s_pready[4]), .PSLVERR(s_pslverr[4]), .irq(irq[4]),
-    .rx_bit('0),
-    .rx_valid('0)
+    .rx_bit(csi2_vip_rx_bit),
+    .rx_valid(csi2_vip_rx_valid)
 
+  );
+  // pin-level device model on csi2's pins (pins_vip)
+  csi2_tx_model #(.FRAMES(2), .LINES(4), .WIDTH(16)) u_csi2_dev (
+    .clk(clk),
+    .rst_n(rst_n),
+    .en(1'b1),
+    .rx_valid(csi2_vip_rx_valid),
+    .rx_bit(csi2_vip_rx_bit),
+    .frames_sent(csi2_vip_frames_sent),
+    .done(csi2_vip_done)
   );
 
   // ---------------- slot 5: i2c_sns ----------------
@@ -298,6 +312,13 @@ module ipcam_hd_soc_apb_subsys (
   logic [7:0] eth_mac_gtxd;
   logic [0:0] eth_mac_gtx_en;
   logic [0:0] eth_mac_gtx_er;
+  logic [7:0] eth_mac_vip_grxd;
+  logic [0:0] eth_mac_vip_grx_dv;
+  logic [0:0] eth_mac_vip_grx_er;
+  logic [15:0] eth_mac_vip_rx_good;
+  logic [15:0] eth_mac_vip_rx_bad;
+  logic [15:0] eth_mac_vip_tx_frames;
+  logic [15:0] eth_mac_vip_echo_drop;
   Ethernet_apb u_eth_mac (
     .PCLK(clk), .PRESETN(rst_n), .PSEL(s_psel[12]), .PENABLE(penable), .PWRITE(pwrite),
     .PADDR(paddr[11:0]), .PWDATA(pwdata), .PSTRB(pstrb),
@@ -305,10 +326,25 @@ module ipcam_hd_soc_apb_subsys (
     .gtxd(eth_mac_gtxd),
     .gtx_en(eth_mac_gtx_en),
     .gtx_er(eth_mac_gtx_er),
-    .grxd('0),
-    .grx_dv('0),
-    .grx_er('0)
+    .grxd(eth_mac_vip_grxd),
+    .grx_dv(eth_mac_vip_grx_dv),
+    .grx_er(eth_mac_vip_grx_er)
 
+  );
+  // pin-level device model on eth_mac's pins (pins_vip)
+  gmii_phy_model #(.DIV(31), .GEN_N(2), .START(200)) u_eth_mac_dev (
+    .clk(clk),
+    .rst_n(rst_n),
+    .gtxd(eth_mac_gtxd),
+    .gtx_en(eth_mac_gtx_en),
+    .gtx_er(eth_mac_gtx_er),
+    .grxd(eth_mac_vip_grxd),
+    .grx_dv(eth_mac_vip_grx_dv),
+    .grx_er(eth_mac_vip_grx_er),
+    .rx_good(eth_mac_vip_rx_good),
+    .rx_bad(eth_mac_vip_rx_bad),
+    .tx_frames(eth_mac_vip_tx_frames),
+    .echo_drop(eth_mac_vip_echo_drop)
   );
 
   // ---------------- slot 13: mdio ----------------
@@ -423,15 +459,38 @@ module ipcam_hd_soc_apb_subsys (
 
   // ---------------- slot 18: i2s ----------------
   logic [0:0] i2s_sdout;
+  logic [0:0] i2s_vip_bclk;
+  logic [0:0] i2s_vip_lrck;
+  logic [0:0] i2s_vip_sdin;
+  logic [0:0] i2s_vip_dac_valid;
+  logic [15:0] i2s_vip_dac_left;
+  logic [15:0] i2s_vip_dac_right;
+  logic [31:0] i2s_vip_dac_frame;
+  logic [0:0] i2s_vip_done;
   I2S_apb u_i2s (
     .PCLK(clk), .PRESETN(rst_n), .PSEL(s_psel[18]), .PENABLE(penable), .PWRITE(pwrite),
     .PADDR(paddr[11:0]), .PWDATA(pwdata), .PSTRB(pstrb),
     .PRDATA(s_prdata[18]), .PREADY(s_pready[18]), .PSLVERR(s_pslverr[18]), .irq(irq[18]),
-    .bclk('0),
-    .lrck('0),
-    .sdin('0),
+    .bclk(i2s_vip_bclk),
+    .lrck(i2s_vip_lrck),
+    .sdin(i2s_vip_sdin),
     .sdout(i2s_sdout)
 
+  );
+  // pin-level device model on i2s's pins (pins_vip)
+  i2s_codec_model #(.DIV(8), .SLOT(32)) u_i2s_dev (
+    .clk(clk),
+    .rst_n(rst_n),
+    .en(1'b1),
+    .bclk(i2s_vip_bclk),
+    .lrck(i2s_vip_lrck),
+    .sdin(i2s_vip_sdin),
+    .sdout(i2s_sdout),
+    .dac_valid(i2s_vip_dac_valid),
+    .dac_left(i2s_vip_dac_left),
+    .dac_right(i2s_vip_dac_right),
+    .dac_frame(i2s_vip_dac_frame),
+    .done(i2s_vip_done)
   );
 
   // ---------------- slot 19: crypto_eng ----------------

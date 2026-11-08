@@ -18,7 +18,9 @@
 // traffic generator assigns to the venc / jpeg / npu ports (unused by VIP
 // traffic, since those ports are RTL), so background traffic cannot touch them.
 // The SD and eMMC hosts run against the card / device models on their pins
-// (spec pins_vip) and must end without IRQ_STATUS.ERR.
+// (spec pins_vip) and must end without IRQ_STATUS.ERR. The CSI-2 receiver,
+// GbE MAC and I2S port are fed by sensor / PHY / codec models
+// (tb/ipcam_soc/devices) and their received data is checked.
 // Latency: the generated lat monitor prints a LAT line for every transaction,
 // including the real IPs' bursts.
 // Without the private IP RTL the ports are VIP masters and this test only
@@ -253,6 +255,7 @@ package ipcam_soc_media_pkg;
 
     task body();
       load_frame();
+      setup_eth();
       fork
         if (!$test$plusargs("MEDIA_ONLY")) super.body();
         run_jpeg();
@@ -260,6 +263,9 @@ package ipcam_soc_media_pkg;
         run_npu();
       join
       check_sd();
+      check_csi2();
+      check_eth();
+      check_i2s();
     endtask
 
     // SD and eMMC hosts (open-ip SD / eMMC) run init and write/read-back rounds on its own
@@ -272,6 +278,62 @@ package ipcam_soc_media_pkg;
       B = slot(APB_SLOT_EMMC_CTL);
       rd32(B + 'h000, v); check("eMMC ID", v, 32'h654D_0300);
       rd32(B + 'h004, v); check("eMMC IRQ_STATUS.ERR (device model on the pins)", v & 32'h1, 0);
+    endtask
+
+    // CSI-2 receiver fed by csi2_tx_model (2 frames x 4 RAW8 lines of 16 B):
+    // frame / line counts, no errors, and the last line in the line buffer
+    // (pixel j of line l, frame f = j ^ l*37 ^ f*101, l and f counted from 1).
+    task check_csi2();
+      bit [31:0] v, B = slot(APB_SLOT_CSI2);
+      rd32(B + 'h000, v); check("CSI2 ID", v, 32'h4332_0200);
+      rd32(B + 'h018, v); check("CSI2 frames received", v[15:0], 2);
+                          check("CSI2 lines in the last frame", v[31:16], 4);
+      rd32(B + 'h014, v); check("CSI2 err_flags", v[4:1], 0);
+                          check("CSI2 line buffer length", v[20:5], 16);
+      rd32(B + 'h01C, v); check("CSI2 last header is Frame End (VC 0, DT 0x01)", v[7:0], 8'h01);
+      for (int j = 0; j < 16; j++) begin
+        wr32(B + 'h020, j);
+        rd32(B + 'h024, v);
+        check($sformatf("CSI2 last line byte %0d", j), v[7:0], 8'(j) ^ 8'(4 * 37) ^ 8'(2 * 101));   // line 4 of frame 2
+      end
+    endtask
+
+    // GbE MAC with gmii_phy_model: the PHY sends 2 frames to the MAC's
+    // address (set by setup_eth). Nobody drains RX during the media run, so
+    // RX keeps the first beat it captured (later ones overflow): it must be
+    // the first DA byte of a frame for this station, with no fragment seen.
+    task setup_eth();
+      bit [31:0] B = slot(APB_SLOT_ETH_MAC);
+      wr32(B + 'h018, 32'h5E10_0001);
+      wr32(B + 'h01C, 32'h0000_0200);
+    endtask
+
+    task check_eth();
+      bit [31:0] v, B = slot(APB_SLOT_ETH_MAC);
+      rd32(B + 'h000, v); check("ETH ID", v, 32'h4554_0200);
+      rd32(B + 'h004, v); check("ETH RX_AVAIL", v[5], 1);
+                          check("ETH RX_FRAG", v[2], 0);
+      rd32(B + 'h024, v); check("ETH RX first byte is DA[47:40] of the station address", v[7:0], 8'h02);
+                          check("ETH RX first beat is not rx_last", v[8], 0);
+    endtask
+
+    // I2S port, i2s_codec_model is the clock master: frames arrive and the
+    // received left / right words are the codec's ADC pattern for some frame
+    // n (low 16 bits of n*0x10123 ^ 0x3C3C left, ^ 0xA55A right).
+    task check_i2s();
+      bit [31:0] v, l, r, B = slot(APB_SLOT_I2S);
+      bit hit = 0;
+      rd32(B + 'h000, v); check("I2S ID", v, 32'h4932_0200);
+      rd32(B + 'h004, v); check("I2S FRAME irq", v[0], 1);
+      rd32(B + 'h01C, l);
+      rd32(B + 'h020, r);
+      for (int unsigned n = 1; n < 20000 && !hit; n++)
+        if (l[15:0] == (16'(n * 32'h10123) ^ 16'h3C3C)) hit = 1;
+      check($sformatf("I2S RX_LEFT %04h is a codec ADC word", l[15:0]), hit, 1);
+      hit = 0;
+      for (int unsigned n = 1; n < 20000 && !hit; n++)
+        if (r[15:0] == (16'(n * 32'h10123) ^ 16'hA55A)) hit = 1;
+      check($sformatf("I2S RX_RIGHT %04h is a codec ADC word", r[15:0]), hit, 1);
     endtask
 
     function void report_phase(uvm_phase phase);

@@ -108,7 +108,8 @@ slaves:
       - {name: timer,      slot: 2,  regs: timer_wdt}
       - {name: apb_ext,    slot: 3,  vip: apb}
       # --- sensor and image ---
-      - {name: csi2,       slot: 4,  ip: CSI_2}                       # MIPI CSI-2 receiver (D-PHY side)
+      - {name: csi2,       slot: 4,  ip: CSI_2,                       # MIPI CSI-2 receiver, fed by a sensor model
+         pins_vip: {model: csi2_tx_model, files: [tb/ipcam_soc/devices/csi2_tx_model.sv], params: {FRAMES: 2, LINES: 4, WIDTH: 16}, map: {en: "1'b1"}}}
       - {name: i2c_sns,    slot: 5,  ip: I2C, pins: {scl: "1'b1"}}    # sensor control (SCCB)
       - {name: pwm,        slot: 6,  ip: PWM}                         # IR-cut filter / IR LED
       - {name: isp_cfg,    slot: 7,  regs: mm_engine}
@@ -117,14 +118,16 @@ slaves:
       - {name: npu_cfg,    slot: 10, rtl_master: npu,  ral: xj_npu_ss}   # xuanji NPU subsystem registers
       - {name: dma_cfg,    slot: 11, regs: mm_engine}
       # --- network and storage ---
-      - {name: eth_mac,    slot: 12, ip: Ethernet}                    # GbE MAC (GMII)
+      - {name: eth_mac,    slot: 12, ip: Ethernet,                    # GbE MAC (GMII), PHY model on the far end
+         pins_vip: {model: gmii_phy_model, files: [tb/ipcam_soc/devices/gmii_phy_model.sv], params: {DIV: 31, GEN_N: 2, START: 200}}}
       - {name: mdio,       slot: 13, ip: MDIO, pins: {mdc: "1'b0"}}
       - {name: sd,         slot: 14, ip: SD, params: {ID_CLK_DIV: 8}, pins_vip: {model: sdc_model, vip: SD_Card-UVM-VIP, inout: [cmd, dat]}}            # SD card device model
       - {name: emmc_ctl,   slot: 15, ip: eMMC, params: {ID_CLK_DIV: 8, RST_WAIT: 64}, pins_vip: {model: emd_model, vip: eMMC_Device-UVM-VIP, inout: [cmd, {pin: "dat[0]", port: dat0}]}}   # eMMC device model (1-bit)
       - {name: qspi,       slot: 16, ip: QSPI, pins: {csn: "1'b1", sclk: "1'b0"}}
       - {name: spi,        slot: 17, ip: SPI,  pins: {csn: "1'b1"}}  # PTZ motor / pan-tilt driver
       # --- audio ---
-      - {name: i2s,        slot: 18, ip: I2S}
+      - {name: i2s,        slot: 18, ip: I2S,                         # I2S port, codec model is the clock master
+         pins_vip: {model: i2s_codec_model, files: [tb/ipcam_soc/devices/i2s_codec_model.sv], params: {DIV: 8, SLOT: 32}, map: {en: "1'b1"}}}
       # --- security ---
       - {name: crypto_eng, slot: 19, ip: Crypto___Security_Engine}
       - {name: aes,        slot: 20, ip: AES_GCM}
