@@ -43,6 +43,8 @@ package {{ m.name }}_env_pkg;
     pattern_e    pattern;
     int unsigned blk_w, blk_h, stride;
     int unsigned gap;
+    int unsigned bw_mbps;      // requested bandwidth, 0: none
+    bit          pace;         // pace burst starts to bw_mbps
   } window_t;
 
   // scenario -1: the masters' default profiles; otherwise the scenario's
@@ -53,7 +55,7 @@ package {{ m.name }}_env_pkg;
 {% for sc in [none] + m.scenarios %}      {{ -1 if sc is none else sc.index }}: begin   // {{ 'default profiles' if sc is none else sc.name }}
         case (mi)
 {% for x in m.masters %}{% set ws = x.windows if sc is none else sc.windows.get(x.name) %}{% set pr = x.traffic if sc is none else sc.masters.get(x.name) %}{% if ws %}          M_{{ x.name|upper }}: begin
-{% for w in ws %}            q.push_back('{ {{ 1 if w.kind == 'apb' else 0 }}, 32'h{{ '%08X'|format(w.base) }}, 32'h{{ '%08X'|format(w.size) }}, {{ pr.read_pct }}, {{ pr.beats[0] }}, {{ pr.beats[1] }}, PAT_{{ pr.pattern|upper }}, {{ pr.block[0] }}, {{ pr.block[1] }}, {{ pr.stride }}, {{ pr.gap }} });   // {{ w.group }}
+{% for w in ws %}            q.push_back('{ {{ 1 if w.kind == 'apb' else 0 }}, 32'h{{ '%08X'|format(w.base) }}, 32'h{{ '%08X'|format(w.size) }}, {{ pr.read_pct }}, {{ pr.beats[0] }}, {{ pr.beats[1] }}, PAT_{{ pr.pattern|upper }}, {{ pr.block[0] }}, {{ pr.block[1] }}, {{ pr.stride }}, {{ pr.gap }}, {{ pr.bandwidth }}, {{ 1 if pr.pace else 0 }} });   // {{ w.group }}
 {% endfor %}          end
 {% endif %}{% endfor %}          default: ;
         endcase

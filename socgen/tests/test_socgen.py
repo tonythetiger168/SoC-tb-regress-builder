@@ -130,6 +130,17 @@ class Validation(unittest.TestCase):
         m = spec.elaborate(r)
         self.assertEqual(m.apb.slots[-1].slot, 31)
 
+    def test_pace_needs_bandwidth(self):
+        def f(r):
+            r["traffic"]["dma"].pop("bandwidth_mbps", None)
+            r["traffic"]["dma"]["pace"] = True
+        self.bad(f, "pace needs bandwidth_mbps")
+
+    def test_pace_and_gap(self):
+        def f(r):
+            r["traffic"]["dma"].update(bandwidth_mbps=400, pace=True, gap=4)
+        self.bad(f, "pace and gap")
+
     def test_crossbar(self):
         r = raw("mini_soc.yaml")
         r["noc"] = {"topology": "crossbar", "timing": {"ni_cycles": 1, "router_cycles": 1, "link_cycles": 1}}
@@ -147,6 +158,20 @@ class Generate(unittest.TestCase):
         r = openip.registers(IP_ROOT, "GPIO")
         self.assertEqual(r.id, 0x4750_0200)
         self.assertEqual([x.offset for x in r.regs][:5], [0, 4, 8, 12, 16])
+
+    def test_memory_named_dram(self):
+        import socgen
+        r = raw("mini_soc.yaml")
+        r["memories"][0]["name"] = "dram"
+        for t in r["traffic"].values():
+            t["targets"] = ["dram" if x == "ddr" else x for x in t["targets"]]
+        m = spec.elaborate(r)
+        with tempfile.TemporaryDirectory() as d:
+            socgen.generate(m, d, IP_ROOT, os.path.join(SOCGEN, "specs", "mini_soc.yaml"), False)
+            with open(os.path.join(d, "rtl", "mini_soc_pkg.sv")) as f:
+                pkg = f.read()
+        names = re.findall(r"function automatic \S+(?: \[31:0\])? (\w+)\(", pkg)
+        self.assertEqual(len(names), len(set(names)), names)
 
     def test_generate_phone(self):
         import socgen
