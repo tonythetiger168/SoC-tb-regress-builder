@@ -1,0 +1,3 @@
+# test                 seeds  plusargs
+phone_ss_test          2
+phone_ral_test         1

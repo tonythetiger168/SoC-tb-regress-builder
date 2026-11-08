@@ -1,0 +1,10 @@
+# SoC-level suite of the phone SoC (phone_soc_top): use cases and stress
+name: phone_soc
+level: soc
+soc: phone
+description: Smoke plus camera, video, gaming, AI and full-load use cases across 15 masters, the mesh NoC and 32 LPDDR5 channels.
+filelist: sim/phone.f
+top: phone_tb_top
+pass_markers: [SB_PASS]
+timeout: 1800
+list: {default: regress/lists/phone_soc.txt, nightly: regress/lists/phone_soc_nightly.txt}

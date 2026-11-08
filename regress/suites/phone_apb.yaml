@@ -1,0 +1,11 @@
+# Subsystem suite: APB peripherals through UVM RAL
+name: phone_apb
+level: subsystem
+soc: phone
+subsystem: apb
+description: UVM RAL on every APB peripheral and IOMMU register block (reset values, access policies, mirror checks).
+filelist: sim/phone.f
+top: phone_tb_top
+pass_markers: [SB_PASS]
+timeout: 1800
+list: {default: regress/lists/phone_apb.txt, nightly: regress/lists/phone_apb_nightly.txt}

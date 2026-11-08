@@ -143,6 +143,56 @@ together (CI shards, several nights, a local run plus CI). CI
 three parallel jobs and merges them into one `regress_cumulative` artifact; the
 nightly schedule uses the `nightly` profile.
 
+## Phone SoC bench (`rtl/phone/`, `tb/phone/`)
+
+`phone_soc_top` is a phone-class SoC built around 32 LPDDR5 AXI slave VIPs:
+
+- **15 AXI4 masters** (traffic models for now): CPU, GPU, APU, ISP, ICP, VDEC,
+  VENC, DISP, ADSP, MODEM, CONN, SCP, UFS, SEC, DMA.
+- **6 IOMMUs** (`phone_iommu`) in front of APU, ISP, ICP, VDEC, VENC and DISP:
+  single-level page table in DRAM, 4 KB pages, 8-entry TLB, page walker,
+  permission and range faults (SLVERR), APB register block.
+- **NoC** (`phone_noc`): a behavioural 4x4 XY mesh with per-slave round-robin
+  arbitration and hop latency `2*NI + (h+1)*R + h*L` cycles each way.
+- **32 LPDDR5 channels** (`vip/lpddr5`): 64 MB each at 0x8000_0000, 4 KB
+  interleave with an XOR hash, per-channel bank/page/refresh timing for
+  5500/6400/7500/8533 MT/s, open or closed page, all-bank or per-bank refresh.
+- SRAM at 0x0 and the APB peripherals (GPIO, UART, I2C, SPI, PWM, TRNG, the
+  IOMMU registers) at 0x1000_0000, all checked through UVM RAL. The segment
+  at 0x1001_0000 is the subsystem IPs' register space (ss APB port).
+
+Build with `make build TB=phone` (about 4 minutes) and run e.g.
+`make run TB=phone TEST=phone_camera_test`. Tests: `phone_smoke_test`,
+`phone_ral_test`, `phone_iommu_test`, `phone_lpddr5_test`, the use cases
+`phone_camera_test`, `phone_video_test`, `phone_gaming_test`, `phone_ai_test`,
+and `phone_stress_test` (all 15 masters at once). Plusargs: `+SOC_ITEMS=<n>`,
+`+SOC_TIMING=<0|1|2>`, `+LP5_SPEED=<0..3>`, `+LP5_PAGE=<0 open|1 closed>`,
+`+LP5_REF=<0 all-bank|1 per-bank>`.
+
+**Real-IP build** (`make build TB=phone_real`, i.e. `+define+PHONE_REAL_IPS`;
+suite `phone_real`): `phone_ss_ips` puts the open-ip-portfolio subsystem IPs on
+the master ports instead of the traffic models: CPU_Cluster on CPU, GPU, NPU on
+APU, ISP, Display_Controller on DISP, two Video_Codec instances on VDEC and
+VENC, Modem, DMA, Audio_DSP on ADSP, and Sensor_Hub, Interrupt_Controller and
+Timer_WDT sharing the SCP port through `phone_aon_arb`. Their registers sit in
+a second APB segment at 0x1001_0000 (RAL blocks generated from the IP
+datasheets by `scripts/gen_phone_ss_ral.py`). The agents on those ports become
+monitors, and software (RAL, job setup) runs on the SEC port.
+`phone_ss_test` runs 18 jobs on the 12 IPs at once, VENC through IOMMU 4, and
+compares every output buffer and result register (CRCs, checksums,
+saturation counters, interrupt log) with a reference model taken from the
+IP's datasheet. ICP, CONN, UFS and SEC stay traffic models.
+
+Every burst is a `LAT` sample (master, slave port after IOMMU translation, R/W,
+cycles from the first VALID cycle at the master port to the last R beat or B),
+so the regression report has the per-path latency table, the master x slave
+heatmap and the histograms. The log also prints a per-path table with the
+ideal NoC latency next to the measured one, per-master bandwidth and per-channel
+LPDDR5 page hit / miss / conflict and refresh counts. The suites are
+`phone_soc` (use cases), `phone_real` (real-IP build) plus `phone_iommu`,
+`phone_lpddr5` and `phone_apb`
+(`python3 regress/regress.py --soc phone`).
+
 ## Results
 
 On Verilator 5.052, the default profile passes 36/36 runs over 6 suites and

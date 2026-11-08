@@ -1,0 +1,4 @@
+phone_ss_test          5
+phone_ss_test          2  +SS_LEN=1024
+phone_ss_test          2  +SOC_TIMING=2 +LP5_SPEED=0
+phone_ral_test         2

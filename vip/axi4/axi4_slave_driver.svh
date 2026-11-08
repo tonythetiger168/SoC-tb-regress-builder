@@ -86,6 +86,7 @@ class axi4_slave_driver extends uvm_component;
       end
       vif.slv_cb.wready <= 1'b0;
       n_writes++;
+      write_done(t);
       b_mb.put(t);
     end
   endtask
@@ -94,7 +95,8 @@ class axi4_slave_driver extends uvm_component;
     axi4_item t;
     forever begin
       b_mb.get(t);
-      repeat (axi4_cfg::rand_delay(cfg.max_b_latency)) @(vif.slv_cb);
+      @(vif.slv_cb);                       // re-sync after the mailbox wakeup
+      repeat (write_resp_delay(t)) @(vif.slv_cb);
       vif.slv_cb.bid    <= t.id;
       vif.slv_cb.bresp  <= t.resp[0];
       vif.slv_cb.bvalid <= 1'b1;
@@ -124,12 +126,14 @@ class axi4_slave_driver extends uvm_component;
     forever begin
       axi4_resp_e rsp;
       ar_mb.get(t);
+      @(vif.slv_cb);                       // re-sync after the mailbox wakeup
       rsp = cfg.resp_for(t.addr);
-      repeat (axi4_cfg::rand_delay(cfg.max_r_latency)) @(vif.slv_cb);
+      read_start(t, rsp);
       for (int unsigned i = 0; i < t.beats(); i++) begin
-        int unsigned g = (i == 0) ? 0 : axi4_cfg::rand_delay(cfg.max_rvalid_gap);
+        int unsigned g = read_beat_delay(t, i);
         if (g) begin
           vif.slv_cb.rvalid <= 1'b0;
+          vif.slv_cb.rlast  <= 1'b0;
           repeat (g) @(vif.slv_cb);
         end
         vif.slv_cb.rid    <= t.id;
@@ -144,6 +148,25 @@ class axi4_slave_driver extends uvm_component;
       n_reads++;
     end
   endtask
+
+  // ---------------------------------------------------------------- timing hooks
+  // A memory-timing model (e.g. lpddr5_pkg) extends this driver and overrides
+  // these; the defaults are the random delays of axi4_cfg.
+  // write_done: all W beats of t were accepted (t.resp[0] is set).
+  virtual function void write_done(axi4_item t);
+  endfunction
+  // clocks from the end of the W burst to BVALID
+  virtual function int unsigned write_resp_delay(axi4_item t);
+    return axi4_cfg::rand_delay(cfg.max_b_latency);
+  endfunction
+  // the read t starts service now (AR dequeued); rsp = its response
+  virtual function void read_start(axi4_item t, axi4_resp_e rsp);
+  endfunction
+  // clocks before beat i is presented (i = 0: from read_start; RVALID is
+  // low meanwhile)
+  virtual function int unsigned read_beat_delay(axi4_item t, int unsigned i);
+    return (i == 0) ? axi4_cfg::rand_delay(cfg.max_r_latency) : axi4_cfg::rand_delay(cfg.max_rvalid_gap);
+  endfunction
 
   function void report_phase(uvm_phase phase);
     `uvm_info("AXI4_SDRV", $sformatf("%s: served %0d writes, %0d reads; %s", get_full_name(),
