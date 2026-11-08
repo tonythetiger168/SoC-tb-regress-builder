@@ -34,25 +34,25 @@ noc:
 
 traffic:
   # quad-core application cluster: cache-line refills/evictions, boot code, MMIO
-  cpu:       {read_pct: 70, beats: [1, 8],   targets: [ddr, boot_sram, spi_nor, periph], bandwidth_mbps: 300}
+  cpu:       {read_pct: 70, beats: [1, 8],   targets: [ddr, boot_sram, spi_nor, periph], bandwidth_mbps: 300, pace: true}
   # ISP: writes the 4K main + 1080p sub YUV frames, reads/writes the 3DNR reference
-  isp:       {read_pct: 35, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 300}
+  isp:       {read_pct: 35, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 300, pace: true}
   # H.264/H.265: reads current + reference frames (motion search), writes recon + bitstream
-  venc:      {read_pct: 65, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 330}
+  venc:      {read_pct: 65, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 330, pace: true}
   # JPEG snapshots of the 1080p sub-stream, a few per second
-  jpeg:      {read_pct: 80, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 15}
+  jpeg:      {read_pct: 80, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 15, pace: true}
   # NPU: 640x640 detection at 15 fps plus weight fetch
-  npu:       {read_pct: 85, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 300}
+  npu:       {read_pct: 85, beats: [8, 16],  targets: [ddr], bandwidth_mbps: 300, pace: true}
   # GbE MAC DMA: mostly TX of the encoded streams (descriptor + payload reads)
-  eth:       {read_pct: 85, beats: [4, 16],  targets: [ddr], bandwidth_mbps: 40}
+  eth:       {read_pct: 85, beats: [4, 16],  targets: [ddr], bandwidth_mbps: 40, pace: true}
   # SD card recording / eMMC firmware and logs
-  storage:   {read_pct: 30, beats: [4, 16],  targets: [ddr], bandwidth_mbps: 8}
+  storage:   {read_pct: 30, beats: [4, 16],  targets: [ddr], bandwidth_mbps: 8, pace: true}
   # I2S audio DMA: small, periodic, latency sensitive
-  audio:     {read_pct: 50, beats: [1, 4],   targets: [ddr], bandwidth_mbps: 1}
+  audio:     {read_pct: 50, beats: [1, 4],   targets: [ddr], bandwidth_mbps: 1, pace: true}
   # AES/SHA engine: secure-boot image hash from SPI-NOR, SRTP/TLS on the streams
-  crypto:    {read_pct: 55, beats: [4, 16],  targets: [ddr, spi_nor], bandwidth_mbps: 25}
+  crypto:    {read_pct: 55, beats: [4, 16],  targets: [ddr, spi_nor], bandwidth_mbps: 25, pace: true}
   # system DMA: OSD overlays, buffer copies, boot image copy from SPI-NOR
-  dma:       {read_pct: 50, beats: [4, 16],  targets: [ddr, spi_nor, boot_sram], bandwidth_mbps: 100}
+  dma:       {read_pct: 50, beats: [4, 16],  targets: [ddr, spi_nor, boot_sram], bandwidth_mbps: 100, pace: true}
 
 # latency_target: read latency budget in cycles (500 MHz). Real-time masters
 # (ISP line output, audio) have FIFOs that must not overflow/underflow.

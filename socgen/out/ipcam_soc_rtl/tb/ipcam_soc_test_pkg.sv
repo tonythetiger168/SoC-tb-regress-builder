@@ -28,6 +28,7 @@ package ipcam_soc_test_pkg;
     int mi, scn = -1, items = 50;
     window_t w [$];
     int unsigned cursor [$];        // linear / block2d progress per window
+    bit pace_all;                   // +SOC_PACE: pace every profile that has bandwidth_mbps
 
     function new(string name = "ipcam_soc_traffic_seq");
       super.new(name);
@@ -81,12 +82,20 @@ package ipcam_soc_test_pkg;
       get_windows(scn, mi, w);
       if (w.size() == 0) return;
       foreach (w[i]) cursor.push_back(0);
+      pace_all = $test$plusargs("SOC_PACE");
       repeat (items) begin
         int k = $urandom_range(w.size() - 1, 0);
         axi4_item t = next(k);
+        realtime t0 = $realtime;
         start_item(t);
         finish_item(t);
-        if (w[k].gap) #(w[k].gap * TCK * 1ns);
+        if ((w[k].pace || pace_all) && w[k].bw_mbps && !w[k].apb) begin
+          // start-to-start spacing for this burst at the requested rate:
+          // bytes / (MB/s) = bytes * 1000 / bw ns
+          realtime due = t0 + (real'((t.len + 1) * 4) * 1000.0 / real'(w[k].bw_mbps)) * 1ns;
+          if ($realtime < due) #(due - $realtime);
+        end
+        else if (w[k].gap) #(w[k].gap * TCK * 1ns);
       end
     endtask
   endclass

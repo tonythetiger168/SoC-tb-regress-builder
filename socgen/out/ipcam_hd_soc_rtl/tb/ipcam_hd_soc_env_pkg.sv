@@ -43,6 +43,8 @@ package ipcam_hd_soc_env_pkg;
     pattern_e    pattern;
     int unsigned blk_w, blk_h, stride;
     int unsigned gap;
+    int unsigned bw_mbps;      // requested bandwidth, 0: none
+    bit          pace;         // pace burst starts to bw_mbps
   } window_t;
 
   // scenario -1: the masters' default profiles; otherwise the scenario's
@@ -53,43 +55,43 @@ package ipcam_hd_soc_env_pkg;
       -1: begin   // default profiles
         case (mi)
           M_CPU: begin
-            q.push_back('{ 0, 32'h80000000, 32'h05D17000, 70, 1, 8, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
-            q.push_back('{ 0, 32'h00000000, 32'h00001000, 70, 1, 8, PAT_RANDOM, 0, 0, 0, 0 });   // boot_sram
-            q.push_back('{ 0, 32'h20000000, 32'h00174000, 70, 1, 8, PAT_RANDOM, 0, 0, 0, 0 });   // spi_nor
-            q.push_back('{ 1, 32'h10000000, 32'h00020000, 70, 1, 8, PAT_RANDOM, 0, 0, 0, 0 });   // periph
+            q.push_back('{ 0, 32'h80000000, 32'h05D17000, 70, 1, 8, PAT_RANDOM, 0, 0, 0, 0, 300, 1 });   // ddr
+            q.push_back('{ 0, 32'h00000000, 32'h00001000, 70, 1, 8, PAT_RANDOM, 0, 0, 0, 0, 300, 1 });   // boot_sram
+            q.push_back('{ 0, 32'h20000000, 32'h00174000, 70, 1, 8, PAT_RANDOM, 0, 0, 0, 0, 300, 1 });   // spi_nor
+            q.push_back('{ 1, 32'h10000000, 32'h00020000, 70, 1, 8, PAT_RANDOM, 0, 0, 0, 0, 300, 1 });   // periph
           end
           M_ISP: begin
-            q.push_back('{ 0, 32'h85D17000, 32'h05D17000, 35, 8, 16, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'h85D17000, 32'h05D17000, 35, 8, 16, PAT_RANDOM, 0, 0, 0, 0, 300, 1 });   // ddr
           end
           M_VENC: begin
-            q.push_back('{ 0, 32'h8BA2E000, 32'h05D17000, 65, 8, 16, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'h8BA2E000, 32'h05D17000, 65, 8, 16, PAT_RANDOM, 0, 0, 0, 0, 330, 1 });   // ddr
           end
           M_JPEG: begin
-            q.push_back('{ 0, 32'h91745000, 32'h05D17000, 80, 8, 16, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'h91745000, 32'h05D17000, 80, 8, 16, PAT_RANDOM, 0, 0, 0, 0, 15, 1 });   // ddr
           end
           M_NPU: begin
-            q.push_back('{ 0, 32'h9745C000, 32'h05D17000, 85, 8, 16, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'h9745C000, 32'h05D17000, 85, 8, 16, PAT_RANDOM, 0, 0, 0, 0, 300, 1 });   // ddr
           end
           M_ETH: begin
-            q.push_back('{ 0, 32'h9D173000, 32'h05D17000, 85, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'h9D173000, 32'h05D17000, 85, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 40, 1 });   // ddr
           end
           M_SDMMC: begin
-            q.push_back('{ 0, 32'hA2E8A000, 32'h05D17000, 30, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'hA2E8A000, 32'h05D17000, 30, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 8, 1 });   // ddr
           end
           M_EMMC: begin
-            q.push_back('{ 0, 32'hA8BA1000, 32'h05D17000, 30, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'hA8BA1000, 32'h05D17000, 30, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 8, 1 });   // ddr
           end
           M_AUDIO: begin
-            q.push_back('{ 0, 32'hAE8B8000, 32'h05D17000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'hAE8B8000, 32'h05D17000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 1, 1 });   // ddr
           end
           M_CRYPTO: begin
-            q.push_back('{ 0, 32'hB45CF000, 32'h05D17000, 55, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
-            q.push_back('{ 0, 32'h20D14000, 32'h00174000, 55, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // spi_nor
+            q.push_back('{ 0, 32'hB45CF000, 32'h05D17000, 55, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 25, 1 });   // ddr
+            q.push_back('{ 0, 32'h20D14000, 32'h00174000, 55, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 25, 1 });   // spi_nor
           end
           M_DMA: begin
-            q.push_back('{ 0, 32'hBA2E6000, 32'h05D17000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
-            q.push_back('{ 0, 32'h20E88000, 32'h00174000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // spi_nor
-            q.push_back('{ 0, 32'h0000A000, 32'h00001000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // boot_sram
+            q.push_back('{ 0, 32'hBA2E6000, 32'h05D17000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 100, 1 });   // ddr
+            q.push_back('{ 0, 32'h20E88000, 32'h00174000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 100, 1 });   // spi_nor
+            q.push_back('{ 0, 32'h0000A000, 32'h00001000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 100, 1 });   // boot_sram
           end
           default: ;
         endcase
