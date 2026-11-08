@@ -160,6 +160,79 @@ register_blocks:
       - {name: WDT_KICK,  offset: 0x014, access: WO,  reset: 0x0}
       - {name: IRQ_STATUS, offset: 0x018, access: W1C, reset: 0x0, fields: [{name: TMR, bits: "0"}, {name: WDT, bits: "1"}]}
 
+  # Register maps of the real IPs (rtl_only: RAL model only, the registers live
+  # in the IP). Taken from c1p_jpe_regs.sv / c1p_hve_regs.sv (c1p-codec) and
+  # docs/apb.md "NPU Subsystem" (xuanji-core) at the revisions pinned in
+  # scripts/fetch_ext_ip.sh. Left out of the RAL: trigger registers (CMD,
+  # CMD_PUSH, PERF_CTRL; a RAL write would start the engine), read-to-clear
+  # registers (CPL_POP, PERF_*_LO) and the JPEG quantisation tables.
+  c1p_jpe:
+    desc: c1p JPEG encoder (c1p_jpe_regs)
+    rtl_only: true
+    regs:
+      - {name: STATUS,     offset: 0x04, access: RO,  reset: 0x0, volatile: true, fields: [{name: BUSY, bits: "0"}, {name: ERR_CODE, bits: "7:4"}]}
+      - {name: IRQ_STATUS, offset: 0x08, access: W1C, reset: 0x0, fields: [{name: DONE, bits: "0"}, {name: ERR, bits: "1"}]}
+      - {name: IRQ_ENABLE, offset: 0x0C, access: RW,  reset: 0x0, fields: [{name: DONE, bits: "0"}, {name: ERR, bits: "1"}]}
+      - {name: FMT,        offset: 0x10, access: RW,  reset: 0x0, fields: [{name: FMT, bits: "1:0"}]}
+      - {name: SIZE,       offset: 0x14, access: RW,  reset: 0x0, fields: [{name: WIDTH, bits: "13:0"}, {name: HEIGHT, bits: "29:16"}]}
+      - {name: Y_BASE,     offset: 0x18, access: RW,  reset: 0x0}
+      - {name: C_BASE,     offset: 0x1C, access: RW,  reset: 0x0}
+      - {name: STRIDE,     offset: 0x20, access: RW,  reset: 0x0, fields: [{name: Y, bits: "15:0"}, {name: C, bits: "31:16"}]}
+      - {name: OUT_BASE,   offset: 0x24, access: RW,  reset: 0x0}
+      - {name: OUT_CAP,    offset: 0x28, access: RW,  reset: 0x0}
+      - {name: DRI,        offset: 0x2C, access: RW,  reset: 0x0, fields: [{name: MCUS, bits: "15:0"}]}
+      - {name: OUT_BYTES,  offset: 0x30, access: RO,  reset: 0x0, volatile: true}
+      - {name: CYCLES,     offset: 0x34, access: RO,  reset: 0x0, volatile: true}
+      - {name: STL_IN,     offset: 0x38, access: RO,  reset: 0x0, volatile: true}
+      - {name: STL_OUT,    offset: 0x3C, access: RO,  reset: 0x0, volatile: true}
+      - {name: ID,         offset: 0xF8, access: RO,  reset: 0x4A504501}
+      - {name: CAP,        offset: 0xFC, access: RO,  reset: 0x2000000F}
+  c1p_hve:
+    desc: c1p HEVC intra encoder (c1p_hve_regs)
+    rtl_only: true
+    regs:
+      - {name: STATUS,       offset: 0x04, access: RO,  reset: 0x0, volatile: true, fields: [{name: BUSY, bits: "0"}, {name: ERR_CODE, bits: "7:4"}, {name: SLICES, bits: "31:16"}]}
+      - {name: IRQ_STATUS,   offset: 0x08, access: W1C, reset: 0x0, fields: [{name: DONE, bits: "0"}, {name: ERR, bits: "1"}, {name: SLICE, bits: "2"}]}
+      - {name: IRQ_ENABLE,   offset: 0x0C, access: RW,  reset: 0x0, fields: [{name: EN, bits: "2:0"}]}
+      - {name: SIZE,         offset: 0x10, access: RW,  reset: 0x0, fields: [{name: WIDTH, bits: "13:0"}, {name: HEIGHT, bits: "29:16"}]}
+      - {name: Y_BASE,       offset: 0x14, access: RW,  reset: 0x0}
+      - {name: C_BASE,       offset: 0x18, access: RW,  reset: 0x0}
+      - {name: STRIDE,       offset: 0x1C, access: RW,  reset: 0x0, fields: [{name: Y, bits: "15:0"}, {name: C, bits: "31:16"}]}
+      - {name: REC_Y,        offset: 0x20, access: RW,  reset: 0x0}
+      - {name: REC_C,        offset: 0x24, access: RW,  reset: 0x0}
+      - {name: REC_STRIDE,   offset: 0x28, access: RW,  reset: 0x0, fields: [{name: Y, bits: "15:0"}, {name: C, bits: "31:16"}]}
+      - {name: OUT_BASE,     offset: 0x2C, access: RW,  reset: 0x0}
+      - {name: OUT_CAP,      offset: 0x30, access: RW,  reset: 0x0}
+      - {name: PIC_CFG,      offset: 0x34, access: RW,  reset: 0xBA13031E, fields: [{name: QP, bits: "5:0", reset: 30}, {name: PS_EN, bits: "8", reset: 1}, {name: REC_EN, bits: "9", reset: 1}, {name: QMAP_EN, bits: "10"}, {name: NAL_TYPE, bits: "21:16", reset: 19}, {name: LEVEL_IDC, bits: "31:24", reset: 186}]}
+      - {name: SLICE,        offset: 0x38, access: RW,  reset: 0x0, fields: [{name: CTU_ROWS, bits: "9:0"}, {name: POC, bits: "31:16"}]}
+      - {name: MODE_MASK_LO, offset: 0x3C, access: RW,  reset: 0x44444447}
+      - {name: MODE_MASK_HI, offset: 0x40, access: RW,  reset: 0x4, fields: [{name: MASK, bits: "2:0", reset: 4}]}
+      - {name: QMAP_BASE,    offset: 0x44, access: RW,  reset: 0x0}
+      - {name: OUT_BYTES,    offset: 0x48, access: RO,  reset: 0x0, volatile: true}
+      - {name: SLICE_BYTES,  offset: 0x4C, access: RO,  reset: 0x0, volatile: true}
+      - {name: CYCLES,       offset: 0x50, access: RO,  reset: 0x0, volatile: true}
+      - {name: BINS,         offset: 0x54, access: RO,  reset: 0x0, volatile: true}
+      - {name: STL_SRC,      offset: 0x58, access: RO,  reset: 0x0, volatile: true}
+      - {name: STL_ENT,      offset: 0x5C, access: RO,  reset: 0x0, volatile: true}
+      - {name: ID,           offset: 0xF8, access: RO,  reset: 0x48564501}
+      - {name: CAP,          offset: 0xFC, access: RO,  reset: 0x20000007}
+  xj_npu_ss:
+    desc: xuanji NPU subsystem (npu_ss_regs; N=8, NCU=4, NB=4, DEPTH=1024)
+    rtl_only: true
+    regs:
+      - {name: ID,         offset: 0x000, access: RO,  reset: 0x584E0200}
+      - {name: CFG0,       offset: 0x004, access: RO,  reset: 0x0A040408}
+      - {name: CFG1,       offset: 0x008, access: RO,  reset: 0x0, volatile: true, desc: "QD, OUT, TILE_ID, CQ (build parameters)"}
+      - {name: IRQ_STATUS, offset: 0x010, access: W1C, reset: 0x0, fields: [{name: CPL, bits: "0", access: RO}, {name: CMD_OVF, bits: "1"}, {name: VEC_ERR, bits: "2"}, {name: BUS_ERR, bits: "31"}]}
+      - {name: IRQ_ENABLE, offset: 0x014, access: RW,  reset: 0x0, fields: [{name: CPL, bits: "0"}, {name: CMD_OVF, bits: "1"}, {name: VEC_ERR, bits: "2"}, {name: BUS_ERR, bits: "31"}]}
+      - {name: STATUS,     offset: 0x040, access: RO,  reset: 0x0, volatile: true, fields: [{name: BUSY, bits: "0"}, {name: CPL_AVAIL, bits: "1"}, {name: CMDQ_FULL, bits: "2"}, {name: CMDQ_EMPTY, bits: "3"}, {name: CMDQ_FREE, bits: "11:8"}]}
+      - {name: CMD_CTL,    offset: 0x060, access: RW,  reset: 0x0, fields: [{name: OP, bits: "1:0"}, {name: WT, bits: "2"}, {name: SA, bits: "3"}, {name: SB, bits: "4"}, {name: OP2, bits: "5"}, {name: ID, bits: "15:8"}, {name: K, bits: "31:16"}]}
+      - {name: CMD_EXT,    offset: 0x064, access: RW,  reset: 0x0}
+      - {name: CMD_A,      offset: 0x068, access: RW,  reset: 0x0, fields: [{name: ADDR, bits: "25:0"}]}
+      - {name: CMD_B,      offset: 0x06C, access: RW,  reset: 0x0, fields: [{name: ADDR, bits: "25:0"}]}
+      - {name: CMD_C,      offset: 0x070, access: RW,  reset: 0x0, fields: [{name: ADDR, bits: "25:0"}]}
+      - {name: CPL_PEEK,   offset: 0x084, access: RO,  reset: 0x0, volatile: true}
+
 regress:
   ral_master: cpu
   lists:
