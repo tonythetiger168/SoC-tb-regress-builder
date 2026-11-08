@@ -34,7 +34,7 @@ the SRAM, GPIO and UART are reused unchanged from
 
 | VIP | Contents |
 |---|---|
-| `vip/axi4` | `axi4_if`; `axi4_agent` in master role (driver + sequencer) or slave role (reactive memory responder); monitor (W-before-AW, several outstanding bursts, per-ID ordering); coverage; `axi4_sva` (VALID/READY handshake and payload stability, reset, WRAP length, 4 KB crossing); random burst sequence (FIXED/INCR/WRAP, narrow, unaligned, partial strobes) and directed `axi4_api` helpers |
+| `vip/axi4` | `axi4_if`; `axi4_agent` in master role (driver + sequencer) or slave role (reactive memory responder); monitor (W-before-AW, several outstanding bursts, per-ID ordering); coverage; latency recorder (`axi4_latency`); `axi4_sva` (VALID/READY handshake and payload stability, reset, WRAP length, 4 KB crossing); random burst sequence (FIXED/INCR/WRAP, narrow, unaligned, partial strobes) and directed `axi4_api` helpers |
 | `vip/apb`  | `apb_if`; `apb_agent` as requester (master), completer (slave, with random wait states and a PSLVERR window) or passive monitor; coverage; `apb_sva` (SETUP->ACCESS, stability while waiting, PSTRB on reads, X checks) |
 | `vip/mem`  | `mem_model`: sparse byte memory shared by the AXI4/APB responders, with bus-word access, backdoor peek/poke/fill/load/dump, and a deterministic init pattern for unwritten bytes so models can predict them |
 
@@ -82,25 +82,76 @@ export PATH=/opt/verilator-5.052/bin:$PATH
 
 make build                                  # ~2 min with Verilator (uvm-core is compiled in)
 make run TEST=soc_stress_test SEED=7
-make regress                                # regress/testlist.txt, all CPUs
-python3 regress/regress.py --list regress/nightly.txt --jobs 8
-python3 regress/regress.py --filter apb --seeds 20 --no-build
+make regress                                # every suite, merged coverage + latency report
+make regress PROFILE=nightly                # longer lists
+make regress LEVEL=subsystem SOC=amba       # or SUITE='amba_*'
+make suites                                 # list the suites
+python3 regress/regress.py --list regress/testlist.txt   # the old single-list mode still works
 ```
 
 `SIM=vcs|xrun|questa` switches simulator in the Makefile (those flows use the
-simulator's own UVM library and are not exercised by CI).
+simulator's own UVM library and are not exercised by CI; the regression runner
+drives them for the legacy `soc`/`vip` benches without code-coverage merging).
 
-The regression runner builds each testbench once, runs every `<test> x seed`
-in parallel and writes `regress_out/`: one log per run, `summary.csv`,
-`summary.md` and `junit.xml`. A run passes when the simulator exits cleanly,
-`UVM_ERROR` and `UVM_FATAL` are 0 and the scoreboard printed `SB_PASS`.
-CI (`.github/workflows/regress.yml`) runs the default list on every push and
-the nightly list on a schedule.
+## Regression suites and cumulative coverage
+
+Suites live in `regress/suites/*.yaml` (schema and bench contract:
+[regress/suites/README.md](regress/suites/README.md)). Each one has a level
+(`soc`, `subsystem` or `vip`), the SoC it belongs to, a bench (filelist + top)
+and a test list per profile. Today's suites:
+
+| Suite | Level | Tests |
+|---|---|---|
+| `amba_soc` | SoC | smoke, concurrent and stress traffic from both masters to every target |
+| `amba_sram` | subsystem `sram` | SRAM window and its edges |
+| `amba_ddr` | subsystem `ddr` | external DDR port bursts and error window |
+| `amba_apb` | subsystem `apb_periph` | AXI-to-APB bridge, GPIO, UART, external slot |
+| `amba_noc` | subsystem `interconnect` | address decode and DECERR |
+| `vip_selftest` | VIP | AXI4 and APB VIP loopbacks |
+
+The phone, 8K TV and IP-camera SoCs (generated from the common SoC spec) and
+the subsystem VIP benches from open-vip-portfolio join by adding their own
+suite files; nothing in the runner changes.
+
+What each run collects, and how it adds up:
+
+* **Code coverage**: benches are built with Verilator line, branch, toggle and
+  assertion coverage, limited to design RTL (`cov_include`, default `*rtl/*`).
+  Per-run `coverage.dat` files merge into each suite's, and suites merge per RTL
+  module and source line, so an IP exercised by its subsystem suite and by the
+  SoC suite is credited once with the union of both.
+* **Functional coverage**: coverage models count their bins through
+  `vip/common/fcov_pkg.sv` (`FCOV` lines; Verilator's own covergroup data is
+  reported alongside). Bins merge per bench and instance, and are also folded
+  per coverage model across all benches.
+* **Per-path latency**: `vip/common/lat_pkg.sv` takes one sample per completed
+  transaction (master, slave, R/W, cycles); `axi4_latency` feeds it from any AXI
+  master monitor. The report gives min/avg/p50/p95/p99/max per path with a
+  read/write split, a master x slave heatmap, per-path range bars and
+  histograms of the busiest paths.
+
+`regress_out/` then holds `index.html` (the cumulative dashboard: suites,
+roll-ups by level and by SoC, coverage by RTL module with the uncovered lines,
+functional coverage holes, latency charts), a page per suite with its runs and
+logs, `summary.md`, `summary.csv`, `junit.xml`, and `cumulative/` with the
+merged `coverage.dat` (feed it to `verilator_coverage --annotate`),
+`fcov.json` and `latency.json`.
+
+`regress/covmerge.py out1 out2 ... -o merged` adds several output directories
+together (CI shards, several nights, a local run plus CI). CI
+(`.github/workflows/regress.yml`) runs the SoC, subsystem and VIP suites as
+three parallel jobs and merges them into one `regress_cumulative` artifact; the
+nightly schedule uses the `nightly` profile.
 
 ## Results
 
-On Verilator 5.052: `regress/testlist.txt` passes 36/36 runs and
-`regress/nightly.txt` passes 136/136 runs (about 800,000 scoreboard checks).
+On Verilator 5.052, the default profile passes 36/36 runs over 6 suites and
+the nightly profile 136/136 runs (about 800,000 scoreboard checks). Cumulative
+coverage of the AMBA SoC RTL after the nightly profile: line 86.0%, branch
+75.5%, toggle 85.8%; functional bins 97.0% counted per coverage instance, and every bin of the AXI4
+and APB coverage models is hit by at least one instance. The SoC-level suite alone
+reaches 86.0% / 72.5% / 79.4%; adding the subsystem suites lifts branch and
+toggle coverage, which is the point of running both.
 As a sanity check of the checker itself, forcing the bridge's PSTRB to 4'hF or
 dropping the master bit from the DDR-port ID makes `soc_apb_test` and
 `soc_concurrent_test` fail.

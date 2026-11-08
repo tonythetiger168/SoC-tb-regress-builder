@@ -1,46 +1,71 @@
 name: regression
+# One job per suite level (SoC, subsystem, VIP) in parallel, then a merge job
+# that adds their coverage and latency up into one cumulative report.
 on:
   push:
   pull_request:
   schedule:
-    - cron: "0 18 * * *"        # nightly list
+    - cron: "0 18 * * *"        # nightly profile
   workflow_dispatch:
     inputs:
-      list:
-        description: test list
-        default: regress/testlist.txt
+      profile:
+        description: test-list profile (default | nightly)
+        default: default
 jobs:
   regress:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [soc, subsystem, vip]
     env:
       VERILATOR_VERSION: v5.052
       VERILATOR_PREFIX: /opt/verilator
     steps:
       - uses: actions/checkout@v4
       - name: Cache Verilator
-        id: vcache
         uses: actions/cache@v4
         with:
           path: /opt/verilator
           key: verilator-${{ env.VERILATOR_VERSION }}-${{ runner.os }}-ubuntu-24.04
       - name: Install tools
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq libfl2 ccache
+          sudo apt-get update -qq && sudo apt-get install -y -qq libfl2 ccache python3-yaml
           sudo mkdir -p /opt/verilator && sudo chown "$USER" /opt/verilator
           bash scripts/install_tools.sh
           echo "/opt/verilator/bin" >> "$GITHUB_PATH"
-      - name: Regression
+      - name: Regression (${{ matrix.level }} suites)
         run: |
-          LIST="${{ github.event.inputs.list }}"
-          if [ "${{ github.event_name }}" = "schedule" ]; then LIST=regress/nightly.txt; fi
-          python3 regress/regress.py --list "${LIST:-regress/testlist.txt}" --jobs "$(nproc)"
+          PROFILE="${{ github.event.inputs.profile }}"
+          if [ "${{ github.event_name }}" = "schedule" ]; then PROFILE=nightly; fi
+          python3 regress/regress.py --level ${{ matrix.level }} --profile "${PROFILE:-default}" \
+            --jobs "$(nproc)" --out regress_out_${{ matrix.level }}
       - name: Summary
         if: always()
-        run: cat regress_out/summary.md >> "$GITHUB_STEP_SUMMARY" || true
-      - name: Upload logs
+        run: cat regress_out_${{ matrix.level }}/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: regress_out
-          path: regress_out/
+          name: regress_out_${{ matrix.level }}
+          path: regress_out_${{ matrix.level }}/
+
+  cumulative:
+    needs: regress
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y -qq python3-yaml
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: regress_out_*
+      - name: Merge coverage and latency of every level
+        run: |
+          python3 regress/covmerge.py $(ls -d regress_out_* ) -o regress_cumulative
+          cat regress_cumulative/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: regress_cumulative
+          path: regress_cumulative/

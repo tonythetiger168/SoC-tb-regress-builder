@@ -2,7 +2,11 @@
 # AMBA SoC UVM testbench -- build and run
 #   make build                       compile the SoC testbench (Verilator by default)
 #   make run TEST=soc_smoke_test SEED=1
-#   make regress [LIST=regress/testlist.txt JOBS=4]
+#   make regress                     every suite in regress/suites/, merged coverage + latency report
+#   make regress SUITE='amba_*' LEVEL=subsystem PROFILE=nightly
+#   make regress LIST=regress/testlist.txt     (legacy single test list)
+#   make suites                      list the suites
+#   make covmerge DIRS="out1 out2" OUT=cumulative
 #   make vip_build / make vip_run TEST=vip_axi4_loopback_test
 # SIM=verilator (default) | vcs | xrun | questa
 SIM      ?= verilator
@@ -18,7 +22,12 @@ FLIST    := sim/$(TB).f
 JOBS     ?= $(shell nproc)
 PLUSARGS ?=
 
-.PHONY: build run regress vip_build vip_run uvm clean
+.PHONY: build run regress suites covmerge vip_build vip_run uvm clean
+SUITE   ?=
+LEVEL   ?=
+SOC     ?=
+PROFILE ?= default
+OUT     ?= regress_out
 
 uvm: $(UVM_HOME)/uvm_pkg.sv
 $(UVM_HOME)/uvm_pkg.sv:
@@ -54,7 +63,15 @@ run:
 	$(RUN_CMD)
 
 regress:
-	python3 regress/regress.py --sim $(SIM) --jobs $(JOBS) $(if $(LIST),--list $(LIST),)
+	python3 regress/regress.py --sim $(SIM) --jobs $(JOBS) --profile $(PROFILE) --out $(OUT) \
+	  $(if $(LIST),--list $(LIST),) $(foreach s,$(SUITE),--suite '$(s)') $(foreach l,$(LEVEL),--level $(l)) \
+	  $(foreach c,$(SOC),--soc $(c))
+
+suites:
+	python3 regress/regress.py --list-suites
+
+covmerge:
+	python3 regress/covmerge.py $(DIRS) -o $(OUT)
 
 vip_build:
 	$(MAKE) build TB=vip
