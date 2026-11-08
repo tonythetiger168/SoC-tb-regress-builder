@@ -43,6 +43,8 @@ package mini_soc_env_pkg;
     pattern_e    pattern;
     int unsigned blk_w, blk_h, stride;
     int unsigned gap;
+    int unsigned bw_mbps;      // requested bandwidth, 0: none
+    bit          pace;         // pace burst starts to bw_mbps
   } window_t;
 
   // scenario -1: the masters' default profiles; otherwise the scenario's
@@ -53,16 +55,16 @@ package mini_soc_env_pkg;
       -1: begin   // default profiles
         case (mi)
           M_CPU: begin
-            q.push_back('{ 0, 32'h80000000, 32'h05555000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
-            q.push_back('{ 0, 32'h00000000, 32'h00005000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // sram
-            q.push_back('{ 1, 32'h10000000, 32'h00010000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // periph
+            q.push_back('{ 0, 32'h80000000, 32'h05555000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'h00000000, 32'h00005000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // sram
+            q.push_back('{ 1, 32'h10000000, 32'h00010000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // periph
           end
           M_DISP: begin
-            q.push_back('{ 0, 32'h86000000, 32'h00008000, 100, 16, 16, PAT_LINEAR, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'h86000000, 32'h00008000, 100, 16, 16, PAT_LINEAR, 0, 0, 0, 0, 400, 1 });   // ddr
           end
           M_DMA: begin
-            q.push_back('{ 0, 32'h8AAAA000, 32'h05555000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
-            q.push_back('{ 0, 32'h0000A000, 32'h00005000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // sram
+            q.push_back('{ 0, 32'h8AAAA000, 32'h05555000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'h0000A000, 32'h00005000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // sram
           end
           default: ;
         endcase
@@ -70,7 +72,7 @@ package mini_soc_env_pkg;
       0: begin   // display_only
         case (mi)
           M_DISP: begin
-            q.push_back('{ 0, 32'h86000000, 32'h00008000, 100, 16, 16, PAT_LINEAR, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'h86000000, 32'h00008000, 100, 16, 16, PAT_LINEAR, 0, 0, 0, 0, 400, 1 });   // ddr
           end
           default: ;
         endcase
@@ -78,12 +80,12 @@ package mini_soc_env_pkg;
       1: begin   // blit
         case (mi)
           M_CPU: begin
-            q.push_back('{ 0, 32'h80000000, 32'h05555000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // ddr
-            q.push_back('{ 0, 32'h00000000, 32'h00005000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // sram
-            q.push_back('{ 1, 32'h10000000, 32'h00010000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // periph
+            q.push_back('{ 0, 32'h80000000, 32'h05555000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // ddr
+            q.push_back('{ 0, 32'h00000000, 32'h00005000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // sram
+            q.push_back('{ 1, 32'h10000000, 32'h00010000, 60, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // periph
           end
           M_DMA: begin
-            q.push_back('{ 0, 32'h8C000000, 32'h00002000, 50, 4, 8, PAT_BLOCK2D, 64, 8, 1024, 0 });   // ddr
+            q.push_back('{ 0, 32'h8C000000, 32'h00002000, 50, 4, 8, PAT_BLOCK2D, 64, 8, 1024, 0, 0, 0 });   // ddr
           end
           default: ;
         endcase

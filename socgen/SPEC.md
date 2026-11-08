@@ -46,6 +46,8 @@ mesh, 32 LPDDR5 ports) and `specs/mini_soc.yaml` (small, for CI).
 | `targets` | all memories | slave or memory names this master reaches in the traffic test |
 | `outstanding` | 1 | bursts in flight per master (the bundled AXI VIP drives 1) |
 | `bandwidth_mbps` | | requested bandwidth; the report shows achieved vs requested |
+| `pace` | false | space burst starts so the master issues at `bandwidth_mbps` (bytes x 1000 / MB/s ns per burst); `+SOC_PACE` turns it on for every profile with `bandwidth_mbps`. Not with `gap` |
+| `gap` | 0 | idle cycles after each burst |
 
 ## `masters[]`
 

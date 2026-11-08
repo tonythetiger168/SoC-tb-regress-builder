@@ -11,7 +11,7 @@ noc:
 
 traffic:
   cpu:  {read_pct: 60, beats: [1, 4], targets: [ddr, sram, periph]}
-  disp: {read_pct: 100, beats: 16, pattern: linear, region: {offset: 0x600_0000, size: 0x8000}, targets: [ddr]}
+  disp: {read_pct: 100, beats: 16, bandwidth_mbps: 400, pace: true, pattern: linear, region: {offset: 0x600_0000, size: 0x8000}, targets: [ddr]}
   dma:  {read_pct: 50, beats: [4, 16], targets: [ddr, sram]}
   blk:  {read_pct: 50, beats: [4, 8], pattern: block2d, block: [64, 8], stride: 1024, region: {offset: 0xC00_0000, size: 0x2000}, targets: [ddr]}
 

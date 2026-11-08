@@ -130,6 +130,17 @@ class Validation(unittest.TestCase):
         m = spec.elaborate(r)
         self.assertEqual(m.apb.slots[-1].slot, 31)
 
+    def test_pace_needs_bandwidth(self):
+        def f(r):
+            r["traffic"]["dma"].pop("bandwidth_mbps", None)
+            r["traffic"]["dma"]["pace"] = True
+        self.bad(f, "pace needs bandwidth_mbps")
+
+    def test_pace_and_gap(self):
+        def f(r):
+            r["traffic"]["dma"].update(bandwidth_mbps=400, pace=True, gap=4)
+        self.bad(f, "pace and gap")
+
     def test_crossbar(self):
         r = raw("mini_soc.yaml")
         r["noc"] = {"topology": "crossbar", "timing": {"ni_cycles": 1, "router_cycles": 1, "link_cycles": 1}}
