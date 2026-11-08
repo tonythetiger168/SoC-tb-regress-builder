@@ -8,11 +8,14 @@ HEVC, separately, then all three IPs at once with slower memory), and the
 outputs must be byte-identical to the c1p Python reference models and decode
 with ffmpeg. The NPU test moves random lines DRAM -> L2 -> DRAM.
 
-Usage:  make build TB=ipcam_ip && python3 scripts/ipcam_ip_check.py [--out DIR]
+Usage:  make build TB=ipcam_ip && python3 scripts/ipcam_ip_check.py [--out DIR] [--save-vectors]
+--save-vectors copies each frame and its reference streams to regress/vectors/ipcam
+(used by the regress/suites/ipcam_media.yaml suite).
 Needs ext/ from scripts/fetch_ext_ip.sh and ffmpeg.
 """
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 
@@ -43,6 +46,7 @@ def sim(test, log, args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=os.path.join(REPO, "regress_out/ipcam_ip"))
+    ap.add_argument("--save-vectors", action="store_true")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     if not os.path.exists(EXE):
@@ -66,7 +70,12 @@ def main():
         sh([sys.executable, os.path.join(MODELS, "c1p_hve_model.py"), "enc", yuv, str(w), str(h), p + ".ref.265",
             "--qp", str(qp), "--slice-rows", "0", "--nal", "19", "--poc", "0", "--level", str(lv),
             "--mask", "0x%x" % H.DEF_MASK])
-        common = [f"+in={yuv}", f"+w={w}", f"+h={h}", f"+qp={qp}", f"+level={lv}"]
+        if a.save_vectors:
+            vd = os.path.join(REPO, "regress/vectors/ipcam")
+            os.makedirs(vd, exist_ok=True)
+            for ext in (".yuv", ".ref.jpg", ".ref.265"):
+                shutil.copy(p + ext, os.path.join(vd, name + ext))
+        common = [f"+in={yuv}", f"+jpg_ref={p}.ref.jpg", f"+hevc_ref={p}.ref.265", f"+w={w}", f"+h={h}", f"+qp={qp}", f"+level={lv}"]
         runs = [
             ("jpeg", "ipcam_ip_jpeg_test", [f"+jpg_out={p}.jpeg.jpg"], [(p + ".jpeg.jpg", p + ".ref.jpg")]),
             ("venc", "ipcam_ip_venc_test", [f"+hevc_out={p}.venc.265"], [(p + ".venc.265", p + ".ref.265")]),

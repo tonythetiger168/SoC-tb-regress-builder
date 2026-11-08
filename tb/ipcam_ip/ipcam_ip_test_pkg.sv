@@ -150,11 +150,22 @@ package ipcam_ip_test_pkg;
       `uvm_error("IPCAM_IP", msg)
     endfunction
 
+    // File named by +<plusarg>=<path>; with +vec=<name> the regression vector
+    // regress/vectors/ipcam/<name><suffix> is the default (keeps paths out of
+    // the plusargs, which name the run).
+    function string vec_file(string plusarg, string suffix);
+      string f, v;
+      if ($value$plusargs({plusarg, "=%s"}, f)) return f;
+      if ($value$plusargs("vec=%s", v)) return {"regress/vectors/ipcam/", v, suffix};
+      return "";
+    endfunction
+
     // NV12 frame from +in (w x h, planes packed) into DDR with strides ys / cs
     function void load_frame();
       string fin;
       int fd;
-      if (!$value$plusargs("in=%s", fin)) `uvm_fatal("IPCAM_IP", "+in=<nv12 file> missing")
+      fin = vec_file("in", ".yuv");
+      if (fin == "") `uvm_fatal("IPCAM_IP", "+in=<nv12 file> or +vec=<name> missing")
       if (!$value$plusargs("w=%d", w)) w = 64;
       if (!$value$plusargs("h=%d", h)) h = 48;
       ys = (w + 7) / 8 * 8;
@@ -178,6 +189,30 @@ package ipcam_ip_test_pkg;
       for (int unsigned i = 0; i < nbytes; i++) $fwrite(fd, "%c", env.mem.read_byte(base + i));
       $fclose(fd);
       `uvm_info("IPCAM_IP", $sformatf("%0d bytes written to %s", nbytes, f), UVM_LOW)
+    endfunction
+
+    // Byte-compare nbytes at base with the reference file named by +<plusarg>
+    // or +vec (made by the c1p Python model), when given.
+    function void compare_ref(string plusarg, bit [31:0] base, int unsigned nbytes);
+      string f;
+      int fd, c;
+      int unsigned i;
+      f = vec_file(plusarg, plusarg == "jpg_ref" ? ".ref.jpg" : ".ref.265");
+      if (f == "") return;
+      fd = $fopen(f, "rb");
+      if (fd == 0) begin fail({"cannot open reference ", f}); return; end
+      n_checks++;
+      for (i = 0; i < nbytes; i++) begin
+        c = $fgetc(fd);
+        if (c < 0) begin fail($sformatf("%s: output longer than reference (%0d bytes)", f, i)); break; end
+        if (8'(c) !== env.mem.read_byte(base + i)) begin
+          fail($sformatf("%s: byte %0d is %02h, reference %02h", f, i, env.mem.read_byte(base + i), 8'(c)));
+          break;
+        end
+      end
+      if (i == nbytes && $fgetc(fd) >= 0) fail($sformatf("%s: output shorter than reference (%0d bytes)", f, nbytes));
+      $fclose(fd);
+      if (n_fail == 0) `uvm_info("IPCAM_IP", $sformatf("%0d bytes match %s", nbytes, f), UVM_LOW)
     endfunction
 
     task wait_irq(int idx, string what, int unsigned max_cycles);
@@ -214,6 +249,7 @@ package ipcam_ip_test_pkg;
       check("JPEG SOI", {env.mem.read_byte(jpg_out), env.mem.read_byte(jpg_out + 1)}, 16'hFFD8);
       check("JPEG EOI", {env.mem.read_byte(jpg_out + nbytes - 2), env.mem.read_byte(jpg_out + nbytes - 1)}, 16'hFFD9);
       dump("jpg_out", jpg_out, nbytes);
+      compare_ref("jpg_ref", jpg_out, nbytes);
     endtask
 
     // ---- HEVC encoder: c1p_hve_regs map ----
@@ -252,6 +288,7 @@ package ipcam_ip_test_pkg;
       check("HEVC start code", {env.mem.read_byte(hve_out), env.mem.read_byte(hve_out + 1),
                                 env.mem.read_byte(hve_out + 2), env.mem.read_byte(hve_out + 3)}, 32'h0000_0001);
       dump("hevc_out", hve_out, nbytes);
+      compare_ref("hevc_ref", hve_out, nbytes);
     endtask
 
     // ---- NPU subsystem: npu_ss_regs map, DMA through the line bridge ----
