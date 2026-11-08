@@ -59,9 +59,15 @@ traffic:
 masters:
   - {name: cpu,    node: [0, 0], traffic: cpu,     qos: {class: nrt, priority: 10, latency_target: 150}}
   - {name: isp,    node: [0, 0], traffic: isp,     iommu: iommu_isp,  qos: {class: rt,  priority: 14, latency_target: 200}}
-  - {name: venc,   node: [0, 0], traffic: venc,    iommu: iommu_venc, qos: {class: nrt, priority: 8,  latency_target: 400}}
-  - {name: jpeg,   node: [0, 0], traffic: jpeg,    iommu: iommu_jpeg, qos: {class: nrt, priority: 5}}
-  - {name: npu,    node: [0, 0], traffic: npu,     iommu: iommu_npu,  qos: {class: nrt, priority: 6}}
+  # Real IPs (kind rtl): wrappers in rtl/ipcam/, private RTL fetched by
+  # scripts/fetch_ext_ip.sh. Each wrapper also serves its APB slot (apb).
+  # Without ext/ the generator falls back to the VIP traffic profile.
+  - {name: venc,   node: [0, 0], traffic: venc,    iommu: iommu_venc, qos: {class: nrt, priority: 8,  latency_target: 400},
+     kind: rtl, rtl: {module: ipcam_venc_c1p, filelist: sim/ipcam/ext_ip.f, apb: venc, fallback: vip}}
+  - {name: jpeg,   node: [0, 0], traffic: jpeg,    iommu: iommu_jpeg, qos: {class: nrt, priority: 5},
+     kind: rtl, rtl: {module: ipcam_jpeg_c1p, filelist: sim/ipcam/ext_ip.f, apb: jpeg, fallback: vip}}
+  - {name: npu,    node: [0, 0], traffic: npu,     iommu: iommu_npu,  qos: {class: nrt, priority: 6},
+     kind: rtl, rtl: {module: ipcam_npu_xj,   filelist: sim/ipcam/ext_ip.f, apb: npu,  fallback: vip}}
   - {name: eth,    node: [0, 0], traffic: eth,     qos: {class: nrt, priority: 9,  latency_target: 300}}
   - {name: sdmmc,  node: [0, 0], traffic: storage, qos: {class: be,  priority: 3}}
   - {name: emmc,   node: [0, 0], traffic: storage, qos: {class: be,  priority: 2}}
@@ -110,9 +116,9 @@ slaves:
       - {name: i2c_sns, slot: 5,  ip: I2C, pins: {scl: "1'b1"}}    # sensor control (SCCB)
       - {name: pwm,     slot: 6,  ip: PWM}                         # IR-cut filter / IR LED
       - {name: isp,     slot: 7,  regs: mm_engine}
-      - {name: venc,    slot: 8,  regs: mm_engine}
-      - {name: jpeg,    slot: 9,  regs: mm_engine}
-      - {name: npu,     slot: 10, regs: mm_engine}
+      - {name: venc,    slot: 8,  rtl_master: venc, ral: c1p_hve}     # c1p HEVC encoder registers
+      - {name: jpeg,    slot: 9,  rtl_master: jpeg, ral: c1p_jpe}     # c1p JPEG encoder registers
+      - {name: npu,     slot: 10, rtl_master: npu,  ral: xj_npu_ss}   # xuanji NPU subsystem registers
       - {name: dma,     slot: 11, regs: mm_engine}
       # --- network and storage ---
       - {name: eth,     slot: 12, ip: Ethernet}                    # GbE MAC (GMII)
@@ -132,9 +138,8 @@ slaves:
       # IOMMU register blocks take the next free slots (24..27), in iommus order.
 
 register_blocks:
-  # Control block shared by the media engines that have no open-ip RTL yet
-  # (ISP, video encoder, JPEG, NPU, system DMA). Their AXI traffic comes from
-  # the master VIPs above.
+  # Control block for the engines that are still VIP traffic models (ISP,
+  # system DMA).
   mm_engine:
     desc: Media engine control (frame descriptors, start/status, QoS)
     regs:
