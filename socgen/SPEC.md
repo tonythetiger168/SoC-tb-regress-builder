@@ -122,7 +122,7 @@ pins inside the APB subsystem, e.g. open-vip-portfolio's `sdc_model` on SD's
 | `vip` | | open-vip-portfolio VIP: socgen cuts `module <model>` out of `vips/<vip>/tb/top_tb.sv` (or `vips/<vip>.zip`) into `out/rtl/vip/<model>.sv`; root from `--vip-root` / `OPEN_VIP_ROOT`, default `../open-vip-portfolio` |
 | `files` | | instead of `vip`: SV files that define the model (repo-relative or absolute) |
 | `params` | | model parameter overrides |
-| `inout` | `[]` | the IP's inout pins the model shares (see below) |
+| `inout` | `[]` | the IP's inout pins the model shares (see below): `pin`, a slice `pin[n]` / `pin[msb:lsb]`, or `{pin: "dat[0]", port: dat0}` when the model's port prefix differs (eMMC `emd_model` on bit 0 of eMMC's `dat[7:0]`); bits outside the slice keep the pull-up |
 | `map` | | model port -> IP pin name or SV expression. Model inputs default to the IP pin of the same name; outputs mapped to an IP input pin drive it (not with `pins` on that pin) |
 | `clock`, `reset` | `clk`, `rst_n` | model ports tied to the subsystem clock and active-low reset |
 

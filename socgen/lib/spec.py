@@ -509,6 +509,22 @@ def _placement(pl, nch, what, node, topo, rows, cols):
     raise SpecError(f"{what}.fill: block | round_robin")
 
 
+def _inout(x, what):
+    """inout entry: "pin", "pin[3]", "pin[7:4]" or {pin: "dat[0]", port: dat0}"""
+    port = None
+    if isinstance(x, dict):
+        keys(x, ["pin", "port"], what, required=["pin"])
+        port, x = x.get("port"), x["pin"]
+    mm = re.fullmatch(r"\s*(\w+)\s*(?:\[\s*(\d+)\s*(?::\s*(\d+)\s*)?\])?\s*", str(x))
+    if not mm:
+        raise SpecError(f"{what}: {x!r} is not pin, pin[n] or pin[msb:lsb]")
+    hi = None if mm.group(2) is None else int(mm.group(2))
+    lo = hi if mm.group(3) is None else int(mm.group(3))
+    if hi is not None and lo > hi:
+        raise SpecError(f"{what}: {x!r}: msb < lsb")
+    return Obj(pin=mm.group(1), hi=hi, lo=lo, port=port or mm.group(1))
+
+
 def _apb_slots(periphs, br, m, what):
     nslots = br.size // br.slot_size
     slots, used = [], {}
@@ -566,7 +582,7 @@ def _apb_slots(periphs, br, m, what):
                 raise SpecError(f"{w}.pins_vip: exactly one of vip (open-vip name) / files")
             pv = Obj(model=ident(v["model"], f"{w}.pins_vip.model"), vip=v.get("vip"),
                      files=list(v.get("files") or []), params=dict(v.get("params") or {}),
-                     map=dict(v.get("map") or {}), inout=list(v.get("inout") or []),
+                     map=dict(v.get("map") or {}), inout=[_inout(x, f"{w}.pins_vip.inout") for x in v.get("inout") or []],
                      clock=v.get("clock", "clk"), reset=v.get("reset", "rst_n"))
         slots.append(Obj(name=ident(p["name"], f"{w}.name"), slot=slot, kind=kind, pins_vip=pv,
                          ip=p.get("ip"), regs=p.get("regs") or p.get("ral"), iommu=io,

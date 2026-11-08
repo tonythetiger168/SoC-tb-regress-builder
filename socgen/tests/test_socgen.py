@@ -210,6 +210,24 @@ endmodule
         self.assertIn("assign sd_cmd[0] = sd_vip_cmd_s_oe[0] ? sd_vip_cmd_s[0] : 1'bz;", sub)
         self.assertIn("rtl/vip/sdc_model.sv", fl)
 
+    def test_pins_vip_slice(self):
+        import socgen
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "m.sv")
+            open(f, "w").write(self.MODEL.replace("dat_", "dat0_").replace("[3:0] dat0", "dat0"))
+            m = self._dev_spec({"model": "sdc_model", "files": [f],
+                                "inout": ["cmd", {"pin": "dat[2]", "port": "dat0"}]})
+            out = os.path.join(d, "out")
+            socgen.generate(m, out, IP_ROOT, os.path.join(SOCGEN, "specs", "mini_soc.yaml"), False, d)
+            sub = open(os.path.join(out, "rtl", "mini_soc_apb_subsys.sv")).read()
+        self.assertIn(".dat0_m(sd_dat[2])", sub)
+        self.assertIn("assign sd_dat[2] = sd_vip_dat0_s_oe[0] ? sd_vip_dat0_s[0] : 1'bz;", sub)
+        self.assertNotIn("assign sd_dat[0]", sub)
+
+    def test_pins_vip_bad_slice(self):
+        self.assertRaisesRegex(SpecError, "msb < lsb", self._dev_spec,
+                               {"model": "x", "files": ["x.sv"], "inout": ["dat[0:3]"]})
+
     def test_pins_vip_unconnected_input(self):
         import socgen
         with tempfile.TemporaryDirectory() as d:
