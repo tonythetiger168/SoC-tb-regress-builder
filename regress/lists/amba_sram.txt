@@ -1,0 +1,1 @@
+soc_sram_test            5
