@@ -361,10 +361,14 @@ module ipcam_soc_apb_subsys (
 
   // ---------------- slot 15: emmc_ctl ----------------
   logic [0:0] emmc_ctl_emmc_clk;
-  tri1 [0:0] emmc_ctl_cmd;      // weak pull-up, nothing else drives it
-  tri1 [7:0] emmc_ctl_dat;      // weak pull-up, nothing else drives it
+  tri1 [0:0] emmc_ctl_cmd;      // weak pull-up; the device model drives it too
+  tri1 [7:0] emmc_ctl_dat;      // weak pull-up; the device model drives it too
   logic [0:0] emmc_ctl_emmc_rst_n;
-  eMMC_apb u_emmc_ctl (
+  logic [0:0] emmc_ctl_vip_cmd_s;
+  logic [0:0] emmc_ctl_vip_cmd_s_oe;
+  logic [0:0] emmc_ctl_vip_dat0_s;
+  logic [0:0] emmc_ctl_vip_dat0_s_oe;
+  eMMC_apb #(.ID_CLK_DIV(8), .RST_WAIT(64)) u_emmc_ctl (
     .PCLK(clk), .PRESETN(rst_n), .PSEL(s_psel[15]), .PENABLE(penable), .PWRITE(pwrite),
     .PADDR(paddr[11:0]), .PWDATA(pwdata), .PSTRB(pstrb),
     .PRDATA(s_prdata[15]), .PREADY(s_pready[15]), .PSLVERR(s_pslverr[15]), .irq(irq[15]),
@@ -374,6 +378,23 @@ module ipcam_soc_apb_subsys (
     .emmc_rst_n(emmc_ctl_emmc_rst_n)
 
   );
+  // pin-level device model on emmc_ctl's pins (pins_vip)
+  emd_model u_emmc_ctl_dev (
+    .clk(clk),
+    .rst_n(rst_n),
+    .emmc_clk(emmc_ctl_emmc_clk),
+    .emmc_rst_n(emmc_ctl_emmc_rst_n),
+    .cmd_m(emmc_ctl_cmd),
+    .cmd_m_oe('1),
+    .dat0_m(emmc_ctl_dat[0]),
+    .dat0_m_oe('1),
+    .cmd_s(emmc_ctl_vip_cmd_s),
+    .cmd_s_oe(emmc_ctl_vip_cmd_s_oe),
+    .dat0_s(emmc_ctl_vip_dat0_s),
+    .dat0_s_oe(emmc_ctl_vip_dat0_s_oe)
+  );
+  assign emmc_ctl_cmd[0] = emmc_ctl_vip_cmd_s_oe[0] ? emmc_ctl_vip_cmd_s[0] : 1'bz;
+  assign emmc_ctl_dat[0] = emmc_ctl_vip_dat0_s_oe[0] ? emmc_ctl_vip_dat0_s[0] : 1'bz;
 
   // ---------------- slot 16: qspi ----------------
   tri1 [3:0] qspi_io;      // weak pull-up, nothing else drives it

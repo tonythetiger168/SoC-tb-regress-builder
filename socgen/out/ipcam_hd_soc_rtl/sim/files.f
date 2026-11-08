@@ -40,6 +40,7 @@ socgen/out/ipcam_hd_soc_rtl/rtl/ip/eMMC_top.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ip/eMMC_apb.sv
 -f ext/ipcam_ext.f
 socgen/out/ipcam_hd_soc_rtl/rtl/vip/sdc_model.sv
+socgen/out/ipcam_hd_soc_rtl/rtl/vip/emd_model.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ipcam_hd_soc_pkg.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ipcam_hd_soc_iommu_regs.sv
 socgen/out/ipcam_hd_soc_rtl/rtl/ipcam_hd_soc_mm_engine_regs.sv
