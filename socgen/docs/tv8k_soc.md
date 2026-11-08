@@ -80,3 +80,39 @@ Missing, requested from the IP / VIP portfolio threads:
 | Memory firewall (DRM secure video path) | missing | n/a |
 
 Until they land, those masters are AXI master VIP traffic models.
+
+## The NoC bench (built now)
+
+The TV SoC interconnect is a 4x4 mesh of xuanji-core `orca_noc_router`s
+(5 ports, XY routing, 4 VCs) with AXI4 network interfaces
+(`rtl/tv8k/`). Requests use VC0 and responses VC1. Every master NI reserves
+its response slots before it issues, and every slave NI can queue every chunk
+all masters can have in flight, so both ends always eject and the mesh cannot
+deadlock. xuanji-core is private: `scripts/fetch_private_ip.sh` fetches a
+pinned commit into `ext/` (gitignored, never committed). Without it the build
+uses `tv8k_router_open` (same ports and routing, no VCs).
+
+```sh
+scripts/fetch_private_ip.sh                    # optional: xuanji router, c1p codec, PQ pipeline
+make build TB=tv8k_noc                         # xuanji router if fetched, else the open router
+make run TB=tv8k_noc TEST=tv8k_noc_rand_test SEED=3
+python3 tools/tv8k_latency_report.py build/.../tv8k_latency.csv -o tv8k_latency.html \
+        --spec socgen/specs/tv8k_soc.yaml
+python3 regress/regress.py --suite 'tv8k_*'    # suites tv8k_noc, tv8k_noc_perf
+```
+
+Tests: `tv8k_noc_smoke_test` (every master to every slave port and a hole),
+`tv8k_noc_rand_test` (random narrow / FIXED / WRAP bursts, partial strobes,
+DECERR holes), `tv8k_noc_bw_test` (long bursts from all masters),
+`tv8k_noc_hotspot_test` (all masters on DRAM channel 0 plus APB).
+
+Every run prints a `PATHLAT` table (n, min, avg, p50/p90/p95/p99, max, bytes,
+MB/s per master, target and direction, plus a DRAM aggregate per master) and
+flags read paths whose p99 exceeds the master's `latency_target`. It writes
+`tv8k_latency.csv` (every burst) and `tv8k_latency_summary.csv`, and sends every
+sample to `lat_pkg` (`LAT` lines) for the regression runner's merged report.
+`tools/tv8k_latency_report.py` turns one or more runs into an HTML page: avg
+read, avg write and p99 read heatmaps (master x target), the DRAM read range
+per master against its budget, bandwidth per master, and per-master CDFs.
+The NoC bench has no QoS arbitration yet, so the hotspot test misses the
+real-time budgets on purpose; that is reported as a warning.

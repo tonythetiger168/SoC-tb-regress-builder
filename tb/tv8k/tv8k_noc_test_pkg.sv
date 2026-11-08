@@ -205,6 +205,14 @@ package tv8k_noc_test_pkg;
       super.build_phase(phase);
       void'($value$plusargs("SOC_ITEMS=%d", items));
       env = tv8k_noc_env::type_id::create("env", this);
+      // read-latency budgets (cycles) of the real-time masters, from
+      // socgen/specs/tv8k_soc.yaml masters[].qos.latency_target
+      tv8k_lat_db::target_cyc["cpu"]    = 150;
+      tv8k_lat_db::target_cyc["pq"]     = 250;
+      tv8k_lat_db::target_cyc["disp"]   = 200;
+      tv8k_lat_db::target_cyc["hdmirx"] = 250;
+      tv8k_lat_db::target_cyc["tsd"]    = 300;
+      tv8k_lat_db::target_cyc["adsp"]   = 200;
     endfunction
     // per-master traffic; override
     virtual task traffic(int m);
@@ -221,7 +229,9 @@ package tv8k_noc_test_pkg;
       phase.drop_objection(this);
     endtask
     function void report_phase(uvm_phase phase);
-      void'(tv8k_lat_db::report(1.0));
+      int n_over = tv8k_lat_db::report(1.0);
+      // the NoC bench has no QoS arbitration yet, so a missed budget is reported, not failed
+      if (n_over) `uvm_warning("LAT_BUDGET", $sformatf("%0d master->dram read paths over their p99 budget", n_over))
     endfunction
   endclass
 
