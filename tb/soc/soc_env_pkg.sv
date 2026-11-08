@@ -297,7 +297,7 @@ package soc_env_pkg;
 
     // ---------------------------------------------------------------- APB
     // expected PSLVERR for one APB transfer; `known` = read data is predictable
-    function void predict_apb_xfer(bit [31:0] a, bit wr, bit [3:0] strb, bit [31:0] wdata,
+    virtual function void predict_apb_xfer(bit [31:0] a, bit wr, bit [3:0] strb, bit [31:0] wdata,
                                    output bit exp_err, output bit known, output bit [31:0] exp_rdata);
       int unsigned slot = a[15:12];
       bit [11:0] off = a[11:0];

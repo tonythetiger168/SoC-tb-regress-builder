@@ -20,6 +20,8 @@ class axi4_item extends uvm_sequence_item;
   // filled in by monitors
   int               port = -1;  // agent tag (e.g. interconnect master index)
   time              t_start, t_end;
+  time              t_req;      // monitor: first cycle AWVALID/ARVALID was seen
+  time              t_first;    // monitor: first R beat (reads)
 
   // knobs read by the master driver
   int unsigned      aw_delay, w_gap, b_delay, r_gap;
@@ -92,7 +94,7 @@ class axi4_item extends uvm_sequence_item;
     write = r.write; id = r.id; addr = r.addr; len = r.len; size = r.size;
     burst = r.burst; prot = r.prot; cache = r.cache;
     data = r.data; strb = r.strb; resp = r.resp;
-    port = r.port; t_start = r.t_start; t_end = r.t_end;
+    port = r.port; t_start = r.t_start; t_end = r.t_end; t_req = r.t_req; t_first = r.t_first;
     aw_delay = r.aw_delay; w_gap = r.w_gap; b_delay = r.b_delay; r_gap = r.r_gap;
   endfunction
 

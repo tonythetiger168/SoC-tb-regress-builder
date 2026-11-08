@@ -4,7 +4,7 @@
 set -euo pipefail
 SRC="${1:?usage: scripts/sync_ip.sh <open-ip-portfolio checkout>}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-for f in AXI4_top GPIO_top GPIO_apb UART_top UART_apb; do
+for f in AXI4_top GPIO_top GPIO_apb UART_top UART_apb I2C_top I2C_apb SPI_top SPI_apb PWM_top PWM_apb TRNG_top TRNG_apb; do
   cp "$SRC/rtl/$f.sv" "$REPO/rtl/ip/$f.sv"
 done
 rev="$(git -C "$SRC" rev-parse HEAD)"

@@ -20,6 +20,8 @@ class axi4_monitor extends uvm_monitor;
   protected bit [3:0]  w_early_strb[$][$];
 
   int unsigned n_wr, n_rd;
+  protected time aw_since, ar_since;  // VALID first seen, waiting for READY (0 = none)
+  protected bit  aw_wait, ar_wait;
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -62,8 +64,12 @@ class axi4_monitor extends uvm_monitor;
       @(vif.mon_cb);
       if (vif.aresetn !== 1'b1) begin
         flush();
+        aw_wait = 0; ar_wait = 0;
         continue;
       end
+      // ---- request-issue times (path latency starts at VALID) ----
+      if (vif.mon_cb.awvalid && !aw_wait) begin aw_wait = 1; aw_since = $time; end
+      if (vif.mon_cb.arvalid && !ar_wait) begin ar_wait = 1; ar_since = $time; end
       // ---- AW ----
       if (vif.mon_cb.awvalid && vif.mon_cb.awready) begin
         axi4_item t = axi4_item::type_id::create("mon_wr");
@@ -71,6 +77,7 @@ class axi4_monitor extends uvm_monitor;
         t.len = vif.mon_cb.awlen; t.size = vif.mon_cb.awsize;
         t.burst = axi4_burst_e'(vif.mon_cb.awburst); t.prot = vif.mon_cb.awprot;
         t.cache = vif.mon_cb.awcache; t.port = cfg.port; t.t_start = $time;
+        t.t_req = aw_since; aw_wait = 0;
         t.alloc();
         aw_q.push_back(t);
       end
@@ -110,6 +117,7 @@ class axi4_monitor extends uvm_monitor;
         t.len = vif.mon_cb.arlen; t.size = vif.mon_cb.arsize;
         t.burst = axi4_burst_e'(vif.mon_cb.arburst); t.prot = vif.mon_cb.arprot;
         t.cache = vif.mon_cb.arcache; t.port = cfg.port; t.t_start = $time;
+        t.t_req = ar_since; ar_wait = 0;
         t.alloc();
         r_wait_q.push_back(t);
         r_beat.push_back(0);
@@ -124,6 +132,7 @@ class axi4_monitor extends uvm_monitor;
         else begin
           axi4_item t = r_wait_q[idx];
           int unsigned b = r_beat[idx];
+          if (b == 0) t.t_first = $time;
           if (b < t.beats()) begin
             t.data[b] = vif.mon_cb.rdata;
             t.strb[b] = t.lanes(b);

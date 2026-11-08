@@ -13,6 +13,7 @@ UVM_HOME ?= $(CURDIR)/uvm-core/src
 BUILD    := build/$(SIM)/$(TB)
 TOP_soc  := soc_tb_top
 TOP_vip  := vip_tb_top
+TOP_phone := phone_tb_top
 TOP      := $(TOP_$(TB))
 FLIST    := sim/$(TB).f
 JOBS     ?= $(shell nproc)
