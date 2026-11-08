@@ -29,7 +29,7 @@ import re
 from collections import defaultdict
 
 MASTERS = ["cpu", "gpu", "npu", "vdec", "pq", "disp", "hdmirx", "tsd", "adsp", "dma", "sec", "netio"]
-TARGETS = [f"dram{i}" for i in range(8)] + ["boot_sram", "periph", "vdec_regs", "gpu_regs", "none"]
+TARGETS = [f"dram{i}" for i in range(8)] + ["boot_sram", "periph", "vdec_regs", "gpu_regs", "npu_regs", "none"]
 DEFAULT_BUDGET = {"cpu": 150, "pq": 250, "disp": 200, "hdmirx": 250, "tsd": 300, "adsp": 200}
 
 # sequential blue ramp (light -> dark), reference palette steps 100..700

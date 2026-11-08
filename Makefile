@@ -21,6 +21,8 @@ TOP_vip  := vip_tb_top
 TOP_tv8k_noc := tv8k_noc_tb_top
 TOP_tv8k_noc_open := tv8k_noc_tb_top
 TOP_tv8k_vdec := tv8k_noc_tb_top
+TOP_tv8k_npu := tv8k_noc_tb_top
+TOP_tv8k_cpu := tv8k_noc_tb_top
 -include $(wildcard socgen/out/*/socgen.mk)
 TOP      := $(TOP_$(TB))
 FLIST    := $(or $(FLIST_$(TB)),sim/$(TB).f)
@@ -76,13 +78,19 @@ run:
 	$(RUN_CMD)
 
 # HEVC vectors for the tv8k VDEC bench (needs ext/c1p-codec)
-TV8K_VDEC_VEC ?= base lft4k
+TV8K_VDEC_VEC ?= base lft4k lfw4k b10 aq16
 .PHONY: tv8k_vdec_vec
 tv8k_vdec_vec:
 	@if [ -d ext/c1p-codec ]; then scripts/tv8k_vdec_prep.sh build/tv8k_vdec_vec $(TV8K_VDEC_VEC); \
 	else echo "ext/c1p-codec not fetched: tv8k_vdec suites will not run"; fi
 
-regress: tv8k_vdec_vec
+# RISC-V program for the tv8k CPU bench (clang + ld.lld)
+.PHONY: tv8k_cpu_sw
+tv8k_cpu_sw:
+	@if command -v clang >/dev/null && command -v ld.lld >/dev/null; then sw/tv8k_cpu/build.sh $(CURDIR)/build/tv8k_cpu; \
+	else echo "clang/ld.lld not found: tv8k_cpu suite will not run"; fi
+
+regress: tv8k_vdec_vec tv8k_cpu_sw
 	python3 regress/regress.py --sim $(SIM) --jobs $(JOBS) --profile $(PROFILE) --out $(OUT) \
 	  $(if $(LIST),--list $(LIST),) $(foreach s,$(SUITE),--suite '$(s)') $(foreach l,$(LEVEL),--level $(l)) \
 	  $(foreach c,$(SOC),--soc $(c))

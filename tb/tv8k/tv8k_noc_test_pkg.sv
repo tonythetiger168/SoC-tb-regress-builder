@@ -30,12 +30,13 @@ package tv8k_noc_test_pkg;
       S_APB:   return APB_BASE   + m * 32'h2000;
       S_VDECR: return VDECR_BASE + m * 32'h1000;
       S_GPUR:  return GPUR_BASE  + m * 32'h1000;
+      S_NPUR:  return NPUR_BASE  + m * 32'h1000;
       default: return DRAM_BASE  + m * 32'h0400_0000;   // 64 MB apart
     endcase
   endfunction
   function automatic bit [31:0] slice_hi(int m, int s, int unsigned dram_bytes = 32'h1_0000);
     case (s)
-      S_SRAM, S_VDECR, S_GPUR: return slice_lo(m, s) + 32'hFFF;
+      S_SRAM, S_VDECR, S_GPUR, S_NPUR: return slice_lo(m, s) + 32'hFFF;
       S_APB:                   return slice_lo(m, s) + 32'h1FFF;
       default:                 return slice_lo(m, s) + dram_bytes - 1;
     endcase
@@ -126,6 +127,8 @@ package tv8k_noc_test_pkg;
     tv8k_noc_sb     sb;
     mem_model       mem;
     bit             c1p_vdec = 0;   // the c1p decoder RTL is the VDEC master and S_VDECR slave
+    bit             npu_rtl  = 0;   // the xuanji NPU subsystem is the NPU master and S_NPUR slave
+    bit             cpu_rtl  = 0;   // the xuanji RV64 core is the CPU master
 
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
 
@@ -145,6 +148,8 @@ package tv8k_noc_test_pkg;
         if (c1p_vdec && m == M_VDEC) begin       // RTL master: monitor only (64-bit beats)
           m_cfg[m].is_active = UVM_PASSIVE; m_cfg[m].has_coverage = 0; lat[m].dbytes = 8;
         end
+        if (npu_rtl && m == M_NPU) begin m_cfg[m].is_active = UVM_PASSIVE; m_cfg[m].has_coverage = 0; end
+        if (cpu_rtl && m == M_CPU) begin m_cfg[m].is_active = UVM_PASSIVE; m_cfg[m].has_coverage = 0; end
       end
       for (int s = 0; s < NS; s++) begin
         s_cfg[s] = axi4_cfg::type_id::create($sformatf("s%0d_cfg", s));
@@ -158,6 +163,7 @@ package tv8k_noc_test_pkg;
           s_cfg[s].max_rvalid_gap = tmode;
         end
         if (c1p_vdec && NM + s == S_VDECR) s_cfg[s].is_active = UVM_PASSIVE;   // c1p registers answer
+        if (npu_rtl && NM + s == S_NPUR)   s_cfg[s].is_active = UVM_PASSIVE;   // NPU registers answer
         s_agent[s] = axi4_agent::type_id::create($sformatf("s%0d_agent", s), this);
         uvm_config_db#(axi4_cfg)::set(this, $sformatf("s%0d_agent", s), "cfg", s_cfg[s]);
       end
@@ -165,10 +171,13 @@ package tv8k_noc_test_pkg;
       sb = tv8k_noc_sb::type_id::create("sb", this);
       sb.mem = mem;
       if (c1p_vdec) sb.skip_ep[S_VDECR] = 1;
+      if (npu_rtl)  sb.skip_ep[S_NPUR] = 1;
     endfunction
 
     function void connect_phase(uvm_phase phase);
-      foreach (m_agent[m]) if (!(c1p_vdec && m == M_VDEC)) m_agent[m].ap.connect(sb.mst_imp);
+      foreach (m_agent[m])
+        if (!(c1p_vdec && m == M_VDEC) && !(npu_rtl && m == M_NPU) && !(cpu_rtl && m == M_CPU))
+          m_agent[m].ap.connect(sb.mst_imp);
       foreach (s_agent[s]) s_agent[s].ap.connect(rchk.analysis_export);
     endfunction
   endclass
@@ -181,6 +190,7 @@ package tv8k_noc_test_pkg;
     int unsigned n_items = 50, dram_pct = 70, decerr_pct = 2, max_beats = 16, wr_pct = 50;
     int unsigned dram_bytes = 32'h1_0000;
     bit narrow = 1;
+    bit [4:0] win_ok = '1;     // windows S_SRAM .. S_NPUR this sequence may touch (RTL blocks excluded)
     function new(string name = "tv8k_mix_seq"); super.new(name); endfunction
     task body();
       axi4_random_seq g = axi4_random_seq::type_id::create("g");
@@ -193,7 +203,8 @@ package tv8k_noc_test_pkg;
         if (r < decerr_pct) begin
           g.lo = 32'h2000_0000 + m * 32'h1000; g.hi = g.lo + 32'hFFF;
         end else begin
-          s = (r < decerr_pct + dram_pct) ? S_DRAM0 : S_SRAM + $urandom_range(3, 0);
+          if (r < decerr_pct + dram_pct || win_ok == 0) s = S_DRAM0;
+          else do s = S_SRAM + $urandom_range(4, 0); while (!win_ok[s - S_SRAM]);
           g.lo = slice_lo(m, s); g.hi = slice_hi(m, s, dram_bytes);
         end
         t = g.gen();
@@ -309,7 +320,8 @@ package tv8k_noc_test_pkg;
   // Build with sim/tv8k_vdec.f. scripts/tv8k_vdec_prep.sh makes, per stream,
   // the firmware register script (.apb, c1p's fw/host/c1p_hevc_fw_dump) and the
   // reference planes (.mlf.raw, c1p's scripts/c1p_hevc_model.py).
-  //   +C1P_BS=<s.265> +C1P_APB=<s.apb> +C1P_REF=<s.mlf.raw>  [+VDEC_BG=<items>]
+  //   +C1P_VEC=<name> [+C1P_DIR=<dir>, default build/tv8k_vdec_vec]  (= <dir>/<name>.{265,apb,mlf.raw})
+  //   or +C1P_BS=<s.265> +C1P_APB=<s.apb> +C1P_REF=<s.mlf.raw>; [+VDEC_BG=<items>]
   // The CPU master VIP replays the script into the decoder's registers through
   // the NoC (S_VDECR, AXI4 -> AXI4-Lite); the stream is fed on the decoder's
   // AXI4-Stream port; the decoder writes the final pictures through its 64-bit
@@ -323,11 +335,17 @@ package tv8k_noc_test_pkg;
     bit [31:0] fb_off;
     int unsigned bg_items = 40;
     bit fw_done;
+    string apb_f, ref_f;
     function new(string name, uvm_component parent); super.new(name, parent); endfunction
 
     function void build_phase(uvm_phase phase);
+      string v, dir = "build/tv8k_vdec_vec";
       super.build_phase(phase);
       env.c1p_vdec = 1;
+      void'($value$plusargs("C1P_DIR=%s", dir));
+      if ($value$plusargs("C1P_VEC=%s", v)) begin apb_f = {dir, "/", v, ".apb"}; ref_f = {dir, "/", v, ".mlf.raw"}; end
+      void'($value$plusargs("C1P_APB=%s", apb_f));
+      void'($value$plusargs("C1P_REF=%s", ref_f));
       void'($value$plusargs("VDEC_BG=%d", bg_items));
       fb_off = slice_lo(M_VDEC, S_DRAM0) - 32'h0100_0000;
     endfunction
@@ -357,7 +375,8 @@ package tv8k_noc_test_pkg;
       int fd, typ, n, k, n_slice = 0, n_nal = 0;
       int unsigned a, d, m, v;
       bit [31:0] r;
-      if (!$value$plusargs("C1P_APB=%s", f)) `uvm_fatal("VDEC_FW", "+C1P_APB=<script.apb> not given")
+      f = apb_f;
+      if (f == "") `uvm_fatal("VDEC_FW", "+C1P_VEC=<name> or +C1P_APB=<script.apb> not given")
       fd = $fopen(f, "r");
       if (fd == 0) `uvm_fatal("VDEC_FW", {"cannot open ", f})
       wr(16'h0010, 32'h0000_0201);          // CTRL: fmt = HEVC, front end on
@@ -420,6 +439,7 @@ package tv8k_noc_test_pkg;
       else if (m != M_VDEC && bg_items != 0) begin
         tv8k_mix_seq s = tv8k_mix_seq::type_id::create($sformatf("bg%0d", m));
         s.m = m; s.n_items = bg_items; s.decerr_pct = 0;
+        s.win_ok[S_VDECR - S_SRAM] = 0;                 // the decoder's registers are not memory
         s.start(env.m_agent[m].sqr);
       end
     endtask
@@ -436,7 +456,8 @@ package tv8k_noc_test_pkg;
       int unsigned n_ref;
       super.check_phase(phase);
       if (!fw_done) begin `uvm_error("VDEC", "firmware script did not finish") return; end
-      if (!$value$plusargs("C1P_REF=%s", f)) begin `uvm_error("VDEC", "+C1P_REF=<planes.raw> not given") return; end
+      f = ref_f;
+      if (f == "") begin `uvm_error("VDEC", "+C1P_VEC=<name> or +C1P_REF=<planes.raw> not given") return; end
       fd = $fopen(f, "rb");
       if (fd == 0) begin `uvm_error("VDEC", {"cannot open ", f}) return; end
       void'($fseek(fd, 0, 2)); n_ref = $ftell(fd) / 2; void'($fseek(fd, 0, 0));
@@ -466,6 +487,246 @@ package tv8k_noc_test_pkg;
       if (i != n_ref) `uvm_error("VDEC", $sformatf("%0d samples decoded, the model has %0d", i, n_ref))
       `uvm_info("VDEC", $sformatf("%0d pictures, %0d samples compared with the model, %0d differ", pics.size(), i,
                 n_bad), UVM_NONE)
+    endfunction
+  endclass
+
+  // --------------------------------------------------------------------------
+  // NPU subsystem: the xuanji NPU (orca_npu_ss_apb, X1: 8x8 INT8 array) runs
+  // GEMM jobs out of DRAM through the NoC. Build with sim/tv8k_npu.f.
+  // Per job the CPU master VIP pushes, through the NoC into the NPU registers:
+  //   DMA_LD A (DRAM -> L2), DMA_LD B, GEMM C = A x B (wt), DMA_ST C (L2 -> DRAM, wt)
+  // and collects the completions (CPL_POP). A and B are random INT8 (signed or
+  // unsigned per job) written into the NPU's DRAM slice; C (INT32, 8x8) is read
+  // back from DRAM and compared with the product computed here. Plus one 2D
+  // DMA copy per run. The other masters run background traffic.
+  //   +NPU_JOBS=<n> (4)  +NPU_KMAX=<k> (256)  +VDEC_BG=<items> (40)
+  class tv8k_npu_gemm_test extends tv8k_noc_base_test;
+    `uvm_component_utils(tv8k_npu_gemm_test)
+    localparam int N = 8;
+    localparam int unsigned OP_GEMM = 0, OP_LD = 1, OP_ST = 2, OP_NOP = 3;
+    typedef struct { int k; bit sa, sb; bit [31:0] a_ext, b_ext, c_ext; int unsigned a, b, c; } job_t;
+    job_t jobs[$];
+    int unsigned n_jobs = 4, kmax = 256, bg_items = 40, n_cpl;
+    bit done;
+    function new(string name, uvm_component parent); super.new(name, parent); endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      env.npu_rtl = 1;
+      void'($value$plusargs("NPU_JOBS=%d", n_jobs));
+      void'($value$plusargs("NPU_KMAX=%d", kmax));
+      void'($value$plusargs("VDEC_BG=%d", bg_items));
+    endfunction
+
+    task wr(bit [11:0] a, bit [31:0] d);
+      axi4_resp_e r;
+      axi4_api::write32(env.m_agent[M_CPU].sqr, NPUR_BASE + a, d, r);
+      if (r != AXI4_OKAY) `uvm_error("NPU_FW", $sformatf("write %03h=%08h: %s", a, d, r.name()))
+    endtask
+    task rd(bit [11:0] a, output bit [31:0] d);
+      axi4_resp_e r;
+      axi4_api::read32(env.m_agent[M_CPU].sqr, NPUR_BASE + a, d, r);
+      if (r != AXI4_OKAY) `uvm_error("NPU_FW", $sformatf("read %03h: %s", a, r.name()))
+    endtask
+    task push(int unsigned op, bit wt, bit sa, bit sb, int unsigned id, int unsigned k, bit [31:0] ext,
+              int unsigned a, int unsigned b = 0, int unsigned c = 0);
+      bit [31:0] st;
+      forever begin                                     // wait for STATUS.CMDQ_FREE; meanwhile take
+        rd(12'h040, st);                                // completions, which otherwise back-pressure
+        if (st[11:8] != 0) break;                       // the subsystem
+        if (st[1]) pop();
+      end
+      wr(12'h060, {16'(k), 8'(id), 2'd0, 1'(op >> 2), sb, sa, wt, 2'(op)});
+      wr(12'h064, ext); wr(12'h068, a); wr(12'h06C, b); wr(12'h070, c);
+      wr(12'h074, 0);
+    endtask
+    function bit [31:0] line_of(bit [31:0] byte_addr); return byte_addr >> 6; endfunction
+    bit seen[int];
+    task pop();                                         // CPL_POP one completion, if any
+      bit [31:0] r;
+      rd(12'h080, r);
+      if (r[31]) begin
+        if (seen.exists(int'(r[7:0]))) `uvm_error("NPU", $sformatf("completion id %0d twice", r[7:0]))
+        seen[int'(r[7:0])] = 1;
+        n_cpl++;
+      end
+    endtask
+
+    task firmware();
+      bit [31:0] r, base = slice_lo(M_NPU, S_DRAM0);
+      int unsigned l2 = 0, id = 1, n_cmd = 0;
+      rd(12'h000, r);
+      if (r != 32'h584E_0200) `uvm_error("NPU_FW", $sformatf("ID %08h", r))
+      wr(12'h014, 32'h1);                                   // IRQ_ENABLE.CPL
+      for (int j = 0; j < n_jobs; j++) begin
+        job_t x;
+        int lines;
+        x.k = $urandom_range(kmax, 1); x.sa = $urandom_range(1, 0); x.sb = $urandom_range(1, 0);
+        lines = (x.k * N + 63) / 64;
+        x.a_ext = base + j * 32'h4_0000; x.b_ext = x.a_ext + 32'h1_0000; x.c_ext = x.a_ext + 32'h2_0000;
+        for (int i = 0; i < lines * 64; i++) begin
+          env.mem.write_byte(mem_addr_t'(x.a_ext + i), 8'($urandom));
+          env.mem.write_byte(mem_addr_t'(x.b_ext + i), 8'($urandom));
+        end
+        x.a = l2; x.b = l2 + lines; x.c = l2 + 2 * lines; l2 += 2 * lines + 4;
+        jobs.push_back(x);
+        push(OP_LD, 0, 0, 0, id++, lines, line_of(x.a_ext), x.a);
+        push(OP_LD, 0, 0, 0, id++, lines, line_of(x.b_ext), x.b);
+        push(OP_GEMM, 1, x.sa, x.sb, id++, x.k, 0, x.a, x.b, x.c);
+        push(OP_ST, 1, 0, 0, id++, 4, line_of(x.c_ext), x.c);
+        n_cmd += 4;
+      end
+      // 2D DMA: 4 rows of 3 lines at a 5-line pitch in DRAM -> L2 -> 12 contiguous lines in DRAM
+      begin
+        bit [31:0] src = base + 32'h20_0000, dst = base + 32'h21_0000;
+        for (int i = 0; i < 20 * 64; i++) env.mem.write_byte(mem_addr_t'(src + i), 8'($urandom));
+        push(OP_LD, 1, 0, 0, id++, 12, line_of(src), l2, 3, 5);
+        push(OP_ST, 1, 0, 0, id++, 12, line_of(dst), l2);
+        n_cmd += 2;
+      end
+      // completions
+      repeat (100000) begin
+        if (n_cpl == n_cmd) break;
+        pop();
+      end
+      if (n_cpl != n_cmd) `uvm_error("NPU", $sformatf("%0d of %0d commands completed", n_cpl, n_cmd))
+      rd(12'h010, r);
+      if (r[31:1] != 0) `uvm_error("NPU", $sformatf("IRQ_STATUS %08h", r))
+      `uvm_info("NPU_FW", $sformatf("%0d GEMM jobs + 2D DMA: %0d commands completed", n_jobs, n_cpl), UVM_NONE)
+      done = 1;
+    endtask
+
+    virtual task traffic(int m);
+      if (m == M_CPU) firmware();
+      else if (m != M_NPU && bg_items != 0) begin
+        tv8k_mix_seq s = tv8k_mix_seq::type_id::create($sformatf("bg%0d", m));
+        s.m = m; s.n_items = bg_items; s.decerr_pct = 0;
+        s.win_ok[S_NPUR - S_SRAM] = 0;
+        s.start(env.m_agent[m].sqr);
+      end
+    endtask
+
+    function void check_phase(uvm_phase phase);
+      bit [31:0] base = slice_lo(M_NPU, S_DRAM0);
+      int n_bad = 0;
+      super.check_phase(phase);
+      if (!done) begin `uvm_error("NPU", "firmware did not finish") return; end
+      foreach (jobs[ji]) begin
+        job_t x = jobs[ji];
+        for (int i = 0; i < N; i++)
+          for (int j = 0; j < N; j++) begin
+            int signed acc = 0;
+            bit [31:0] got;
+            for (int k = 0; k < x.k; k++) begin
+              byte unsigned ab = env.mem.read_byte(mem_addr_t'(x.a_ext + k * N + i));
+              byte unsigned bb = env.mem.read_byte(mem_addr_t'(x.b_ext + k * N + j));
+              int av = x.sa ? int'(byte'(ab)) : int'(ab);
+              int bv = x.sb ? int'(byte'(bb)) : int'(bb);
+              acc += av * bv;
+            end
+            for (int b = 0; b < 4; b++) got[8 * b +: 8] = env.mem.read_byte(mem_addr_t'(x.c_ext + (i * N + j) * 4 + b));
+            env.sb.n_checks++;
+            if (got != 32'(acc) && n_bad++ < 10)
+              `uvm_error("NPU", $sformatf("job %0d (K=%0d sa=%0d sb=%0d) C[%0d][%0d] = %0d, expected %0d", ji, x.k,
+                         x.sa, x.sb, i, j, int'(got), acc))
+          end
+      end
+      begin                                                   // 2D DMA copy
+        bit [31:0] src = base + 32'h20_0000, dst = base + 32'h21_0000;
+        for (int row = 0; row < 4; row++)
+          for (int i = 0; i < 3 * 64; i++) begin
+            env.sb.n_checks++;
+            if (env.mem.read_byte(mem_addr_t'(dst + row * 192 + i)) != env.mem.read_byte(mem_addr_t'(src + row * 320 + i))
+                && n_bad++ < 10)
+              `uvm_error("NPU", $sformatf("2D DMA row %0d byte %0d differs", row, i))
+          end
+      end
+      `uvm_info("NPU", $sformatf("%0d GEMM jobs checked (8x8 INT32 each) + 2D DMA, %0d mismatches", jobs.size(), n_bad),
+                UVM_NONE)
+    endfunction
+  endclass
+
+  // --------------------------------------------------------------------------
+  // CPU subsystem: the xuanji RV64IMAC core boots from DRAM through the NoC.
+  // Build with sim/tv8k_cpu.f; program sw/tv8k_cpu (sw/tv8k_cpu/build.sh):
+  // fills an array, insertion-sorts it, copies it, computes a sum / weighted
+  // sum / quotient / remainder signature, writes it back (fence.i) and raises
+  // a DONE word. The program is loaded into DRAM at 0x8000_0000 by backdoor;
+  // every instruction fetch, load and write-back crosses the NoC. The other
+  // masters run background traffic.   [+CPU_HEX=<file.hex>, default build/tv8k_cpu/tv8k_cpu.hex (make tv8k_cpu_sw)] [+VDEC_BG=<items>]
+  class tv8k_cpu_boot_test extends tv8k_noc_base_test;
+    `uvm_component_utils(tv8k_cpu_boot_test)
+    localparam bit [31:0] A_ADDR = 32'h8000_4000, B_ADDR = 32'h8000_C000, SIG = 32'h8001_0000;
+    int unsigned bg_items = 40;
+    bit done;
+    function new(string name, uvm_component parent); super.new(name, parent); endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      env.cpu_rtl = 1;
+      void'($value$plusargs("VDEC_BG=%d", bg_items));
+    endfunction
+
+    function void end_of_elaboration_phase(uvm_phase phase);
+      string f;
+      int fd, n = 0;
+      bit [31:0] w;
+      if (!$value$plusargs("CPU_HEX=%s", f)) f = "build/tv8k_cpu/tv8k_cpu.hex";
+      fd = $fopen(f, "r");
+      if (fd == 0) `uvm_fatal("CPU", {"cannot open ", f})
+      while ($fscanf(fd, "%h", w) == 1) begin
+        for (int b = 0; b < 4; b++) env.mem.write_byte(mem_addr_t'(DRAM_BASE + 4 * n + b), w[8 * b +: 8]);
+        n++;
+      end
+      $fclose(fd);
+      `uvm_info("CPU", $sformatf("%s: %0d words loaded at %08h", f, n, DRAM_BASE), UVM_NONE)
+    endfunction
+
+    function bit [63:0] rd64(bit [31:0] a);
+      bit [63:0] d;
+      for (int b = 0; b < 8; b++) d[8 * b +: 8] = env.mem.read_byte(mem_addr_t'(a + b));
+      return d;
+    endfunction
+
+    virtual task traffic(int m);
+      if (m == M_CPU) begin
+        repeat (20000) begin                                  // up to 20 ms
+          #1us;
+          if (rd64(SIG + 32) == 64'h600D600D) begin done = 1; break; end
+        end
+        if (!done) `uvm_error("CPU", "the program did not finish (no DONE word in DRAM)")
+        else `uvm_info("CPU", $sformatf("program done at %0t", $time), UVM_NONE)
+      end else if (bg_items != 0) begin
+        tv8k_mix_seq s = tv8k_mix_seq::type_id::create($sformatf("bg%0d", m));
+        s.m = m; s.n_items = bg_items; s.decerr_pct = 0;
+        s.start(env.m_agent[m].sqr);
+      end
+    endtask
+
+    function void check_phase(uvm_phase phase);
+      bit [63:0] a[64], sum = 0, prod = 0;
+      int n_bad = 0;
+      super.check_phase(phase);
+      if (!done) return;
+      foreach (a[i]) a[i] = (64'(i) * 64'd2654435761) ^ (64'(i) << 7) ^ 64'h5A5A;
+      a.sort();
+      foreach (a[i]) begin
+        bit [63:0] got = rd64(B_ADDR + 8 * i);
+        env.sb.n_checks++;
+        if (got != a[i] && n_bad++ < 10) `uvm_error("CPU", $sformatf("B[%0d] = %h, expected %h", i, got, a[i]))
+        sum += a[i];
+        prod += a[i] * 64'(i + 1);
+      end
+      begin
+        bit [63:0] exp[4] = '{sum, prod, sum / 64'd12345, sum % 64'd12345};
+        string nm[4] = '{"sum", "weighted sum", "sum / 12345", "sum % 12345"};
+        foreach (exp[k]) begin
+          env.sb.n_checks++;
+          if (rd64(SIG + 8 * k) != exp[k])
+            `uvm_error("CPU", $sformatf("signature %s = %h, expected %h", nm[k], rd64(SIG + 8 * k), exp[k]))
+        end
+      end
+      `uvm_info("CPU", $sformatf("sorted copy (64 x 64 bit) and signature checked, %0d mismatches", n_bad), UVM_NONE)
     endfunction
   endclass
 endpackage

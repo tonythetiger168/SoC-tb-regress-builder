@@ -136,11 +136,14 @@ module tv8k_noc_tb_top;
       logic [7:0]  bs [$];
       int unsigned bs_i, bs_gap;
       initial begin
-        string f;
+        string f, v, dir;
         int fd, c;
+        f = ""; dir = "build/tv8k_vdec_vec";
         bs_gap = 0;
         void'($value$plusargs("C1P_BS_GAP=%d", bs_gap));
-        if ($value$plusargs("C1P_BS=%s", f)) begin
+        void'($value$plusargs("C1P_DIR=%s", dir));
+        if ($value$plusargs("C1P_VEC=%s", v)) f = {dir, "/", v, ".265"};
+        if (f != "" || $value$plusargs("C1P_BS=%s", f)) begin
           fd = $fopen(f, "rb");
           if (fd == 0) $fatal(1, "cannot open %s", f);
           c = $fgetc(fd);
@@ -168,6 +171,43 @@ module tv8k_noc_tb_top;
       uvm_config_db#(virtual axi4_if)::set(null, $sformatf("uvm_test_top.env.m%0d_lat", m), "vif", m_if[m]);
     end
   end
+
+`ifdef TV8K_CPU
+  // xuanji-core RV64IMAC core as the CPU master: its L2 line port drives master
+  // port M_CPU through tv8k_core2axi (the M_CPU agent is passive). It boots at
+  // 0x8000_0000, the first byte of DRAM.
+  begin : g_cpu
+    logic [63:0]  l2_req_addr, l2_wr_addr;
+    logic         l2_req_valid, l2_fill_valid, l2_wr_valid, halt, wq_overflow, bus_err;
+    logic [511:0] l2_fill_line, l2_wr_line;
+    orca_v63_cpu_core u_core (
+      .clk(aclk), .rst_n(aresetn), .test_en(1'b0), .tid('0),
+      .l2_req_addr, .l2_req_valid, .l2_wr_valid, .l2_wr_addr, .l2_wr_line,
+      .l2_fill_line, .l2_fill_valid, .core_halt(halt));
+    tv8k_core2axi #(.WQ(16)) u_bridge (
+      .clk(aclk), .rst_n(aresetn),
+      .l2_req_addr, .l2_req_valid, .l2_fill_line, .l2_fill_valid, .l2_wr_valid, .l2_wr_addr, .l2_wr_line,
+      .awaddr(m_if[M_CPU].awaddr), .awvalid(m_if[M_CPU].awvalid), .awready(m_if[M_CPU].awready),
+      .wdata(m_if[M_CPU].wdata), .wlast(m_if[M_CPU].wlast), .wvalid(m_if[M_CPU].wvalid), .wready(m_if[M_CPU].wready),
+      .bresp(m_if[M_CPU].bresp), .bvalid(m_if[M_CPU].bvalid),
+      .araddr(m_if[M_CPU].araddr), .arvalid(m_if[M_CPU].arvalid), .arready(m_if[M_CPU].arready),
+      .rdata(m_if[M_CPU].rdata), .rresp(m_if[M_CPU].rresp), .rlast(m_if[M_CPU].rlast), .rvalid(m_if[M_CPU].rvalid),
+      .wq_overflow, .bus_err);
+    assign m_if[M_CPU].awid = '0;     assign m_if[M_CPU].arid = '0;
+    assign m_if[M_CPU].awlen = 8'd15; assign m_if[M_CPU].arlen = 8'd15;
+    assign m_if[M_CPU].awsize = 3'd2; assign m_if[M_CPU].arsize = 3'd2;
+    assign m_if[M_CPU].awburst = 2'b01; assign m_if[M_CPU].arburst = 2'b01;
+    assign m_if[M_CPU].awprot = '0;   assign m_if[M_CPU].arprot = '0;
+    assign m_if[M_CPU].awlock = 1'b0; assign m_if[M_CPU].arlock = 1'b0;
+    assign m_if[M_CPU].awcache = '0;  assign m_if[M_CPU].arcache = '0;
+    assign m_if[M_CPU].wstrb = 4'hF;
+    assign m_if[M_CPU].bready = 1'b1; assign m_if[M_CPU].rready = 1'b1;
+    always @(posedge aclk) if (aresetn) begin
+      if (wq_overflow) $error("tv8k_core2axi: write-back queue overflow");
+      if (bus_err)     $error("tv8k_core2axi: error response");
+    end
+  end
+`endif
 
   for (genvar s = 0; s < NS; s++) begin : g_s
     tv8k_ni_slv #(.SELF(NM + s), .QD(NM * 8), .OUTS(4)) u_ni (
@@ -205,6 +245,72 @@ module tv8k_noc_tb_top;
         .m_rvalid(c1p_rvalid), .m_rready(c1p_rready), .m_rdata(c1p_rdata), .m_rresp(c1p_rresp));
       assign s_if[s].bid[7:4] = '0;
       assign s_if[s].rid[7:4] = '0;
+    end
+`endif
+`ifdef TV8K_NPU
+    if (NM + s == S_NPUR) begin : g_npu
+      // xuanji NPU subsystem (orca_npu_ss_apb, X1: 8x8 array, 4 CUs): registers
+      // behind S_NPUR (AXI4 -> APB4), its 64-byte line DMA port drives master
+      // port M_NPU through tv8k_line2axi (the M_NPU agent is passive)
+      logic        psel, penable, pwrite, pready, pslverr, irq, busy;
+      logic [11:0] paddr;
+      logic [31:0] pwdata, prdata;
+      logic [3:0]  pstrb;
+      logic        rd_req, rd_gnt, rd_rvalid, wr_req, wr_gnt;
+      logic [31:0] rd_addr, wr_addr;
+      logic [511:0] rd_rdata, wr_data;
+      logic [31:0] n_bresp;
+      logic        bus_err;
+      logic [3:0]  awid4, arid4;
+
+      tv8k_axi2apb #(.AW(12)) u_apb (
+        .clk(aclk), .rst_n(aresetn),
+        .s_awid(s_if[s].awid[3:0]), .s_awaddr(s_if[s].awaddr), .s_awlen(s_if[s].awlen),
+        .s_awvalid(s_if[s].awvalid), .s_awready(s_if[s].awready),
+        .s_wdata(s_if[s].wdata), .s_wstrb(s_if[s].wstrb), .s_wlast(s_if[s].wlast),
+        .s_wvalid(s_if[s].wvalid), .s_wready(s_if[s].wready),
+        .s_bid(s_if[s].bid[3:0]), .s_bresp(s_if[s].bresp), .s_bvalid(s_if[s].bvalid), .s_bready(s_if[s].bready),
+        .s_arid(s_if[s].arid[3:0]), .s_araddr(s_if[s].araddr), .s_arlen(s_if[s].arlen),
+        .s_arvalid(s_if[s].arvalid), .s_arready(s_if[s].arready),
+        .s_rid(s_if[s].rid[3:0]), .s_rdata(s_if[s].rdata), .s_rresp(s_if[s].rresp), .s_rlast(s_if[s].rlast),
+        .s_rvalid(s_if[s].rvalid), .s_rready(s_if[s].rready),
+        .psel, .penable, .pwrite, .paddr, .pwdata, .pstrb, .pready, .prdata, .pslverr);
+      assign s_if[s].bid[7:4] = '0;
+      assign s_if[s].rid[7:4] = '0;
+
+      orca_npu_ss_apb #(.TILE_ID(0)) u_npu (
+        .clk(aclk), .rst_n(aresetn), .test_en(1'b0), .clk_aon(aclk), .por_n(aresetn),
+        .ret_save(1'b0), .ret_restore(1'b0),
+        .psel, .penable, .pwrite, .paddr, .pwdata, .pstrb, .pready, .prdata, .pslverr, .irq, .busy,
+        .m_rd_req(rd_req), .m_rd_addr(rd_addr), .m_rd_gnt(rd_gnt), .m_rd_rvalid(rd_rvalid), .m_rd_rdata(rd_rdata),
+        .m_wr_req(wr_req), .m_wr_addr(wr_addr), .m_wr_data(wr_data), .m_wr_gnt(wr_gnt));
+
+      tv8k_line2axi #(.RQ(8)) u_line (
+        .clk(aclk), .rst_n(aresetn),
+        .m_rd_req(rd_req), .m_rd_addr(rd_addr), .m_rd_gnt(rd_gnt), .m_rd_rvalid(rd_rvalid), .m_rd_rdata(rd_rdata),
+        .m_wr_req(wr_req), .m_wr_addr(wr_addr), .m_wr_data(wr_data), .m_wr_gnt(wr_gnt),
+        .awid(awid4), .awaddr(m_if[M_NPU].awaddr), .awlen(m_if[M_NPU].awlen), .awsize(m_if[M_NPU].awsize),
+        .awburst(m_if[M_NPU].awburst), .awvalid(m_if[M_NPU].awvalid), .awready(m_if[M_NPU].awready),
+        .wdata(m_if[M_NPU].wdata), .wstrb(m_if[M_NPU].wstrb), .wlast(m_if[M_NPU].wlast),
+        .wvalid(m_if[M_NPU].wvalid), .wready(m_if[M_NPU].wready),
+        .bresp(m_if[M_NPU].bresp), .bvalid(m_if[M_NPU].bvalid), .bready(m_if[M_NPU].bready),
+        .arid(arid4), .araddr(m_if[M_NPU].araddr), .arlen(m_if[M_NPU].arlen), .arsize(m_if[M_NPU].arsize),
+        .arburst(m_if[M_NPU].arburst), .arvalid(m_if[M_NPU].arvalid), .arready(m_if[M_NPU].arready),
+        .rdata(m_if[M_NPU].rdata), .rresp(m_if[M_NPU].rresp), .rlast(m_if[M_NPU].rlast),
+        .rvalid(m_if[M_NPU].rvalid), .rready(m_if[M_NPU].rready),
+        .n_bresp, .bus_err);
+      always @(posedge aclk) if ($test$plusargs("NPU_TRACE") && aresetn) begin
+        if (rd_gnt)    $display("NPU %t RD_GNT  line=%h", $time, rd_addr);
+        if (rd_rvalid) $display("NPU %t RD_DATA", $time);
+        if (wr_req)    $display("NPU %t WR_REQ  line=%h gnt=%b", $time, wr_addr, wr_gnt);
+        if (psel && penable && pready) $display("NPU %t APB %s %03h %08h", $time, pwrite ? "W" : "R", paddr,
+                                                 pwrite ? pwdata : prdata);
+      end
+      assign m_if[M_NPU].awid = 8'(awid4);
+      assign m_if[M_NPU].arid = 8'(arid4);
+      assign m_if[M_NPU].awprot = 3'b000; assign m_if[M_NPU].arprot = 3'b000;
+      assign m_if[M_NPU].awlock = 1'b0;   assign m_if[M_NPU].arlock = 1'b0;
+      assign m_if[M_NPU].awcache = 4'h0;  assign m_if[M_NPU].arcache = 4'h0;
     end
 `endif
     assign s_if[s].awid[7:4] = '0;

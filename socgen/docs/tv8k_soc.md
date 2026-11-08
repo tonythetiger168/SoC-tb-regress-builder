@@ -138,8 +138,52 @@ compared sample by sample with c1p's reference model (`c1p_hevc_model.py`).
 scripts/fetch_private_ip.sh
 make tv8k_vdec_vec                              # build/tv8k_vdec_vec/{base,lft4k}.*
 make build TB=tv8k_vdec
-make run TB=tv8k_vdec TEST=tv8k_vdec_hevc_test PLUSARGS="$(cat build/tv8k_vdec_vec/base.args)"
+make run TB=tv8k_vdec TEST=tv8k_vdec_hevc_test PLUSARGS=+C1P_VEC=base
 ```
 
 `base` (3 pictures, 200x120) and `lft4k` (16x4208) decode bit-exact. A run is
 about 3 minutes (Verilator, 200k cycles). Suite: `regress/suites/tv8k_vdec.yaml`.
+
+## NPU subsystem: the xuanji NPU on the NoC (built now)
+
+`sim/tv8k_npu.f` puts xuanji-core's NPU subsystem (`orca_npu_ss_apb`: 8x8 INT8
+array, command queue, line DMA) on the NoC:
+
+* its APB registers behind slave port `npu_regs` (0x1102_0000) through
+  `rtl/tv8k/tv8k_axi2apb.sv`,
+* its 64-byte line DMA port on the NPU master NI through
+  `rtl/tv8k/tv8k_line2axi.sv` (16-beat bursts, up to 8 reads in flight).
+
+`tv8k_npu_gemm_test` has the CPU VIP run firmware through the NoC: per job a
+DMA load of A and B, a GEMM (signed or unsigned per operand, K up to
+`+NPU_KMAX`) and a DMA store of C, then a 2D DMA copy; completions are popped
+while commands wait for queue space. C and the copy are checked against the
+computed result. `+NPU_JOBS=<n>` sets the job count.
+
+```sh
+make build TB=tv8k_npu
+make run TB=tv8k_npu TEST=tv8k_npu_gemm_test SEED=2
+```
+
+Suite: `regress/suites/tv8k_npu.yaml`.
+
+## CPU subsystem: the xuanji RV64 core on the NoC (built now)
+
+`sim/tv8k_cpu.f` puts xuanji-core's out-of-order RV64IMAC core
+(`orca_v63_cpu_core`) on the CPU master NI through `rtl/tv8k/tv8k_core2axi.sv`
+(the core's 64-byte L2 line port to 16-beat bursts; L1D write-backs queued and
+drained before the next read, so a read never passes a write-back).
+
+`tv8k_cpu_boot_test` loads `sw/tv8k_cpu` (built with clang and ld.lld by
+`make tv8k_cpu_sw`) into DRAM at 0x8000_0000 and releases the core: it fills a
+table, sorts it, copies it and writes a signature, then writes a done word.
+The test checks the copy and the signature; the other masters run background
+traffic (`+VDEC_BG=<items>`). One run is about 50 us of simulated time.
+
+```sh
+make tv8k_cpu_sw                                # build/tv8k_cpu/tv8k_cpu.hex
+make build TB=tv8k_cpu
+make run TB=tv8k_cpu TEST=tv8k_cpu_boot_test
+```
+
+Suite: `regress/suites/tv8k_cpu.yaml`.
