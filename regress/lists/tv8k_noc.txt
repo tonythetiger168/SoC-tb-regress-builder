@@ -1,0 +1,4 @@
+# tv8k NoC: connectivity and random traffic
+tv8k_noc_smoke_test      1
+tv8k_noc_rand_test       4
+tv8k_noc_rand_test       2  +SOC_TIMING=0

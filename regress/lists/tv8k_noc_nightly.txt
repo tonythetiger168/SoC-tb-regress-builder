@@ -1,0 +1,3 @@
+tv8k_noc_smoke_test      2
+tv8k_noc_rand_test       20  +SOC_ITEMS=200
+tv8k_noc_rand_test       10  +SOC_TIMING=0 +SOC_ITEMS=200

@@ -17,8 +17,18 @@ UVM_HOME ?= $(CURDIR)/uvm-core/src
 BUILD    := build/$(SIM)/$(TB)
 TOP_soc  := soc_tb_top
 TOP_vip  := vip_tb_top
+TOP_tv8k_noc := tv8k_noc_tb_top
+TOP_tv8k_noc_open := tv8k_noc_tb_top
 TOP      := $(TOP_$(TB))
 FLIST    := sim/$(TB).f
+# TB=tv8k_noc needs the xuanji-core router (scripts/fetch_private_ip.sh puts it
+# in ext/); without it the build falls back to the open stand-in router
+ifeq ($(TB),tv8k_noc)
+ifeq ($(wildcard ext/xuanji-core/rtl/noc/orca_noc_router.sv),)
+$(info ext/xuanji-core not fetched: building tv8k_noc with the open router (sim/tv8k_noc_open.f))
+FLIST    := sim/tv8k_noc_open.f
+endif
+endif
 JOBS     ?= $(shell nproc)
 PLUSARGS ?=
 

@@ -1,0 +1,13 @@
+# Subsystem suite of the 8K TV SoC: NoC bandwidth and contention (long bursts
+# from all masters, all masters on one DRAM channel); feeds the latency report.
+name: tv8k_noc_perf
+level: subsystem
+soc: tv8k
+subsystem: noc
+description: Long bursts from every master at once and an all-masters DRAM-channel-0 hotspot; per-path latency under load.
+filelist: sim/tv8k_noc.f
+top: tv8k_noc_tb_top
+list: {default: regress/lists/tv8k_noc_perf.txt, nightly: regress/lists/tv8k_noc_perf_nightly.txt}
+cov_include: ["*rtl/tv8k/*"]
+requires: [ext/xuanji-core/rtl/noc/orca_noc_router.sv]
+fallback: {filelist: sim/tv8k_noc_open.f}

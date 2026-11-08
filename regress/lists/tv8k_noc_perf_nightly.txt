@@ -1,0 +1,2 @@
+tv8k_noc_bw_test         10  +SOC_ITEMS=150
+tv8k_noc_hotspot_test    10  +SOC_ITEMS=150

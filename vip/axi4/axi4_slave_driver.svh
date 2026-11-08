@@ -94,6 +94,7 @@ class axi4_slave_driver extends uvm_component;
     axi4_item t;
     forever begin
       b_mb.get(t);
+      @(vif.slv_cb);                       // re-sync after the mailbox wakeup
       repeat (axi4_cfg::rand_delay(cfg.max_b_latency)) @(vif.slv_cb);
       vif.slv_cb.bid    <= t.id;
       vif.slv_cb.bresp  <= t.resp[0];
@@ -124,6 +125,7 @@ class axi4_slave_driver extends uvm_component;
     forever begin
       axi4_resp_e rsp;
       ar_mb.get(t);
+      @(vif.slv_cb);                       // re-sync after the mailbox wakeup
       rsp = cfg.resp_for(t.addr);
       repeat (axi4_cfg::rand_delay(cfg.max_r_latency)) @(vif.slv_cb);
       for (int unsigned i = 0; i < t.beats(); i++) begin
