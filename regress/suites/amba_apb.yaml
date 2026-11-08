@@ -1,0 +1,9 @@
+# Subsystem suite: AXI-to-APB bridge, APB decoder, GPIO, UART and the external APB slot
+name: amba_apb
+level: subsystem
+soc: amba
+subsystem: apb_periph
+description: Bridge traffic to GPIO, UART, the external slot (wait states, PSLVERR) and unmapped slots.
+filelist: sim/soc.f
+top: soc_tb_top
+list: {default: regress/lists/amba_apb.txt, nightly: regress/lists/amba_apb_nightly.txt}

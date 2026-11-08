@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: DMA-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_dma
+level: subsystem
+soc: phone
+subsystem: dma
+description: "Standalone system DMA: copy/fill on 4 channels, round-robin arbitration. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/DMA-UVM-VIP.zip
+filelist: sim/dma.f
+top: top_tb
+list: sim/testlist.txt

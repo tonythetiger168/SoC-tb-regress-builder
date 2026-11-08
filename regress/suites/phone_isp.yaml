@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: ISP-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_isp
+level: subsystem
+soc: phone
+subsystem: isp
+description: "Standalone camera ISP: test pattern and sensor stream, black level, gain, clipping, stats. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/ISP-UVM-VIP.zip
+filelist: sim/isp.f
+top: top_tb
+list: sim/testlist.txt

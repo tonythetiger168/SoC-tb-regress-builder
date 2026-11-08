@@ -4,3 +4,4 @@ uvm-core
 uvm-core/
 *.vcd
 __pycache__/
+ext/

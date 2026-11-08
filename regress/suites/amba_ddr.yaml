@@ -1,0 +1,9 @@
+# Subsystem suite: external DDR port (AXI4 slave VIP + memory model)
+name: amba_ddr
+level: subsystem
+soc: amba
+subsystem: ddr
+description: FIXED/INCR/WRAP, narrow and strobed bursts up to 256 beats, and the DDR error window.
+filelist: sim/soc.f
+top: soc_tb_top
+list: {default: regress/lists/amba_ddr.txt, nightly: regress/lists/amba_ddr_nightly.txt}

@@ -1,0 +1,8 @@
+# SoC-level suite of the AMBA SoC (amba_soc_top): both masters on every target
+name: amba_soc
+level: soc
+soc: amba
+description: Directed smoke plus concurrent and back-pressure stress traffic from both masters to every target.
+filelist: sim/soc.f
+top: soc_tb_top
+list: {default: regress/lists/amba_soc.txt, nightly: regress/lists/amba_soc_nightly.txt}

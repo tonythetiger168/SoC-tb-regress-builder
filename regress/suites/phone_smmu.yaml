@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: SMMU-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_smmu
+level: subsystem
+soc: phone
+subsystem: smmu
+description: "Standalone SMMU: translation, TLB refill, permission faults, invalidation. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/SMMU-UVM-VIP.zip
+filelist: sim/smmu.f
+top: top_tb
+list: sim/testlist.txt

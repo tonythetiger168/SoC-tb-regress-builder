@@ -1,0 +1,9 @@
+# AXI4 manager-port kit self-test (legal traffic + injected violations), from open-vip-portfolio
+name: vip_axim_kit
+level: vip
+soc: vip
+description: "AXI4 manager-port checker kit shared by every subsystem VIP: legal traffic and injected protocol violations."
+zip: ext/open-vip-portfolio/vips/AXI4_Manager_Port-UVM-VIP.zip
+filelist: sim/axim_kit.f
+top: top_tb
+list: sim/testlist.txt

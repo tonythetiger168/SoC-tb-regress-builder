@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: Interrupt_Controller-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_interrupt_controller
+level: subsystem
+soc: phone
+subsystem: interrupt_controller
+description: "Standalone interrupt controller: pending/claim, priority, event log. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/Interrupt_Controller-UVM-VIP.zip
+filelist: sim/interrupt_controller.f
+top: top_tb
+list: sim/testlist.txt

@@ -1,0 +1,10 @@
+# Phone SoC subsystem bench: NPU-UVM-VIP from open-vip-portfolio (fetch with scripts/fetch_vips.sh)
+name: phone_npu
+level: subsystem
+soc: phone
+subsystem: npu
+description: "Standalone NPU: convolution. Real open-ip RTL snapshot inside the VIP zip."
+zip: ext/open-vip-portfolio/vips/NPU-UVM-VIP.zip
+filelist: sim/npu.f
+top: top_tb
+list: sim/testlist.txt
