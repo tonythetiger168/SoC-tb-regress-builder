@@ -159,6 +159,13 @@ class Generate(unittest.TestCase):
         self.assertEqual(r.id, 0x4750_0200)
         self.assertEqual([x.offset for x in r.regs][:5], [0, 4, 8, 12, 16])
 
+    def test_flags_volatile(self):
+        import openip
+        r = openip.registers(IP_ROOT, "I2S_Audio")
+        f = next(x for x in r.regs if x.name == "FLAGS")
+        self.assertTrue(f.volatile)
+        self.assertFalse(f.testable)
+
     def test_memory_named_dram(self):
         import socgen
         r = raw("mini_soc.yaml")
