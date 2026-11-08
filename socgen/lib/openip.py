@@ -97,6 +97,15 @@ def registers(ip_root, ip):
             if k is not None and k != "rw":
                 r.testable = False
                 r.volatile = True
+    # FLAGS is a word gen_apb adds to every IP (not in the JSON regs): it
+    # shows live stream state (TX full, RX available), so its value after
+    # reset depends on the core and the test must not check it.
+    for r in regs:
+        if r.name == "FLAGS":
+            r.testable = False
+            r.volatile = True
+            for f in r.fields:
+                f.volatile = True
     idreg = next((r for r in regs if r.name == "ID"), None)
     return Obj(regs=regs, id=idreg.reset if idreg else None, doc=os.path.relpath(path, ip_root))
 

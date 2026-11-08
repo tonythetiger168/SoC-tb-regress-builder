@@ -43,6 +43,8 @@ package phone_soc_env_pkg;
     pattern_e    pattern;
     int unsigned blk_w, blk_h, stride;
     int unsigned gap;
+    int unsigned bw_mbps;      // requested bandwidth, 0: none
+    bit          pace;         // pace burst starts to bw_mbps
   } window_t;
 
   // scenario -1: the masters' default profiles; otherwise the scenario's
@@ -53,59 +55,59 @@ package phone_soc_env_pkg;
       -1: begin   // default profiles
         case (mi)
           M_CPU: begin
-            q.push_back('{ 0, 32'h80000000, 32'h08888000, 70, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
-            q.push_back('{ 0, 32'h00000000, 32'h00001000, 70, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // boot_sram
-            q.push_back('{ 1, 32'h10000000, 32'h00010000, 70, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // periph
+            q.push_back('{ 0, 32'h80000000, 32'h08888000, 70, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'h00000000, 32'h00001000, 70, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // boot_sram
+            q.push_back('{ 1, 32'h10000000, 32'h00010000, 70, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // periph
           end
           M_GPU: begin
-            q.push_back('{ 0, 32'h88888000, 32'h08888000, 60, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'h88888000, 32'h08888000, 60, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
           end
           M_APU: begin
-            q.push_back('{ 0, 32'h91110000, 32'h08888000, 80, 8, 16, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'h91110000, 32'h08888000, 80, 8, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
           end
           M_ISP: begin
-            q.push_back('{ 0, 32'h99998000, 32'h08888000, 10, 8, 16, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'h99998000, 32'h08888000, 10, 8, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
           end
           M_ICP: begin
-            q.push_back('{ 0, 32'hA2220000, 32'h08888000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
-            q.push_back('{ 0, 32'h00004000, 32'h00001000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // boot_sram
-            q.push_back('{ 1, 32'h10000000, 32'h00010000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // periph
+            q.push_back('{ 0, 32'hA2220000, 32'h08888000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'h00004000, 32'h00001000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // boot_sram
+            q.push_back('{ 1, 32'h10000000, 32'h00010000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // periph
           end
           M_VDEC: begin
-            q.push_back('{ 0, 32'hAAAA8000, 32'h08888000, 60, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'hAAAA8000, 32'h08888000, 60, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
           end
           M_VENC: begin
-            q.push_back('{ 0, 32'hB3330000, 32'h08888000, 60, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'hB3330000, 32'h08888000, 60, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
           end
           M_DISP: begin
-            q.push_back('{ 0, 32'hBBBB8000, 32'h08888000, 95, 8, 16, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'hBBBB8000, 32'h08888000, 95, 8, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
           end
           M_ADSP: begin
-            q.push_back('{ 0, 32'hC4440000, 32'h08888000, 60, 1, 8, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
-            q.push_back('{ 0, 32'h00008000, 32'h00001000, 60, 1, 8, PAT_RANDOM, 0, 0, 0, 0 });   // boot_sram
+            q.push_back('{ 0, 32'hC4440000, 32'h08888000, 60, 1, 8, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'h00008000, 32'h00001000, 60, 1, 8, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // boot_sram
           end
           M_MODEM: begin
-            q.push_back('{ 0, 32'hCCCC8000, 32'h08888000, 60, 1, 8, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
-            q.push_back('{ 0, 32'h00009000, 32'h00001000, 60, 1, 8, PAT_RANDOM, 0, 0, 0, 0 });   // boot_sram
+            q.push_back('{ 0, 32'hCCCC8000, 32'h08888000, 60, 1, 8, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'h00009000, 32'h00001000, 60, 1, 8, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // boot_sram
           end
           M_CONN: begin
-            q.push_back('{ 0, 32'hD5550000, 32'h08888000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'hD5550000, 32'h08888000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
           end
           M_SCP: begin
-            q.push_back('{ 0, 32'hDDDD8000, 32'h08888000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
-            q.push_back('{ 0, 32'h0000B000, 32'h00001000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // boot_sram
-            q.push_back('{ 1, 32'h10000000, 32'h00010000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // periph
+            q.push_back('{ 0, 32'hDDDD8000, 32'h08888000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'h0000B000, 32'h00001000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // boot_sram
+            q.push_back('{ 1, 32'h10000000, 32'h00010000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // periph
           end
           M_UFS: begin
-            q.push_back('{ 0, 32'hE6660000, 32'h08888000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'hE6660000, 32'h08888000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
           end
           M_SEC: begin
-            q.push_back('{ 0, 32'hEEEE8000, 32'h08888000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
-            q.push_back('{ 0, 32'h0000D000, 32'h00001000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // boot_sram
-            q.push_back('{ 1, 32'h10000000, 32'h00010000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0 });   // periph
+            q.push_back('{ 0, 32'hEEEE8000, 32'h08888000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'h0000D000, 32'h00001000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // boot_sram
+            q.push_back('{ 1, 32'h10000000, 32'h00010000, 50, 1, 4, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // periph
           end
           M_DMA: begin
-            q.push_back('{ 0, 32'hF7770000, 32'h08888000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0 });   // lpddr
+            q.push_back('{ 0, 32'hF7770000, 32'h08888000, 50, 4, 16, PAT_RANDOM, 0, 0, 0, 0, 0, 0 });   // lpddr
           end
           default: ;
         endcase

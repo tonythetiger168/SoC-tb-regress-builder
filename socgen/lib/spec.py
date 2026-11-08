@@ -396,7 +396,7 @@ def _rtl(r, what):
 
 def _profile(p, what):
     keys(p, ["read_pct", "beats", "targets", "outstanding", "bandwidth_mbps", "pattern",
-             "region", "block", "stride", "gap"], what)
+             "region", "block", "stride", "gap", "pace"], what)
     rp = num(p.get("read_pct", 50), f"{what}.read_pct")
     if not 0 <= rp <= 100:
         raise SpecError(f"{what}.read_pct: 0..100")
@@ -429,8 +429,16 @@ def _profile(p, what):
             raise SpecError(f"{what}: block width a multiple of 4 up to 4 KB, stride >= width")
     elif "block" in p or "stride" in p:
         raise SpecError(f"{what}: block/stride only with pattern block2d")
+    bw = num(p["bandwidth_mbps"], what) if "bandwidth_mbps" in p else 0
+    pace = p.get("pace", False)
+    if not isinstance(pace, bool):
+        raise SpecError(f"{what}.pace: true or false")
+    if pace and not bw:
+        raise SpecError(f"{what}.pace needs bandwidth_mbps")
+    if pace and p.get("gap"):
+        raise SpecError(f"{what}: pace and gap both set; pace derives the gap from bandwidth_mbps")
     return Obj(read_pct=rp, beats=(lo, hi), targets=list(p.get("targets") or []),
-               bandwidth=num(p["bandwidth_mbps"], what) if "bandwidth_mbps" in p else 0,
+               bandwidth=bw, pace=pace,
                pattern=pat, region=region, block=blk, stride=stride,
                gap=num(p.get("gap", 0), f"{what}.gap"))
 

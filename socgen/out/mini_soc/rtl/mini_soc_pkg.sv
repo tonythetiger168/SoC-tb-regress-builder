@@ -143,7 +143,7 @@ package mini_soc_pkg;
   localparam int M_PRIORITY [NM] = '{ 8, 12, 1 };
   localparam string M_QOS [NM] = '{ "nrt", "rt", "be" };
   localparam int M_LAT_TARGET [NM] = '{ 80, 120, 0 };   // 0: none
-  localparam int M_BW_MBPS [NM] = '{ 0, 0, 0 };
+  localparam int M_BW_MBPS [NM] = '{ 0, 400, 0 };
 
   // one address per (master, slave port) inside that master's private slice
   localparam logic [31:0] PATH_ADDR [NM][NS] = '{
