@@ -35,6 +35,12 @@ jobs:
           sudo mkdir -p /opt/verilator && sudo chown "$USER" /opt/verilator
           bash scripts/install_tools.sh
           echo "/opt/verilator/bin" >> "$GITHUB_PATH"
+      - name: Fetch subsystem VIP benches (open-vip-portfolio)
+        # suites whose zip is missing are reported as not run
+        env:
+          OPEN_VIP_REF: ${{ vars.OPEN_VIP_REF || 'main' }}
+          GH_TOKEN: ${{ secrets.OPEN_VIP_TOKEN }}
+        run: bash scripts/fetch_vips.sh || echo "::warning::subsystem VIP zips not fetched"
       - name: Regression (${{ matrix.level }} suites)
         run: |
           PROFILE="${{ github.event.inputs.profile }}"
