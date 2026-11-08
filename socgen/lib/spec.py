@@ -518,7 +518,7 @@ def _apb_slots(periphs, br, m, what):
     for i, p in enumerate(entries):
         w = f"{what}[{i}]"
         io = p.pop("_iommu", None) if isinstance(p, dict) else None
-        keys(p, ["name", "slot", "ip", "regs", "vip", "rtl_master", "ral", "params", "pins", "base"], w,
+        keys(p, ["name", "slot", "ip", "regs", "vip", "rtl_master", "ral", "params", "pins", "pins_vip", "base"], w,
              required=["name"])
         src = [k for k in ("ip", "regs", "vip", "rtl_master") if k in p]
         if len(src) != 1:
@@ -555,7 +555,20 @@ def _apb_slots(periphs, br, m, what):
             if "ral" in p and p["ral"] not in m.register_blocks:
                 raise SpecError(f"{w}.ral: {p['ral']!r} not in register_blocks")
             rm.rtl.apb = p["name"]
-        slots.append(Obj(name=ident(p["name"], f"{w}.name"), slot=slot, kind=kind,
+        pv = None
+        if "pins_vip" in p:
+            if kind != "ip":
+                raise SpecError(f"{w}.pins_vip: only on an ip peripheral")
+            v = p["pins_vip"]
+            keys(v, ["model", "vip", "files", "params", "map", "inout", "clock", "reset"],
+                 f"{w}.pins_vip", required=["model"])
+            if ("vip" in v) == ("files" in v):
+                raise SpecError(f"{w}.pins_vip: exactly one of vip (open-vip name) / files")
+            pv = Obj(model=ident(v["model"], f"{w}.pins_vip.model"), vip=v.get("vip"),
+                     files=list(v.get("files") or []), params=dict(v.get("params") or {}),
+                     map=dict(v.get("map") or {}), inout=list(v.get("inout") or []),
+                     clock=v.get("clock", "clk"), reset=v.get("reset", "rst_n"))
+        slots.append(Obj(name=ident(p["name"], f"{w}.name"), slot=slot, kind=kind, pins_vip=pv,
                          ip=p.get("ip"), regs=p.get("regs") or p.get("ral"), iommu=io,
                          rtl_master=p.get("rtl_master"),
                          params=dict(p.get("params") or {}), pins=dict(p.get("pins") or {}),

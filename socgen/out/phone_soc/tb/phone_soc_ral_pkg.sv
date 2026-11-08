@@ -68,7 +68,7 @@ package phone_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -151,6 +151,7 @@ package phone_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = phone_soc_gpio_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -224,7 +225,7 @@ package phone_soc_ral_pkg;
     endfunction
     virtual function void build();
       F0 = uvm_reg_field::type_id::create("F0");
-      F0.configure(this, 2, 0, "RO", 0, 2'h0, 1, 0, 0);
+      F0.configure(this, 2, 0, "RO", 1, 2'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -294,6 +295,7 @@ package phone_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = phone_soc_uart_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -363,7 +365,7 @@ package phone_soc_ral_pkg;
     endfunction
     virtual function void build();
       F0 = uvm_reg_field::type_id::create("F0");
-      F0.configure(this, 1, 0, "RO", 0, 1'h0, 1, 0, 0);
+      F0.configure(this, 1, 0, "RO", 1, 1'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -446,6 +448,7 @@ package phone_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = phone_soc_i2c_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -519,7 +522,7 @@ package phone_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -589,6 +592,7 @@ package phone_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = phone_soc_spi_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -658,7 +662,7 @@ package phone_soc_ral_pkg;
     endfunction
     virtual function void build();
       VAL = uvm_reg_field::type_id::create("VAL");
-      VAL.configure(this, 32, 0, "RO", 0, 32'h0, 1, 0, 0);
+      VAL.configure(this, 32, 0, "RO", 1, 32'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -728,6 +732,7 @@ package phone_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = phone_soc_pwm_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();
@@ -797,7 +802,7 @@ package phone_soc_ral_pkg;
     endfunction
     virtual function void build();
       F0 = uvm_reg_field::type_id::create("F0");
-      F0.configure(this, 1, 0, "RO", 0, 1'h0, 1, 0, 0);
+      F0.configure(this, 1, 0, "RO", 1, 1'h0, 1, 0, 0);
     endfunction
   endclass
 
@@ -965,6 +970,7 @@ package phone_soc_ral_pkg;
       FLAGS.configure(this);
       FLAGS.build();
       default_map.add_reg(FLAGS, 'h00C, "RO");
+      uvm_resource_db#(bit)::set({"REG::", FLAGS.get_full_name()}, "NO_REG_TESTS", 1, this);
       SCRATCH = phone_soc_trng_blk_scratch::type_id::create("SCRATCH");
       SCRATCH.configure(this);
       SCRATCH.build();

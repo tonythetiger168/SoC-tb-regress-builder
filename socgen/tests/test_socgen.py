@@ -159,6 +159,67 @@ class Generate(unittest.TestCase):
         self.assertEqual(r.id, 0x4750_0200)
         self.assertEqual([x.offset for x in r.regs][:5], [0, 4, 8, 12, 16])
 
+    def test_flags_volatile(self):
+        import openip
+        r = openip.registers(IP_ROOT, "I2S_Audio")
+        f = next(x for x in r.regs if x.name == "FLAGS")
+        self.assertTrue(f.volatile)
+        self.assertFalse(f.testable)
+
+    def _dev_spec(self, pv):
+        r = raw("mini_soc.yaml")
+        r["slaves"][1]["peripherals"].append({"name": "sd", "ip": "SD", "slot": 4, "pins_vip": pv})
+        return spec.elaborate(r)
+
+    MODEL = """module top_tb; endmodule
+module sdc_model #(parameter int NCR = 2) (
+  input  logic       clk,
+  input  logic       rst_n,
+  input  logic       sd_clk,
+  input  logic       cmd_m,
+  input  logic       cmd_m_oe,
+  input  logic [3:0] dat_m,
+  input  logic       dat_m_oe,
+  output logic       cmd_s,
+  output logic       cmd_s_oe,
+  output logic [3:0] dat_s,
+  output logic [3:0] dat_s_oe
+);
+endmodule
+"""
+
+    def test_pins_vip_from_zip(self):
+        import socgen
+        import zipfile
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "vips"))
+            with zipfile.ZipFile(os.path.join(d, "vips", "SD_Card-UVM-VIP.zip"), "w") as z:
+                z.writestr("SD_Card-UVM-VIP/tb/top_tb.sv", self.MODEL)
+            m = self._dev_spec({"model": "sdc_model", "vip": "SD_Card-UVM-VIP", "inout": ["cmd", "dat"],
+                                "params": {"NCR": 3}})
+            out = os.path.join(d, "out")
+            socgen.generate(m, out, IP_ROOT, os.path.join(SOCGEN, "specs", "mini_soc.yaml"), False, d)
+            sub = open(os.path.join(out, "rtl", "mini_soc_apb_subsys.sv")).read()
+            model = open(os.path.join(out, "rtl", "vip", "sdc_model.sv")).read()
+            fl = open(os.path.join(out, "sim", "files.f")).read()
+        self.assertNotIn("module top_tb", model)
+        self.assertIn("sdc_model #(.NCR(3)) u_sd_dev", sub)
+        self.assertIn(".cmd_m(sd_cmd)", sub)
+        self.assertIn(".dat_m_oe('1)", sub)
+        self.assertIn("assign sd_dat[3] = sd_vip_dat_s_oe[3] ? sd_vip_dat_s[3] : 1'bz;", sub)
+        self.assertIn("assign sd_cmd[0] = sd_vip_cmd_s_oe[0] ? sd_vip_cmd_s[0] : 1'bz;", sub)
+        self.assertIn("rtl/vip/sdc_model.sv", fl)
+
+    def test_pins_vip_unconnected_input(self):
+        import socgen
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "m.sv")
+            open(f, "w").write(self.MODEL.replace("input  logic       sd_clk", "input  logic       sd_clk_x"))
+            m = self._dev_spec({"model": "sdc_model", "files": [f], "inout": ["cmd", "dat"]})
+            with self.assertRaisesRegex(SpecError, "sd_clk_x.*not connected"):
+                socgen.generate(m, os.path.join(d, "out"), IP_ROOT,
+                                os.path.join(SOCGEN, "specs", "mini_soc.yaml"), False, d)
+
     def test_memory_named_dram(self):
         import socgen
         r = raw("mini_soc.yaml")
