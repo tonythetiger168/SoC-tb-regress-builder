@@ -224,6 +224,53 @@ endmodule
         self.assertIn("assign sd_dat[2] = sd_vip_dat0_s_oe[0] ? sd_vip_dat0_s[0] : 1'bz;", sub)
         self.assertNotIn("assign sd_dat[0]", sub)
 
+    def test_pins_vip_out_oe_names(self):
+        import socgen
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "m.sv")
+            open(f, "w").write(self.MODEL.replace("dat_s_oe", "fl_oe").replace("dat_s", "fl_dat"))
+            m = self._dev_spec({"model": "sdc_model", "files": [f],
+                                "inout": ["cmd", {"pin": "dat", "out": "fl_dat", "oe": "fl_oe"}]})
+            out = os.path.join(d, "out")
+            socgen.generate(m, out, IP_ROOT, os.path.join(SOCGEN, "specs", "mini_soc.yaml"), False, d)
+            sub = open(os.path.join(out, "rtl", "mini_soc_apb_subsys.sv")).read()
+        self.assertIn(".dat_m(sd_dat)", sub)
+        self.assertIn("assign sd_dat[1] = sd_vip_fl_oe[1] ? sd_vip_fl_dat[1] : 1'bz;", sub)
+
+    def test_pins_vip_out_without_oe(self):
+        self.assertRaisesRegex(SpecError, "out and oe go together", self._dev_spec,
+                               {"model": "x", "files": ["x.sv"], "inout": [{"pin": "dat", "out": "q"}]})
+
+    def test_periph_slave_needs_ip_peripheral(self):
+        r = raw("mini_soc.yaml")
+        r["slaves"].insert(0, {"name": "xip", "kind": "periph", "periph": "nope", "base": 0x3000_0000,
+                               "size": 0x10_0000, "node": [0, 0]})
+        self.assertRaisesRegex(SpecError, "'nope' is not an ip peripheral", spec.elaborate, r)
+        r["slaves"][0].pop("periph")
+        self.assertRaisesRegex(SpecError, "kind periph and periph", spec.elaborate, r)
+
+    @unittest.skipUnless(os.path.exists(os.path.join(IP_ROOT, "rtl", "QSPI_XIP_apb.sv")), "needs open-ip QSPI_XIP")
+    def test_periph_slave_xip(self):
+        import socgen
+        r = raw("mini_soc.yaml")
+        r["slaves"].insert(0, {"name": "xip", "kind": "periph", "periph": "qx", "base": 0x3000_0000,
+                               "size": 0x10_0000, "node": [0, 0]})
+        r["slaves"][2]["peripherals"].append({"name": "qx", "ip": "QSPI_XIP", "slot": 4})
+        m = spec.elaborate(r)
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "out")
+            socgen.generate(m, out, IP_ROOT, os.path.join(SOCGEN, "specs", "mini_soc.yaml"), False, d)
+            sub = open(os.path.join(out, "rtl", "mini_soc_apb_subsys.sv")).read()
+            top = open(os.path.join(out, "tb", "mini_soc_tb_top.sv")).read()
+            pkg = open(os.path.join(out, "rtl", "mini_soc_pkg.sv")).read()
+        self.assertIn("input logic [3:0] qx_axi_arid,", sub)
+        self.assertIn(".s_arvalid(qx_axi_arvalid)", sub)
+        self.assertIn("assign qx_axi_rdata = qx_s_rdata;", sub)
+        self.assertIn(".qx_axi_arid(s_if[S_XIP].arid[3:0]),", top)
+        self.assertIn(".qx_axi_rdata(s_if[S_XIP].rdata),", top)
+        self.assertIn("assign s_if[S_XIP].rid[7:4] = '0;", top)
+        self.assertIn('"periph"', pkg)
+
     def test_pins_vip_bad_slice(self):
         self.assertRaisesRegex(SpecError, "msb < lsb", self._dev_spec,
                                {"model": "x", "files": ["x.sv"], "inout": ["dat[0:3]"]})
