@@ -104,22 +104,28 @@ def wire(s, pv, ports, mparams, ip_pins):
             return None
         return p
 
-    for pin in pv.inout:
+    for io in pv.inout:
+        pin, port = io.pin, io.port
         ip = pins.get(pin)
         if ip is None or ip.dir != "inout":
             raise SpecError(f"peripheral {s.name}.pins_vip.inout: {s.ip}_apb has no inout pin {pin!r}")
-        net, W = f"{s.name}_{pin}", ip.width
-        so, soe, mi, moe = (need(f"{pin}_s", "output"), need(f"{pin}_s_oe", "output"),
-                            need(f"{pin}_m", "input"), need(f"{pin}_m_oe", "input"))
-        slo, mlo = need(f"{pin}_s_lo", "output"), need(f"{pin}_m_lo", "input")
+        lo, hi = (0, ip.width - 1) if io.hi is None else (io.lo, io.hi)
+        if hi >= ip.width:
+            raise SpecError(f"peripheral {s.name}.pins_vip.inout: {pin}[{hi}] outside {pin}[{ip.width - 1}:0]")
+        base = f"{s.name}_{pin}"
+        net = base if io.hi is None else (f"{base}[{hi}:{lo}]" if hi != lo else f"{base}[{lo}]")
+        so, soe, mi, moe = (need(f"{port}_s", "output"), need(f"{port}_s_oe", "output"),
+                            need(f"{port}_m", "input"), need(f"{port}_m_oe", "input"))
+        slo, mlo = need(f"{port}_s_lo", "output"), need(f"{port}_m_lo", "input")
         if so and soe:
             ow, oew = width(so.range, eff), width(soe.range, eff)
             decl.append(f"logic [{ow - 1}:0] {pre}_{so.name};")
             decl.append(f"logic [{oew - 1}:0] {pre}_{soe.name};")
             conns[so.name], conns[soe.name] = f"{pre}_{so.name}", f"{pre}_{soe.name}"
-            for b in range(W):
-                assigns.append(f"assign {net}[{b}] = {pre}_{soe.name}[{b if oew > 1 else 0}] ? "
-                               f"{pre}_{so.name}[{b if ow > 1 else 0}] : 1'bz;")
+            for b in range(lo, hi + 1):
+                k = b - lo
+                assigns.append(f"assign {base}[{b}] = {pre}_{soe.name}[{k if oew > 1 else 0}] ? "
+                               f"{pre}_{so.name}[{k if ow > 1 else 0}] : 1'bz;")
             if mi:
                 conns[mi.name] = net
             if moe:
@@ -128,13 +134,13 @@ def wire(s, pv, ports, mparams, ip_pins):
             sw = width(slo.range, eff)
             decl.append(f"logic [{sw - 1}:0] {pre}_{slo.name};")
             conns[slo.name] = f"{pre}_{slo.name}"
-            for b in range(W):
-                assigns.append(f"assign {net}[{b}] = {pre}_{slo.name}[{b if sw > 1 else 0}] ? 1'b0 : 1'bz;")
+            for b in range(lo, hi + 1):
+                assigns.append(f"assign {base}[{b}] = {pre}_{slo.name}[{b - lo if sw > 1 else 0}] ? 1'b0 : 1'bz;")
             if mlo:
                 conns[mlo.name] = f"~{net}"
         else:
-            raise SpecError(f"peripheral {s.name}: {pv.model} has neither {pin}_s/{pin}_s_oe nor "
-                            f"{pin}_s_lo for inout pin {pin!r}")
+            raise SpecError(f"peripheral {s.name}: {pv.model} has neither {port}_s/{port}_s_oe nor "
+                            f"{port}_s_lo for inout pin {pin!r} (set port: to the model's port prefix)")
     for p in ports:
         if p.name in conns and p.name not in pv.map:
             continue
