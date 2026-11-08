@@ -148,6 +148,20 @@ class Generate(unittest.TestCase):
         self.assertEqual(r.id, 0x4750_0200)
         self.assertEqual([x.offset for x in r.regs][:5], [0, 4, 8, 12, 16])
 
+    def test_memory_named_dram(self):
+        import socgen
+        r = raw("mini_soc.yaml")
+        r["memories"][0]["name"] = "dram"
+        for t in r["traffic"].values():
+            t["targets"] = ["dram" if x == "ddr" else x for x in t["targets"]]
+        m = spec.elaborate(r)
+        with tempfile.TemporaryDirectory() as d:
+            socgen.generate(m, d, IP_ROOT, os.path.join(SOCGEN, "specs", "mini_soc.yaml"), False)
+            with open(os.path.join(d, "rtl", "mini_soc_pkg.sv")) as f:
+                pkg = f.read()
+        names = re.findall(r"function automatic \S+(?: \[31:0\])? (\w+)\(", pkg)
+        self.assertEqual(len(names), len(set(names)), names)
+
     def test_generate_phone(self):
         import socgen
         m = spec.load(os.path.join(SOCGEN, "specs", "phone_soc.yaml"))
