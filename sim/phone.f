@@ -29,6 +29,8 @@ vip/apb/apb_if.sv
 vip/axi4/axi4_sva.sv
 vip/apb/apb_sva.sv
 vip/mem/mem_vip_pkg.sv
+vip/common/fcov_pkg.sv
+vip/common/lat_pkg.sv
 vip/axi4/axi4_pkg.sv
 vip/apb/apb_pkg.sv
 vip/lpddr5/lpddr5_pkg.sv

@@ -160,9 +160,23 @@ package lpddr5_pkg;
       x_page_bg:  cross cp_page, cp_bg;
     endgroup
 
+    // the same bins counted through fcov_pkg (FCOV lines, merged by regress.py)
+    fcov_pkg::fcov_group fg;
+
     function new(string name = "lpddr5_model");
       super.new(name);
       cg = new();
+    endfunction
+
+    function void set_fcov(string inst);
+      string dir[] = '{"rd", "wr"}, pg[] = '{"hit", "miss", "conflict"}, bg[] = '{"bg0", "bg1", "bg2", "bg3"};
+      fg = fcov_pkg::fcov_db::group("lpddr5_model", inst);
+      fg.add_bins("cp_dir", dir);
+      fg.add_bins("cp_page", pg);
+      fg.add_bins("cp_bg", bg);
+      fg.add_bins("cp_ref", '{"no", "stalled"});
+      fg.cross2("x_dir_page", "cp_dir", dir, "cp_page", pg);
+      fg.cross2("x_page_bg", "cp_page", pg, "cp_bg", bg);
     endfunction
 
     function void init(lpddr5_cfg c);
@@ -268,6 +282,16 @@ package lpddr5_pkg;
       if (stalled) n_ref_stall++;
       cv_write = wr; cv_page = pg; cv_bg = (b >> 2) & 3; cv_ref_stall = stalled;
       cg.sample();
+      if (fg != null) begin
+        string sd = wr ? "wr" : "rd", sp = (pg == PG_HIT) ? "hit" : (pg == PG_MISS) ? "miss" : "conflict";
+        string sb = $sformatf("bg%0d", (b >> 2) & 3);
+        fg.hit("cp_dir", sd);
+        fg.hit("cp_page", sp);
+        fg.hit("cp_bg", sb);
+        fg.hit("cp_ref", stalled ? "stalled" : "no");
+        fg.hit("x_dir_page", {sd, ".", sp});
+        fg.hit("x_page_bg", {sp, ".", sb});
+      end
       return d0;
     endfunction
 
@@ -324,6 +348,7 @@ package lpddr5_pkg;
         `uvm_fatal("NOCFG", {get_full_name(), ": lpddr5_cfg not set"})
       model = lpddr5_model::type_id::create({get_name(), "_model"});
       model.init(lp_cfg);
+      model.set_fcov(get_parent() != null ? get_parent().get_full_name() : get_full_name());
     endfunction
 
     static function int unsigned cycles_until(realtime t, real tck);
@@ -368,6 +393,7 @@ package lpddr5_pkg;
 
     function void report_phase(uvm_phase phase);
       super.report_phase(phase);
+      if (model != null && model.fg != null) model.fg.dump();
     endfunction
   endclass
 

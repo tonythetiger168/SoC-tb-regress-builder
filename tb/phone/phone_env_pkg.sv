@@ -363,19 +363,16 @@ package phone_env_pkg;
   // NoC arbitration, the mesh hops both ways, the IOMMU (walks included) and
   // the LPDDR5 timing. The slave port of a burst is the one its physical
   // address decodes to (after IOMMU translation). The scoreboard feeds it.
-  // Outputs: log tables and a CSV (+PERF_CSV=<file>, default
-  // path_latency.csv) with one row per path, plus <file>_hist.csv with a
-  // latency histogram per master and direction (regress/latency_report.py
-  // turns them into charts).
+  // Every burst also goes to lat_pkg::lat_db (one LAT line per burst, in clock
+  // cycles), the shared format regress/regress.py turns into per-path tables,
+  // the master x slave heatmap and histograms. The log gets a summary table.
   // ==========================================================================
   class phone_perf extends uvm_component;
     `uvm_component_utils(phone_perf)
     localparam int NP = NS + 1;               // + default slave
-    localparam int HBIN = 25, HN = 80;        // histogram: 25 ns bins, last bin = overflow
     real             lat [NM][NP][2][$];
     real             first_sum [NM][NP];
     longint unsigned bytes [NM][2];
-    int unsigned     hist [NM][2][HN];
     lpddr5_agent     ch_agent [NCH];
     time             t_first = 0, t_last = 0;
     real             tck_ns = 2.0;
@@ -385,7 +382,7 @@ package phone_env_pkg;
     endfunction
 
     static function string slave_name(int s);
-      if (s < NCH)     return $sformatf("LP5_CH%0d", s);
+      if (s < NCH)     return $sformatf("LPDDR5_%02d", s);
       if (s == S_SRAM) return "SRAM";
       if (s == S_APB)  return "APB";
       return "DECERR";
@@ -393,15 +390,14 @@ package phone_env_pkg;
 
     function void record(int m, int s, axi4_item t);
       real l = real'(t.t_end - t.t_req);
-      int b;
       if (m < 0 || m >= NM || s < 0 || s >= NP) return;
       if (t_first == 0 || t.t_req < t_first) t_first = t.t_req;
       if (t.t_end > t_last) t_last = t.t_end;
       lat[m][s][t.write].push_back(l);
       if (!t.write) first_sum[m][s] += real'(t.t_first - t.t_req);
       bytes[m][t.write] += t.beats() * (1 << t.size);
-      b = int'(l / HBIN);
-      hist[m][t.write][b >= HN ? HN - 1 : b]++;
+      lat_pkg::lat_db::add(master_name(m), slave_name(s), t.write ? "W" : "R",
+                           longint'(l / tck_ns + 0.5));
     endfunction
 
     static function real pct(real q[$], real p);
@@ -413,18 +409,12 @@ package phone_env_pkg;
 
     function void report_phase(uvm_phase phase);
       real span = real'(t_last - t_first);
-      string s, csv, test, hdr;
-      int fd, seed = 0;
+      string s, hdr;
       longint unsigned tot_ref = 0, tot_pg[3] = '{0, 0, 0}, tot_acc = 0;
-      uvm_component tt = uvm_root::get().find("uvm_test_top");
-      test = (tt != null) ? tt.get_type_name() : "test";
-      void'($value$plusargs("verilator+seed+%d", seed));
-      if (!$value$plusargs("PERF_CSV=%s", csv)) csv = "path_latency.csv";
+      lat_pkg::lat_db::flush();
       if (span <= 0) span = 1;
 
       // ---- per path ----
-      fd = $fopen(csv, "w");
-      if (fd) $fdisplay(fd, "test,seed,master,slave,dir,count,min_ns,avg_ns,p50_ns,p95_ns,p99_ns,max_ns,ideal_noc_ns,first_data_avg_ns");
       hdr = "\n  path                      dir  count   min_ns   avg_ns   p50_ns   p95_ns   p99_ns   max_ns  ideal_noc_ns  first_data_ns";
       s = hdr;
       for (int m = 0; m < NM; m++)
@@ -440,24 +430,8 @@ package phone_env_pkg;
             s = {s, $sformatf("\n  %-6s -> %-14s %s %6d %8.1f %8.1f %8.1f %8.1f %8.1f %8.1f %13.1f  %13s",
                  master_name(m), slave_name(p), d ? "wr" : "rd", q.size(), q[0], sum / q.size(),
                  pct(q, 50), pct(q, 95), pct(q, 99), q[q.size() - 1], ideal, d ? "-" : fdat)};
-            if (fd) $fdisplay(fd, "%s,%0d,%s,%s,%s,%0d,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%s", test, seed,
-                              master_name(m), slave_name(p), d ? "wr" : "rd", q.size(), q[0], sum / q.size(),
-                              pct(q, 50), pct(q, 95), pct(q, 99), q[q.size() - 1], ideal, fdat);
           end
-      if (fd) $fclose(fd);
       `uvm_info("PERF", {"per-path latency (request VALID at the master port to last beat / B):", s}, UVM_NONE)
-
-      // ---- histograms ----
-      fd = $fopen({csv.substr(0, csv.len() - 5), "_hist.csv"}, "w");
-      if (fd) begin
-        $fdisplay(fd, "test,seed,master,dir,bin_lo_ns,count");
-        for (int m = 0; m < NM; m++)
-          for (int d = 0; d < 2; d++)
-            for (int b = 0; b < HN; b++)
-              if (hist[m][d][b]) $fdisplay(fd, "%s,%0d,%s,%s,%0d,%0d", test, seed, master_name(m), d ? "wr" : "rd",
-                                           b * HBIN, hist[m][d][b]);
-        $fclose(fd);
-      end
 
       // ---- per master ----
       s = "\n  master  rd_bursts  rd_MB/s  rd_avg_ns | wr_bursts  wr_MB/s  wr_avg_ns";
