@@ -104,6 +104,34 @@ address with the channel bits removed) are generated for each memory.
 | `vip` | `apb`: an APB slave VIP backed by a memory model |
 | `params` | wrapper parameter overrides |
 | `pins` | pass-through input pin -> SV expression (default `'0`); outputs become wires `<name>_<pin>` |
+| `pins_vip` | a pin-level device model on the IP's pins (`ip` peripherals only), see below |
+
+#### `peripherals[].pins_vip`
+
+Puts a behavioural device (an SD card, a flash, a sensor, a PHY) on an IP's
+pins inside the APB subsystem, e.g. open-vip-portfolio's `sdc_model` on SD's
+`sd_clk`/`cmd`/`dat`:
+
+```yaml
+- {name: sd, ip: SD, pins_vip: {model: sdc_model, vip: SD_Card-UVM-VIP, inout: [cmd, dat]}}
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `model` | | device model module name |
+| `vip` | | open-vip-portfolio VIP: socgen cuts `module <model>` out of `vips/<vip>/tb/top_tb.sv` (or `vips/<vip>.zip`) into `out/rtl/vip/<model>.sv`; root from `--vip-root` / `OPEN_VIP_ROOT`, default `../open-vip-portfolio` |
+| `files` | | instead of `vip`: SV files that define the model (repo-relative or absolute) |
+| `params` | | model parameter overrides |
+| `inout` | `[]` | the IP's inout pins the model shares (see below) |
+| `map` | | model port -> IP pin name or SV expression. Model inputs default to the IP pin of the same name; outputs mapped to an IP input pin drive it (not with `pins` on that pin) |
+| `clock`, `reset` | `clk`, `rst_n` | model ports tied to the subsystem clock and active-low reset |
+
+An unconnected model input is an error; an unmapped model output is left on a
+wire `<name>_vip_<port>`. For each `inout` pin `p` the model's ports are found
+by name. With `p_s`/`p_s_oe` outputs the model drives `p` bit by bit when
+`p_s_oe` is high; `p_m` gets the resolved wire and `p_m_oe` gets `'1`, so the
+model reads the bus as the wire actually is. With an open-drain `p_s_lo` output
+the model pulls `p` low, and `p_m_lo` gets `~p`. Otherwise `p` keeps its pull-up.
 
 ## `register_blocks.<name>`
 
