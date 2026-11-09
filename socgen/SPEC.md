@@ -34,8 +34,19 @@ mesh, 32 LPDDR5 ports) and `specs/mini_soc.yaml` (small, for CI).
 | `rows`, `cols` | | mesh size; nodes are `[x, y]`, x = column, y = row |
 | `routing` | `xy` | `xy` (dimension ordered) |
 | `timing` | | `ni_cycles`, `router_cycles`, `link_cycles`. One way over `h` hops costs `2*ni + (h+1)*router + h*link`; request and response each pay it. |
-| `model` | `behavioral` | `behavioral`: the TB's NoC component routes the traffic. `rtl`: tb_top instantiates `rtl_module` and the component is not built. |
+| `model` | `behavioral` | `behavioral`: the TB's NoC component routes the traffic. `rtl`: tb_top instantiates `rtl_module` and the component is not built. `mesh`: socgen generates the NoC RTL (`<soc>_noc`, see "Generated NoC" below) and tb_top instantiates it. |
 | `rtl_module` | | DUT module name for `model: rtl` |
+| `router` | `orca` | `model: mesh`: `orca` = xuanji-core `orca_noc_router` (private, fetched into `ext/` by `scripts/fetch_private_ip.sh`; 2-bit coordinates, so at most 4x4); without the fetch, or with `open`, the open `rtl/noc/noc_router_open.sv` (same ports and routing, no VCs, any mesh size) |
+| `buf_depth`, `num_vc` | 8, 4 | `model: mesh`: router input FIFO depth and orca virtual channels |
+| `ni` | | `model: mesh`: `max_bursts` (4, AXI bursts per direction a master NI accepts), `max_chunks` (8, 32-byte chunks per direction in flight per master), `slave_outstanding` (4, bursts a slave NI keeps open at its slave). Powers of two, 2..32 |
+
+With `model: mesh` the `timing` key is not used: the ideal latency tables come
+from the generated RTL's measured zero-load timing (one single-beat read =
+5 + 4 + 2 x hops + access cycles, plus 2 for each AXI4-Lite adapter on the
+path, 4 for AHB-Lite, 5 for APB; writes about 2 more). The mesh has no IOMMU
+model, so `tlb_hit_cycles` is not added. `socgen.py --noc-model mesh` builds a
+spec on the mesh without editing it: the SoC is renamed `<name>_mesh`, so its
+bench and suite sit next to the behavioural one for a latency comparison.
 
 ## `traffic.<profile>`
 
@@ -61,6 +72,7 @@ mesh, 32 LPDDR5 ports) and `specs/mini_soc.yaml` (small, for CI).
 | `qos.priority` | 0 | 0..15; higher wins slave-port arbitration in the behavioural NoC |
 | `qos.latency_target` | | read latency budget in cycles; the report flags any path from this master whose worst percentile is over it |
 | `kind` | `vip` | `vip`: AXI master agent drives the port; `rtl`: an IP master (port left to the DUT) |
+| `protocol` | `axi4` | AMBA protocol of the master port: `axi4`, `axi4lite`, `ahb` (AHB-Lite). Others than `axi4` need `noc.model: mesh`; the bench drives them from the AXI4 VIP through a test shim (`noc_axi2lite` / `noc_axi2ahb`) |
 
 ## `iommus[]`
 
@@ -80,6 +92,7 @@ one APB slot in the first `apb_bridge` slave, after its listed peripherals.
 | `access_cycles` | zero-load access time, used by the ideal-latency table and the behavioural NoC |
 | `timing` | preset name handed to the memory VIP (`lpddr5-6400`) |
 | `placement` | `rows: [..]` and `fill: block` (consecutive channels share a router) or `fill: round_robin`; or `nodes: [[x, y], ...]` one per channel |
+| `protocol` | `axi4` (default), `axi4lite`, `ahb` or `apb` for every channel port, as for `slaves[]` |
 
 `<prefix>_dram_channel(a)` and `<prefix>_dram_local(a)` (the channel-local
 address with the channel bits removed) are generated for each memory.
@@ -92,6 +105,7 @@ address with the channel bits removed) are generated for each memory.
 | `base`, `size`, `node`, `access_cycles` | as above |
 | `slot_size` | `apb_bridge` only: slot window (default 4 KB) |
 | `peripherals` | `apb_bridge` only, see below |
+| `protocol` | `memory` and `vip` slaves: `axi4` (default), `axi4lite`, `ahb` (AHB-Lite) or `apb` (APB4) port on the generated NoC (`noc.model: mesh`); the bench answers through a shim to the AXI4 memory VIP. `apb_bridge` and `rtl` slaves are `axi4` |
 
 ### `peripherals[]`
 
@@ -134,11 +148,44 @@ Tests: `smoke`, `ral`, `path_latency`, `traffic`. Each list is written to
 | `rtl/<soc>_apb_subsys.sv` | AXI-to-APB bridge, slot decoder, every peripheral wrapper and generated register file |
 | `rtl/<soc>_<block>_regs.sv` | APB register file for each `register_blocks` entry |
 | `tb/<soc>_ral_pkg.sv` | UVM RAL: one block per APB slot, a top block with the SoC map, AXI adapter |
-| `tb/<soc>_env_pkg.sv` | env: master agents, slave agents, behavioural NoC, scoreboard, per-path latency monitor |
+| `tb/<soc>_env_pkg.sv` | env: master agents, slave agents, behavioural NoC (`model: behavioral`), scoreboard, per-path latency monitor |
+| `rtl/noc_cfg_pkg.sv`, `rtl/<soc>_noc.sv` | `model: mesh` only: the generated NoC, see below |
 | `tb/<soc>_test_pkg.sv`, `tb/<soc>_tb_top.sv` | tests and top |
 | `sim/files.f`, `socgen.mk` | file list; `make build TB=<soc>` works from the repo root |
 | `regress/<soc>_<list>.txt` | regression lists |
 | `doc/<soc>.md`, `doc/<soc>_memmap.h`, `doc/<soc>_paths.csv` | address map, mesh placement, ideal latency per path, C header |
+
+## Generated NoC (`noc.model: mesh`)
+
+socgen (`lib/nocgen.py`) writes two more files into `rtl/`:
+
+| File | Content |
+|---|---|
+| `rtl/noc_cfg_pkg.sv` | package `noc_cfg_pkg`: mesh size, endpoint list (masters, then NoC slave ports), the router of each, `decode()` (wraps `<prefix>_decode`), flit and packet formats |
+| `rtl/<soc>_noc.sv` | module `<soc>_noc #(ID_WIDTH)`: `clk`, `rst_n`, and one named port group per endpoint, `<name>_<signal>`, in the endpoint's protocol. The NoC is the slave on master ports and the master on slave ports |
+
+The generic RTL it configures is in `rtl/noc/`:
+
+| File | Role |
+|---|---|
+| `noc_mesh.sv` | MESH_X x MESH_Y routers (orca or `noc_router_open` with `+define+NOC_OPEN_ROUTER`), a node mux per router for the endpoints placed on it |
+| `noc_ni_mst.sv` | master NI: AXI4 bursts cut into 32-byte chunks, one single-flit request each; responses back in order |
+| `noc_ni_slv.sv` | slave NI: chunks become AXI4 bursts of up to 8 beats, ID 0, `slave_outstanding` in flight |
+| `noc_axi2lite.sv` | AXI4 -> AXI4-Lite (slave ports; master-port test shim) |
+| `noc_axi2ahb.sv` | AXI4 -> AHB-Lite master, one NONSEQ SINGLE per beat (slave ports; test shim) |
+| `noc_ahb2axi.sv` | AHB-Lite slave -> AXI4, one single-beat AXI transfer per AHB transfer (master ports; test shim) |
+| `noc_apb2axi.sv` | APB4 slave -> AXI4 (test shim for APB slave ports) |
+| `rtl/soc/axi2apb_bridge.sv` | AXI4 -> APB4 on APB slave ports |
+
+Protocol notes: AHB-Lite has no write strobes (a narrow write needs a narrow
+HSIZE) and one error response (DECERR and SLVERR both become ERROR, and an AHB
+master sees a decode miss as SLVERR). AXI4-Lite master ports use ID 0. Deadlock
+freedom is end to end, as in the tv8k mesh: a master NI only issues a chunk
+when its response slot is free, and each slave NI queues every chunk all
+masters can have in flight (masters x `max_chunks`).
+
+`specs/mini_mesh_soc.yaml` uses every protocol. `+define+NOC_OPEN_ROUTER` (or
+building without `ext/xuanji-core`) gives the open router.
 
 ## Path latency report
 

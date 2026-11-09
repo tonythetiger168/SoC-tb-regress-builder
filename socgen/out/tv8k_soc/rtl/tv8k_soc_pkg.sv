@@ -205,6 +205,10 @@ package tv8k_soc_pkg;
   // ---------------- master kind ----------------
   localparam bit M_IS_RTL [NM] = '{ 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0 };
 
+  // ---------------- AMBA protocol of each NoC port (noc.model: mesh) ----------------
+  localparam string M_PROTO [NM] = '{ "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4" };
+  localparam string S_PROTO [NS] = '{ "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4" };
+
   // ---------------- QoS ----------------
   localparam int M_PRIORITY [NM] = '{ 10, 4, 5, 8, 12, 15, 13, 9, 11, 1, 6, 2 };
   localparam string M_QOS [NM] = '{ "nrt", "nrt", "nrt", "nrt", "rt", "rt", "rt", "rt", "rt", "be", "nrt", "be" };

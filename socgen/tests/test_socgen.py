@@ -196,5 +196,59 @@ class Generate(unittest.TestCase):
             self.assertEqual(len(re.findall(r"add_submap", ral)), 12)    # 13 slots minus the APB VIP
 
 
+class Mesh(unittest.TestCase):
+    """noc.model: mesh -- the generated NoC RTL (nocgen)"""
+
+    def bad(self, mutate, msg):
+        r = raw("mini_mesh_soc.yaml")
+        mutate(r)
+        with self.assertRaisesRegex(SpecError, msg):
+            spec.elaborate(r)
+
+    def test_protocols(self):
+        m = spec.load(os.path.join(SOCGEN, "specs", "mini_mesh_soc.yaml"))
+        self.assertEqual([x.protocol for x in m.masters], ["axi4", "axi4", "axi4", "ahb", "axi4lite"])
+        self.assertEqual({t.name: t.protocol for t in m.slaves},
+                         {"sram": "axi4", "ahb_ram": "ahb", "lite_ram": "axi4lite", "apb_ram": "apb",
+                          "periph": "axi4"})
+
+    def test_mesh_latency_model(self):
+        m = spec.load(os.path.join(SOCGEN, "specs", "mini_mesh_soc.yaml"))
+        cpu = m.masters[0]
+        t = {x.name: x.index for x in m.targets}
+        # measured on the RTL: cpu -> ddr0 (1 hop, access 12) 23 cycles; cpu -> ahb_ram (2 hops) 19
+        self.assertEqual(cpu.ideal[t["ddr0"]], 23)
+        self.assertEqual(cpu.ideal[t["ahb_ram"]], 19)
+        self.assertEqual(m.masters[1].ideal[t["ddr2"]], 23)     # the mesh has no IOMMU delay
+
+    def test_protocol_needs_mesh(self):
+        self.bad(lambda r: r["noc"].update(model="behavioral"), "needs noc.model: mesh")
+
+    def test_apb_master(self):
+        self.bad(lambda r: r["masters"][0].update(protocol="apb"), "protocol")
+
+    def test_orca_size(self):
+        self.bad(lambda r: r["noc"].update(rows=5, cols=5), "at most 4x4")
+
+    def test_ni_pow2(self):
+        self.bad(lambda r: r["noc"].update(ni={"max_chunks": 6}), "powers of two")
+
+    def test_generate(self):
+        import nocgen
+        m = spec.load(os.path.join(SOCGEN, "specs", "mini_mesh_soc.yaml"))
+        pkg = nocgen.cfg_pkg(m)
+        for want in ("package noc_cfg_pkg;", "localparam int NM  = 5;", "localparam int NEP = 14;",
+                     "localparam int EPB = 4;", "mini_mesh_soc_pkg::mmesh_decode(a)"):
+            self.assertIn(want, pkg)
+        rtl = nocgen.noc_module(m)
+        for want in ("module mini_mesh_soc_noc", "noc_ahb2axi #(.IDW(ID_WIDTH)) u_mcu_ahb",
+                     "noc_axi2ahb #(.IDW(ID_WIDTH)) u_ahb_ram_ahb", "noc_axi2lite #(.IDW(ID_WIDTH)) u_lite_ram_lite",
+                     "axi2apb_bridge #(.IDW(ID_WIDTH)) u_apb_ram_apb", "input  logic ctl_awvalid",
+                     "output logic [31:0] apb_ram_paddr", "noc_ni_slv #(.SELF(13), .QD(40)"):
+            self.assertIn(want, rtl)
+        self.assertEqual(rtl.count("noc_ni_mst #"), 5)
+        self.assertEqual(rtl.count("noc_ni_slv #"), 9)
+
+
 if __name__ == "__main__":
     unittest.main()

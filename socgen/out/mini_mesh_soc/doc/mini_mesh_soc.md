@@ -43,7 +43,7 @@ NoC: generated RTL `mini_mesh_soc_noc` (2x2 mesh of orca_noc_router (open router
 | 2 | 0x10002000 | ext | APB VIP | - |
 | 3 | 0x10003000 | iommu0_regs | register_blocks.iommu | 0x494F0100 |
 
-open-ip-portfolio commit `197d58955ff31adaa6122a04263d77a673409e66`.
+open-ip-portfolio commit `359f40a67051a7da5dba4d0bf57c01e67bdcf2fa`.
 
 ## Placement
 

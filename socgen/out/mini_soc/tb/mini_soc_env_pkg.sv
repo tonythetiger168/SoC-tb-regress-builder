@@ -401,7 +401,9 @@ package mini_soc_env_pkg;
       if (si == S_DEF) begin
         foreach (t.resp[i]) begin
           n_checks++;
-          if (t.resp[i] != AXI4_DECERR) err({who, $sformatf(": expected DECERR, got %s", t.resp[i].name())});
+          // AHB-Lite has one error response: a decode miss from an AHB master comes back as SLVERR
+          if (t.resp[i] != AXI4_DECERR && !(M_PROTO[t.port] == "ahb" && t.resp[i] == AXI4_SLVERR))
+            err({who, $sformatf(": expected DECERR, got %s", t.resp[i].name())});
         end
         return;
       end
