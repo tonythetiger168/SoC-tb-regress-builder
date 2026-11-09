@@ -122,7 +122,9 @@ package {{ m.name }}_pkg;
   // ---------------- AMBA protocol of each NoC port (noc.model: mesh) ----------------
   localparam string M_PROTO [NM] = '{ {{ m.masters|map(attribute='protocol')|map('sv_str')|join(', ') }} };
   localparam string S_PROTO [NS] = '{ {{ m.targets|map(attribute='protocol')|map('sv_str')|join(', ') }} };
-
+{% if m.chi.rn %}  // slave ports inside the memory the CHI home keeps coherent (chi.coherent)
+  localparam bit S_COH [NS+1] = '{ {% for t in m.targets %}{{ 1 if t.index in m.chi.coh_targets else 0 }}, {% endfor %}0 };
+{% endif %}
   // ---------------- QoS ----------------
   localparam int M_PRIORITY [NM] = '{ {{ m.masters|map(attribute='priority')|join(', ') }} };
   localparam string M_QOS [NM] = '{ {{ m.masters|map(attribute='qos_class')|map('sv_str')|join(', ') }} };

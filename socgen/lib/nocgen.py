@@ -41,10 +41,18 @@ APB = [("paddr", 32, "o"), ("psel", 1, "o"), ("penable", 1, "o"), ("pwrite", 1, 
        ("pwdata", 32, "o"), ("pstrb", 4, "o"), ("pprot", 3, "o"),
        ("prdata", 32, "i"), ("pready", 1, "i"), ("pslverr", 1, "i")]
 
-MST_SIGS = {"axi4": AXI4, "axi4lite": LITE, "ahb": AHB_MST}
+# CHI RN-F port (noc_cfg_pkg chi_*_t flits): TX = from the RN-F, RX = to it
+CHI = [("txreq_valid", 1, "o"), ("txreq_ready", 1, "i"), ("txreq_flit", "chi_req_t", "o"),
+       ("txrsp_valid", 1, "o"), ("txrsp_ready", 1, "i"), ("txrsp_flit", "chi_rsp_t", "o"),
+       ("txdat_valid", 1, "o"), ("txdat_ready", 1, "i"), ("txdat_flit", "chi_dat_t", "o"),
+       ("rxrsp_valid", 1, "i"), ("rxrsp_flit", "chi_rsp_t", "i"),
+       ("rxdat_valid", 1, "i"), ("rxdat_flit", "chi_dat_t", "i"),
+       ("rxsnp_valid", 1, "i"), ("rxsnp_flit", "chi_snp_t", "i")]
+
+MST_SIGS = {"axi4": AXI4, "axi4lite": LITE, "ahb": AHB_MST, "chi": CHI}
 SLV_SIGS = {"axi4": AXI4, "axi4lite": LITE, "ahb": AHB_SLV, "apb": APB}
 
-PROTO_NAME = {"axi4": "AXI4", "axi4lite": "AXI4-Lite", "ahb": "AHB-Lite", "apb": "APB4"}
+PROTO_NAME = {"axi4": "AXI4", "axi4lite": "AXI4-Lite", "ahb": "AHB-Lite", "apb": "APB4", "chi": "CHI RN-F"}
 
 
 def clog2(n):
@@ -55,11 +63,12 @@ def params(m):
     """derived NoC parameters"""
     nm, ns = len(m.masters), len(m.targets)
     ngw = m.chiplet.dies if m.chiplet.dies > 1 else 0
-    nep = nm + ns + ngw
-    p = dict(nm=nm, ns=ns, ngw=ngw, nep=nep, epb=clog2(nep + 1),
+    nhn = 1 if m.chi.rn else 0
+    nep = nm + ns + ngw + nhn
+    p = dict(nm=nm, ns=ns, ngw=ngw, nhn=nhn, nep=nep, epb=clog2(nep + 1),
              xb=2 if m.noc.router_ip == "orca" else clog2(m.noc.cols),
              yb=2 if m.noc.router_ip == "orca" else clog2(m.noc.rows),
-             qd=nm * m.noc_ni.maxo)
+             qd=(nm + nhn) * m.noc_ni.maxo, hq=2 * nm * m.noc_ni.maxo)
     return p
 
 
@@ -71,6 +80,13 @@ def _w(width):
     return f"[{width - 1}:0] "
 
 
+def _decl(width, name, pkg=""):
+    """a wire / port type and name: logic [..] name, or a noc_cfg_pkg CHI flit type"""
+    if isinstance(width, str) and width.startswith("chi_"):
+        return f"{pkg}{width} {name}"
+    return f"logic {_w(width)}{name}"
+
+
 def cfg_pkg(m):
     p = params(m)
     P = f"{m.name}_pkg"
@@ -79,6 +95,13 @@ def cfg_pkg(m):
     ex = [x.node[0] for x in m.masters] + [t.node[0] for t in m.targets] + [g[0] for g in gws]
     ey = [x.node[1] for x in m.masters] + [t.node[1] for t in m.targets] + [g[1] for g in gws]
     ed = [x.die for x in m.masters] + [t.die for t in m.targets] + list(range(len(gws)))
+    if p["nhn"]:
+        eps.append("hnf")
+        ex.append(m.chi.home[0])
+        ey.append(m.chi.home[1])
+        ed.append(0)
+    coh = ", ".join("1'b1" if t.index in m.chi.coh_targets else "1'b0" for t in m.targets)
+    rn_ep = ", ".join(str(i) for i in m.chi.rn) if m.chi.rn else "0"
     names = "\n".join(f"      {i}: return \"{n}\";" for i, n in enumerate(eps))
     return f"""// SPDX-License-Identifier: Apache-2.0
 // ============================================================================
@@ -122,7 +145,8 @@ package noc_cfg_pkg;
   localparam int NM  = {p['nm']};
   localparam int NS  = {p['ns']};
   localparam int NGW = {p['ngw']};                  // die-to-die gateways (endpoints NM + NS ..)
-  localparam int NEP = NM + NS + NGW;
+  localparam int NHN = {p['nhn']};                  // CHI home node (HN-F), endpoint NM + NS + NGW
+  localparam int NEP = NM + NS + NGW + NHN;
   localparam int NDIE = {m.chiplet.dies};
   localparam int EPB = {p['epb']};                  // endpoint id width
   localparam logic [EPB-1:0] EP_NONE = '1;      // decode miss: DECERR from the master NI
@@ -144,14 +168,36 @@ package noc_cfg_pkg;
     endcase
   endfunction
 
+  // ---------------- CHI coherence ----------------
+  localparam int HN_EP = NM + NS + NGW;           // the HN-F endpoint (when NHN = 1)
+  localparam int NRN = {len(m.chi.rn) if m.chi.rn else 1};                   // RN-F ports (protocol chi masters)
+  localparam int RN_EP [NRN] = '{{ {rn_ep} }};
+  localparam int CHI_LINES = {m.chi.lines or 4};            // RN-F cache lines (64-byte, direct-mapped)
+  localparam bit S_COH [NS] = '{{ {coh} }};   // slave port inside the coherent memory
+
   // ---------------- address map: {P}::{m.prefix}_decode ----------------
-  function automatic logic [EPB-1:0] decode(logic [31:0] a);
+  // the slave port that owns address a
+  function automatic logic [EPB-1:0] decode_tgt(logic [31:0] a);
     int s = {P}::{m.prefix}_decode(a);
     return (s >= NS) ? EP_NONE : EPB'(NM + s);
   endfunction
 
+  // coherent (cacheable) memory: the HN-F serves it
+  function automatic logic cacheable(logic [31:0] a);
+    int s = {P}::{m.prefix}_decode(a);
+    return NHN != 0 && s < NS && S_COH[s];
+  endfunction
+
+  // where a master NI sends a chunk: the slave port, or the HN-F for coherent memory
+  function automatic logic [EPB-1:0] decode(logic [31:0] a);
+    return cacheable(a) ? EPB'(HN_EP) : decode_tgt(a);
+  endfunction
+
   // ---------------- NI packet (flit payload) ----------------
-  typedef enum logic [1:0] {{ OP_RD = 2'd0, OP_WR = 2'd1, OP_RDATA = 2'd2, OP_WRSP = 2'd3 }} op_e;
+  // OP_RD .. OP_WRSP: AMBA chunks (master NI <-> slave NI / HN-F); OP_C*: CHI
+  // messages (RN-F <-> HN-F) on the REQ, SNP, RSP and DAT channels
+  typedef enum logic [2:0] {{ OP_RD = 3'd0, OP_WR = 3'd1, OP_RDATA = 3'd2, OP_WRSP = 3'd3,
+                             OP_CREQ = 3'd4, OP_CSNP = 3'd5, OP_CRSP = 3'd6, OP_CDAT = 3'd7 }} op_e;
   localparam int CW = 8;                  // 32-bit words per chunk
   localparam int TAGW = 6;                // master NI slot / burst tag
 
@@ -165,12 +211,64 @@ package noc_cfg_pkg;
     logic [2:0]        size;              // AxSIZE of each word access (<= 2)
     logic              fixed;             // FIXED burst (else INCR)
     logic [2:0]        prot;
-    logic [1:0]        resp;              // WRSP: BRESP
+    logic [1:0]        resp;              // WRSP: BRESP; CHI RSP / DAT: RespErr
+    logic [5:0]        copc;              // CHI opcode (REQ / SNP / RSP / DAT)
+    logic [2:0]        cresp;             // CHI Resp (cache state)
+    logic [TAGW-1:0]   dbid;              // CHI DBID
+    logic [1:0]        dataid;            // CHI DataID: 0 / 2 = bytes 0..31 / 32..63 of the line
     logic [CW-1:0][1:0]  rresp;           // RDATA: RRESP per word
     logic [CW-1:0][3:0]  strb;            // WR: WSTRB per word
     logic [CW-1:0][31:0] data;            // WR / RDATA
   }} pkt_t;
   localparam int PKT_W = $bits(pkt_t);
+
+  // ---------------- CHI port (RN-F <-> NoC) ----------------
+  // CHI Issue B fields, narrowed: one HN-F, so no SrcID / TgtID; 256-bit data
+  // (a 64-byte line is two DAT flits, DataID 0 and 2); L-Credits replaced by
+  // valid / ready on the RN-F's TX channels, and the RN-F always accepts on RX.
+  typedef struct packed {{
+    logic [TAGW-1:0] txnid;
+    logic [5:0]      opcode;
+    logic [31:0]     addr;
+    logic [2:0]      size;
+  }} chi_req_t;
+  typedef struct packed {{
+    logic [TAGW-1:0] txnid;
+    logic [4:0]      opcode;
+    logic [31:0]     addr;
+  }} chi_snp_t;
+  typedef struct packed {{
+    logic [TAGW-1:0] txnid;
+    logic [3:0]      opcode;
+    logic [2:0]      resp;
+    logic [1:0]      resperr;
+    logic [TAGW-1:0] dbid;
+  }} chi_rsp_t;
+  typedef struct packed {{
+    logic [TAGW-1:0] txnid;
+    logic [3:0]      opcode;
+    logic [2:0]      resp;
+    logic [1:0]      resperr;
+    logic [1:0]      dataid;
+    logic [31:0]     be;
+    logic [255:0]    data;
+  }} chi_dat_t;
+
+  // opcodes (CHI Issue B)
+  localparam logic [5:0] REQ_READSHARED = 6'h01, REQ_READNOSNP = 6'h04, REQ_READUNIQUE = 6'h07,
+                         REQ_CLEANUNIQUE = 6'h0B, REQ_EVICT = 6'h0D, REQ_WRITEBACKFULL = 6'h1B,
+                         REQ_WRITENOSNPPTL = 6'h1C;
+  localparam logic [4:0] SNP_SHARED = 5'h01, SNP_UNIQUE = 5'h07, SNP_CLEANSHARED = 5'h08;
+  localparam logic [3:0] RSP_SNPRESP = 4'h1, RSP_COMPACK = 4'h2, RSP_COMP = 4'h4,
+                         RSP_COMPDBIDRESP = 4'h5, RSP_DBIDRESP = 4'h6;
+  localparam logic [3:0] DAT_SNPRESPDATA = 4'h1, DAT_COPYBACKWRDATA = 4'h2,
+                         DAT_NONCOPYBACKWRDATA = 4'h3, DAT_COMPDATA = 4'h4;
+  // Resp: cache state (Comp / CompData / CopyBackWrData: I, SC, UC, UD_PD;
+  // SnpResp*: I, SC, UC, plus _PD = dirty data passed to the home)
+  localparam logic [2:0] RESP_I = 3'd0, RESP_SC = 3'd1, RESP_UC = 3'd2, RESP_UD_PD = 3'd6,
+                         RESP_I_PD = 3'd4, RESP_SC_PD = 3'd5, RESP_UC_PD = 3'd6;
+  // RespErr
+  localparam logic [1:0] RESPERR_OK = 2'b00, RESPERR_DERR = 2'b10, RESPERR_NDERR = 2'b11;
 
   function automatic noc_flit_t mk_flit(pkt_t p, int src, logic [1:0] vc);
     noc_flit_t f;
@@ -198,7 +296,7 @@ def _ports(prefix, sigs, noc_is_master):
     out = []
     for n, w, d in sigs:
         drives = (d == "o") == noc_is_master
-        out.append(f"  {'output' if drives else 'input '} logic {_w(w)}{prefix}_{n}")
+        out.append(f"  {'output' if drives else 'input '} {_decl(w, f'{prefix}_{n}')}")
     return out
 
 
@@ -255,6 +353,13 @@ def noc_module(m):
     for i, x in enumerate(m.masters):
         a = f"{x.name}_ax"          # AXI4 wires between the adapter and the NI
         L.append(f"  // ---------------- master {i}: {x.name} ({PROTO_NAME[x.protocol]}) ----------------")
+        if x.protocol == "chi":
+            L.append(f"  noc_ni_chi #(.SELF({i})) u_ni_{x.name} (.clk, .rst_n,")
+            L.append("    " + ", ".join(f".{n}({x.name}_{n})" for n, _, _ in CHI) + ",")
+            L.append(f"    .inj_flit(inj_flit[{i}]), .inj_valid(inj_valid[{i}]), .inj_ready(inj_ready[{i}]),")
+            L.append(f"    .ej_flit(ej_flit[{i}]), .ej_valid(ej_valid[{i}]), .ej_ready(ej_ready[{i}]));")
+            L.append("")
+            continue
         if x.protocol == "axi4":
             conn = {n: f"{x.name}_{n}" for n in axi_names}
         else:
@@ -308,6 +413,15 @@ def noc_module(m):
         L.append(f"    .inj_flit(inj_flit[{e}]), .inj_valid(inj_valid[{e}]), .inj_ready(inj_ready[{e}]),")
         L.append(f"    .ej_flit(ej_flit[{e}]), .ej_valid(ej_valid[{e}]), .ej_ready(ej_ready[{e}]));")
         L.append("")
+    if p["nhn"]:
+        h = "HN_EP"
+        L += [f"  // ---------------- CHI home node (HN-F) on router {list(m.chi.home)}: coherent "
+              f"{', '.join(m.chi.coherent)} ----------------",
+              "  logic hnf_overflow;",
+              f"  noc_hnf #(.SELF({h}), .QD({p['hq']}), .NL(CHI_LINES)) u_hnf (.clk, .rst_n,",
+              f"    .inj_flit(inj_flit[{h}]), .inj_valid(inj_valid[{h}]), .inj_ready(inj_ready[{h}]),",
+              f"    .ej_flit(ej_flit[{h}]), .ej_valid(ej_valid[{h}]), .ej_ready(ej_ready[{h}]),",
+              "    .overflow(hnf_overflow));", ""]
     L.append("endmodule")
     return "\n".join(L) + "\n"
 
@@ -390,9 +504,14 @@ def tb_hookup(m):
         sh = f"{x.name}_shim"
         sigs = MST_SIGS[x.protocol]
         for n, w, _ in sigs:
-            L.append(f"  logic {_w(w)}{sh}_{n};")
+            L.append(f"  {_decl(w, f'{sh}_{n}', 'noc_cfg_pkg::')};")
         vip = ", ".join(f".s_{n}({M}.{n}{'[ID_WIDTH-1:0]' if w == 'IDW' else ''})" for n, w, _ in AXI4)
-        if x.protocol == "axi4lite":
+        if x.protocol == "chi":
+            # RN-F: the VIP is the CPU, noc_chi_rnf its cache and CHI interface
+            L.append(f"  noc_chi_rnf #(.IDW(ID_WIDTH)) u_{x.name}_shim (.clk({m.clock.name}), .rst_n(aresetn),")
+            L.append(f"    {vip},")
+            L.append("    " + ", ".join(f".{n}({sh}_{n})" for n, _, _ in CHI) + ");")
+        elif x.protocol == "axi4lite":
             L.append(f"  noc_axi2lite #(.IDW(ID_WIDTH)) u_{x.name}_shim (.clk({m.clock.name}), .rst_n(aresetn),")
             L.append(f"    {vip},")
             L.append("    " + ", ".join(f".m_{n}({sh}_{n})" for n, _, _ in LITE) + ");")

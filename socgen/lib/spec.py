@@ -68,7 +68,7 @@ def bits(spec_bits, what):
 
 ACCESS = {"RO", "RW", "W1C", "WO"}
 QOS_CLASSES = {"rt", "nrt", "be"}
-TESTS = ("smoke", "ral", "path_latency", "traffic", "scenario")
+TESTS = ("smoke", "ral", "path_latency", "traffic", "scenario", "coherence")
 PATTERNS = ("random", "linear", "block2d")
 
 
@@ -88,7 +88,7 @@ def load(path):
 
 def elaborate(raw, path="<spec>"):
     keys(raw, ["socgen", "soc", "clock", "bus", "noc", "traffic", "masters", "iommus",
-               "memories", "slaves", "register_blocks", "scenarios", "regress", "report", "chiplet"],
+               "memories", "slaves", "register_blocks", "scenarios", "regress", "report", "chiplet", "chi"],
          path, required=["socgen", "soc", "noc", "masters"])
     if raw["socgen"] != 1:
         raise SpecError(f"{path}: socgen schema version {raw['socgen']!r} not supported (1)")
@@ -339,6 +339,7 @@ def elaborate(raw, path="<spec>"):
         raise SpecError("at most 63 NoC slave ports")
     _check_overlap(m)
     _check_names(m)
+    _chi(m, raw.get("chi"), model, cols, rows)
 
     # ---- traffic targets resolve to target groups ----
     groups = {x.name for x in m.memories} | {x.name for x in m.slaves}
@@ -387,7 +388,8 @@ def elaborate(raw, path="<spec>"):
     m.ral_master = rg.get("ral_master", m.masters[0].name)
     if m.ral_master not in [x.name for x in m.masters]:
         raise SpecError(f"regress.ral_master: {m.ral_master!r} is not a master")
-    lists = rg.get("lists") or {"testlist": [{"test": t, "seeds": 1} for t in TESTS]}
+    lists = rg.get("lists") or {"testlist": [{"test": t, "seeds": 1} for t in TESTS
+                                             if t != "coherence" or m.chi.rn]}
     m.lists = {}
     for ln, entries in lists.items():
         ident(ln, "regress.lists")
@@ -396,6 +398,8 @@ def elaborate(raw, path="<spec>"):
             keys(e, ["test", "seeds", "plusargs"], f"regress.lists.{ln}[{j}]", required=["test"])
             if e["test"] not in TESTS:
                 raise SpecError(f"regress.lists.{ln}[{j}].test: {e['test']!r} ({', '.join(TESTS)})")
+            if e["test"] == "coherence" and not m.chi.rn:
+                raise SpecError(f"regress.lists.{ln}[{j}]: test coherence needs a chi section")
             pa = str(e.get("plusargs", ""))
             if e["test"] == "scenario" and "+SCENARIO=" not in pa:
                 raise SpecError(f"regress.lists.{ln}[{j}]: test scenario needs +SCENARIO=<name>")
@@ -419,7 +423,7 @@ def elaborate(raw, path="<spec>"):
     return m
 
 
-MASTER_PROTOCOLS = ("axi4", "axi4lite", "ahb")
+MASTER_PROTOCOLS = ("axi4", "axi4lite", "ahb", "chi")
 SLAVE_PROTOCOLS = ("axi4", "axi4lite", "ahb", "apb")
 
 
@@ -433,6 +437,49 @@ def _protocol(d, what, allowed, model, may_convert):
     if p != "axi4" and not may_convert:
         raise SpecError(f"{what}.protocol: RTL endpoints and the apb_bridge slave connect as axi4")
     return p
+
+
+def _chi(m, c, model, cols, rows):
+    """CHI coherence: one HN-F on the mesh keeps the `coherent` memories coherent
+    for the `protocol: chi` masters (RN-F, each with a cache bridge in the bench)
+    and the AMBA masters (RN-I)"""
+    rn = [x for x in m.masters if x.protocol == "chi"]
+    if c is None:
+        if rn:
+            raise SpecError(f"masters {rn[0].name}: protocol chi needs a chi section")
+        m.chi = Obj(home=None, coherent=[], lines=0, rn=[], coh_targets=set())
+        return
+    keys(c, ["home", "coherent", "cache_lines"], "chi", required=["home", "coherent"])
+    if model != "mesh":
+        raise SpecError("chi: needs noc.model: mesh")
+    if m.chiplet.dies > 1:
+        raise SpecError("chi: not supported with chiplet yet (one die)")
+    if not rn:
+        raise SpecError("chi: at least one master with protocol: chi")
+    for x in rn:
+        if x.kind != "vip":
+            raise SpecError(f"masters {x.name}: protocol chi only on a VIP master (the bench's RN-F cache bridge)")
+    coh = c["coherent"]
+    if not isinstance(coh, list) or not coh:
+        raise SpecError("chi.coherent: a list of memory names")
+    ts = set()
+    base = None
+    for n in coh:
+        mem = [x for x in m.memories if x.name == n]
+        sl = [x for x in m.slaves if x.name == n and x.kind == "memory"]
+        if mem:
+            ts |= {mem[0].first + k for k in range(mem[0].channels)}
+        elif sl:
+            ts.add(sl[0].index)
+        if base is None and (mem or sl):
+            base = (mem or sl)[0].base
+        else:
+            raise SpecError(f"chi.coherent: {n!r} is not a memory (memories, or a slave of kind memory)")
+    lines = num(c.get("cache_lines", 64), "chi.cache_lines")
+    if not pow2(lines) or not 4 <= lines <= 1024:
+        raise SpecError("chi.cache_lines: power of two, 4..1024")
+    m.chi = Obj(home=_node(c["home"], "chi.home", cols, rows), coherent=list(coh), lines=lines,
+                rn=[x.index for x in rn], coh_targets=ts, base=base)
 
 
 def _node(v, what, cols, rows):
@@ -667,6 +714,17 @@ MESH_ADAPTER = {"axi4": 0, "axi4lite": 2, "ahb": 4, "apb": 5}
 # chiplet: one way across the UCIe link (gateways + two UCIe adapters, measured with
 # socgen/specs/chiplet_soc.yaml), plus the PHY delay each way
 MESH_D2D = 5
+# CHI (measured with socgen/specs/chi_mesh_soc.yaml): a CHI master, and an AMBA
+# master's access to coherent memory, go through the HN-F: master -> home ->
+# slave -> home -> master, 2 x MESH_REQ + 2 x MESH_RSP + CHI_HN + 2 x (hops to the
+# home + hops from the home to the slave) + access. A CHI master's ideal is its
+# worst zero-load case: for coherent memory a miss (ReadUnique / ReadShared, two
+# memory chunks, two CompData, CompAck: + CHI_MISS); elsewhere a WriteNoSnpPtl
+# (DBIDResp and the data flit: + CHI_NOSNP_WR + 2 x hops to the home). A miss
+# that first writes back a dirty victim costs up to CHI_VICTIM more; cache hits
+# take 2 cycles, so the lower bound is not checked for CHI masters.
+MESH_ADAPTER["chi"] = 0
+CHI_HN, CHI_MISS, CHI_NOSNP_WR, CHI_VICTIM = 1, 32, 9, 64
 
 
 def path_hops(m, a, b):
@@ -692,6 +750,17 @@ def _derive_latency(m):
         for t in m.targets:
             h = path_hops(m, ms, t)
             ms.hops.append(h)
+            via_hn = mesh and m.chi.rn and (ms.protocol == "chi" or t.index in m.chi.coh_targets)
+            if via_hn:
+                h1, h2 = hops(ms.node, m.chi.home), hops(m.chi.home, t.node)
+                rq = 2 * MESH_REQ + (h1 + h2) * MESH_HOP + CHI_HN + MESH_ADAPTER[ms.protocol] + MESH_ADAPTER[t.protocol]
+                rs = 2 * MESH_RSP + (h1 + h2) * MESH_HOP
+                if ms.protocol == "chi":
+                    rq += CHI_MISS if t.index in m.chi.coh_targets else CHI_NOSNP_WR + 2 * h1 * MESH_HOP
+                ms.req.append(rq)
+                ms.rsp.append(rs)
+                ms.ideal.append(rq + t.access + rs)
+                continue
             if mesh:
                 x = d2d_cycles(m, ms, t)
                 rq = MESH_REQ + h * MESH_HOP + MESH_ADAPTER[ms.protocol] + MESH_ADAPTER[t.protocol] + x

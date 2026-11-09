@@ -285,5 +285,61 @@ class Chiplet(unittest.TestCase):
             self.assertIn(want, rtl)
 
 
+class Chi(unittest.TestCase):
+    """chi: HN-F, RN-F ports, RN-I through the home"""
+
+    def bad(self, mutate, msg):
+        r = raw("chi_mesh_soc.yaml")
+        mutate(r)
+        with self.assertRaisesRegex(SpecError, msg):
+            spec.elaborate(r)
+
+    def test_elaborate(self):
+        m = spec.load(os.path.join(SOCGEN, "specs", "chi_mesh_soc.yaml"))
+        self.assertEqual(m.chi.rn, [0, 1])
+        self.assertEqual(m.chi.coh_targets, {0, 1})          # ddr0, ddr1
+        self.assertEqual(m.chi.base, 0x8000_0000)
+        self.assertIn("coherence", [e.test for e in m.lists["testlist"]])
+
+    def test_needs_section(self):
+        self.bad(lambda r: r.pop("chi"), "protocol chi needs a chi section")
+
+    def test_needs_rn(self):
+        self.bad(lambda r: [x.update(protocol="axi4") for x in r["masters"][:2]], "at least one master with protocol: chi")
+
+    def test_coherent_is_memory(self):
+        self.bad(lambda r: r["chi"].update(coherent=["periph"]), "is not a memory")
+
+    def test_not_with_chiplet(self):
+        r = raw("chiplet_soc.yaml")
+        r["chi"] = {"home": [0, 0], "coherent": ["ddr"]}
+        r["masters"][0]["protocol"] = "chi"
+        with self.assertRaisesRegex(SpecError, "chiplet"):
+            spec.elaborate(r)
+
+    def test_coherence_test_needs_chi(self):
+        r = raw("mini_mesh_soc.yaml")
+        r["regress"]["lists"]["testlist"].append({"test": "coherence"})
+        with self.assertRaisesRegex(SpecError, "needs a chi section"):
+            spec.elaborate(r)
+
+    def test_generate(self):
+        import nocgen
+        m = spec.load(os.path.join(SOCGEN, "specs", "chi_mesh_soc.yaml"))
+        pkg = nocgen.cfg_pkg(m)
+        for want in ("localparam int NHN = 1;", "localparam int RN_EP [NRN] = '{ 0, 1 };", "localparam int CHI_LINES = 16;",
+                     "return cacheable(a) ? EPB'(HN_EP) : decode_tgt(a);", "typedef struct packed {", "chi_dat_t;"):
+            self.assertIn(want, pkg)
+        rtl = nocgen.noc_module(m)
+        for want in ("noc_ni_chi #(.SELF(0)) u_ni_cpu0", "noc_ni_chi #(.SELF(1)) u_ni_cpu1",
+                     "input  chi_req_t cpu0_txreq_flit", "output chi_snp_t cpu1_rxsnp_flit",
+                     "noc_hnf #(.SELF(HN_EP), .QD(64), .NL(CHI_LINES)) u_hnf"):
+            self.assertIn(want, rtl)
+        self.assertEqual(rtl.count("noc_ni_mst #"), 2)
+        tb = nocgen.tb_hookup(m)
+        self.assertIn("noc_chi_rnf #(.IDW(ID_WIDTH)) u_cpu0_shim", tb)
+        self.assertIn("noc_cfg_pkg::chi_dat_t cpu0_shim_txdat_flit;", tb)
+
+
 if __name__ == "__main__":
     unittest.main()

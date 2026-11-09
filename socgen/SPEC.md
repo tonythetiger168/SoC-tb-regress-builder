@@ -23,6 +23,8 @@ mesh, 32 LPDDR5 ports) and `specs/mini_soc.yaml` (small, for CI).
 | `memories` | no | interleaved memories, one NoC slave port per channel |
 | `slaves` | no | other slave ports: `memory`, `apb_bridge`, `vip` |
 | `register_blocks` | no | register tables for blocks without open-ip RTL |
+| `chiplet` | no | two dies joined by UCIe (`noc.model: mesh`), see below |
+| `chi` | no | CHI coherence: home node and coherent memory (`noc.model: mesh`), see below |
 | `regress` | no | test lists |
 | `report` | no | latency report settings |
 
@@ -72,7 +74,7 @@ bench and suite sit next to the behavioural one for a latency comparison.
 | `qos.priority` | 0 | 0..15; higher wins slave-port arbitration in the behavioural NoC |
 | `qos.latency_target` | | read latency budget in cycles; the report flags any path from this master whose worst percentile is over it |
 | `kind` | `vip` | `vip`: AXI master agent drives the port; `rtl`: an IP master (port left to the DUT) |
-| `protocol` | `axi4` | AMBA protocol of the master port: `axi4`, `axi4lite`, `ahb` (AHB-Lite). Others than `axi4` need `noc.model: mesh`; the bench drives them from the AXI4 VIP through a test shim (`noc_axi2lite` / `noc_axi2ahb`) |
+| `protocol` | `axi4` | protocol of the master port: `axi4`, `axi4lite`, `ahb` (AHB-Lite), `chi` (CHI RN-F, needs the `chi` section). Others than `axi4` need `noc.model: mesh`; the bench drives them from the AXI4 VIP through a test shim (`noc_axi2lite` / `noc_axi2ahb` / the `noc_chi_rnf` cache) |
 
 ## `iommus[]`
 
@@ -129,7 +131,8 @@ address with the channel bits removed) are generated for each memory.
 
 `ral_master` (master whose sequencer runs the RAL frontdoor, default the
 first master), and `lists.<listname>[]` of `test`, `seeds`, `plusargs`.
-Tests: `smoke`, `ral`, `path_latency`, `traffic`. Each list is written to
+Tests: `smoke`, `ral`, `path_latency`, `traffic`, `scenario`, and `coherence`
+(needs `chi`; in the default list when `chi` is set). Each list is written to
 `regress/<soc>_<listname>.txt` in the format `regress/regress.py` reads.
 
 ## `report.latency`
@@ -179,6 +182,40 @@ start when both adapters reach ACTIVE. `+D2D_ERR_EVERY=<n>` makes the PHY model
 corrupt every n-th flit to exercise CRC and Retry; the log ends with the
 corrupted-flit and replay counts. `specs/chiplet_soc.yaml` is the example.
 
+## `chi` (optional, `noc.model: mesh`, one die)
+
+CHI coherence on the generated NoC: masters with `protocol: chi` are RN-Fs, the
+other masters are RN-Is, and one HN-F on the mesh is the home of the coherent
+memory.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `home` | | `[x, y]`: the HN-F's router |
+| `coherent` | | memories (or slaves of kind `memory`) the home keeps coherent |
+| `cache_lines` | 64 | lines of each RN-F cache (64-byte, direct-mapped, power of two 4..1024); also sizes the snoop filter |
+
+- RN-F port: the CHI channels TXREQ / TXRSP / TXDAT and RXRSP / RXDAT / RXSNP
+  as `noc_cfg_pkg` flit structs (CHI Issue B fields, narrowed: one home, so no
+  node IDs; 256-bit data, a line is two DAT flits; valid / ready on TX instead
+  of L-Credits, and the RN-F always accepts on RX). In the bench the AXI4 VIP
+  is the CPU and `noc_chi_rnf` its cache: MESI (I / SC / UC / UD), ReadShared,
+  ReadUnique, CleanUnique, WriteBackFull, Evict, CompAck; ReadNoSnp /
+  WriteNoSnpPtl (one beat each) for addresses outside the coherent memory.
+- HN-F (`noc_hnf`): exact inclusive snoop filter (a copy of every RN-F's tags),
+  one transaction at a time; SnpShared / SnpUnique / SnpCleanShared; dirty
+  data written back or passed on as UD_PD.
+- RN-I: an AMBA master's chunks to coherent memory go to the home, which snoops
+  (reads: the unique holder, SnpCleanShared; writes: every holder, SnpUnique),
+  writes dirty lines back, and forwards the chunk to memory.
+- Latency: a CHI master's paths, and an AMBA master's paths to coherent memory,
+  go master -> home -> slave -> home -> master. `path_latency` does not check a
+  CHI master's lower bound (cache hits).
+- `coherence` test: false sharing, dirty lines migrating between caches and
+  RN-Is (bursts across line boundaries), producer / consumer for every pair.
+
+`specs/chi_mesh_soc.yaml` is the example. Not yet: DMT / DCT, retry and
+P-Credits, atomics, CMOs, more than one home, chiplet.
+
 ## Generated NoC (`noc.model: mesh`)
 
 socgen (`lib/nocgen.py`) writes two more files into `rtl/`:
@@ -200,6 +237,9 @@ The generic RTL it configures is in `rtl/noc/`:
 | `noc_ahb2axi.sv` | AHB-Lite slave -> AXI4, one single-beat AXI transfer per AHB transfer (master ports; test shim) |
 | `noc_apb2axi.sv` | APB4 slave -> AXI4 (test shim for APB slave ports) |
 | `noc_d2d_gw.sv`, `noc_d2d_phy.sv` | chiplet: die-to-die gateway (mesh <-> UCIe adapter) and the behavioural PHY between the two adapters |
+| `noc_ni_chi.sv` | CHI: RN-F network interface (CHI channels <-> packets to the home) |
+| `noc_hnf.sv` | CHI: home node, snoop filter, RN-I chunks to coherent memory |
+| `noc_chi_rnf.sv` | CHI: RN-F cache (AXI4 slave -> cache -> CHI port), the bench's shim for `protocol: chi` |
 | `rtl/soc/axi2apb_bridge.sv` | AXI4 -> APB4 on APB slave ports |
 
 Protocol notes: AHB-Lite has no write strobes (a narrow write needs a narrow

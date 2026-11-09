@@ -33,7 +33,8 @@ AXI_SIGS = ["awid", "awaddr", "awlen", "awsize", "awburst", "awprot", "awvalid",
 # generic NoC RTL for noc.model: mesh (configured by the generated noc_cfg_pkg)
 NOC_RTL = ["rtl/noc/noc_router_open.sv", "rtl/noc/noc_mesh.sv", "rtl/noc/noc_ni_mst.sv",
            "rtl/noc/noc_ni_slv.sv", "rtl/noc/noc_axi2lite.sv", "rtl/noc/noc_axi2ahb.sv",
-           "rtl/noc/noc_ahb2axi.sv", "rtl/noc/noc_apb2axi.sv", "rtl/noc/noc_d2d_gw.sv", "rtl/noc/noc_d2d_phy.sv"]
+           "rtl/noc/noc_ahb2axi.sv", "rtl/noc/noc_apb2axi.sv", "rtl/noc/noc_d2d_gw.sv", "rtl/noc/noc_d2d_phy.sv",
+           "rtl/noc/noc_ni_chi.sv", "rtl/noc/noc_hnf.sv", "rtl/noc/noc_chi_rnf.sv"]
 ORCA_RTL = ["+incdir+ext/xuanji-core/rtl/common", "ext/xuanji-core/rtl/common/clock_gate.sv",
             "ext/xuanji-core/rtl/noc/orca_noc_router.sv"]
 # repo files every generated bench compiles (from PR #1's VIPs and bridge)
@@ -135,7 +136,7 @@ def generate(m, out, ip_root, spec_path, write_repo_files=True):
     vip_slots = [s for s in m.apb.slots if s.kind == "vip"] if m.apb else []
     ext_slots = [s for s in m.apb.slots if s.kind in ("vip", "rtl_master")] if m.apb else []
     axi_slaves = [t for t in m.targets if t.kind in ("channel", "memory", "vip")]
-    ctx = dict(m=m, M=M, spec_rel=spec_rel, apb_slot_bits=slot_bits, apb_nslots=nslots,
+    ctx = dict(m=m, CHI_VICTIM=specmod.CHI_VICTIM, M=M, spec_rel=spec_rel, apb_slot_bits=slot_bits, apb_nslots=nslots,
                slot_ids=slot_ids, iommu_of=[next((io.index for io in m.iommus if io.name == x.iommu), -1)
                                             for x in m.masters],
                unmapped=specmod.unmapped(m), ral_blocks=blocks, ip_commit=ip_commit,
