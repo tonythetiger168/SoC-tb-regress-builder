@@ -118,8 +118,8 @@ def elaborate(raw, path="<spec>"):
 
     # ---- noc ----
     noc = raw["noc"]
-    keys(noc, ["topology", "rows", "cols", "routing", "timing", "model", "rtl_module"], "noc",
-         required=["topology"])
+    keys(noc, ["topology", "rows", "cols", "routing", "timing", "model", "rtl_module", "router",
+               "buf_depth", "num_vc", "ni"], "noc", required=["topology"])
     topo = noc["topology"]
     if topo not in ("mesh", "crossbar"):
         raise SpecError(f"noc.topology: {topo!r} (mesh | crossbar)")
@@ -132,12 +132,28 @@ def elaborate(raw, path="<spec>"):
     t = noc.get("timing", {})
     keys(t, ["ni_cycles", "router_cycles", "link_cycles"], "noc.timing")
     model = noc.get("model", "behavioral")
-    if model not in ("behavioral", "rtl"):
-        raise SpecError(f"noc.model: {model!r} (behavioral | rtl)")
+    if model not in ("behavioral", "rtl", "mesh"):
+        raise SpecError(f"noc.model: {model!r} (behavioral | rtl | mesh)")
     if model == "rtl" and "rtl_module" not in noc:
         raise SpecError("noc: model rtl needs rtl_module")
+    # model mesh: the generated <soc>_noc RTL (routers + network interfaces + protocol adapters)
+    router = noc.get("router", "orca")
+    if router not in ("orca", "open"):
+        raise SpecError(f"noc.router: {router!r} (orca | open)")
+    if router == "orca" and (rows > 4 or cols > 4):
+        raise SpecError("noc.router: orca_noc_router has 2-bit mesh coordinates (at most 4x4); use router: open")
+    ni = noc.get("ni") or {}
+    keys(ni, ["max_bursts", "max_chunks", "slave_outstanding"], "noc.ni")
+    m.noc_ni = Obj(maxb=num(ni.get("max_bursts", 4), "noc.ni.max_bursts"),
+                   maxo=num(ni.get("max_chunks", 8), "noc.ni.max_chunks"),
+                   outs=num(ni.get("slave_outstanding", 4), "noc.ni.slave_outstanding"))
+    for k in ("maxb", "maxo", "outs"):
+        if not pow2(m.noc_ni[k]) or not 2 <= m.noc_ni[k] <= 32:
+            raise SpecError("noc.ni: max_bursts, max_chunks and slave_outstanding are powers of two, 2..32")
     m.noc = Obj(topology=topo, rows=rows, cols=cols, model=model,
-                rtl_module=noc.get("rtl_module", ""),
+                rtl_module=noc.get("rtl_module", "") if model != "mesh" else "",
+                router_ip=router, buf_depth=num(noc.get("buf_depth", 8), "noc.buf_depth"),
+                num_vc=num(noc.get("num_vc", 4), "noc.num_vc"),
                 ni=num(t.get("ni_cycles", 1), "ni_cycles"),
                 router=num(t.get("router_cycles", 1), "router_cycles"),
                 link=num(t.get("link_cycles", 1), "link_cycles"))
@@ -177,7 +193,7 @@ def elaborate(raw, path="<spec>"):
     m.masters = []
     for i, ms in enumerate(raw["masters"]):
         w = f"masters[{i}]"
-        keys(ms, ["name", "node", "traffic", "iommu", "qos", "kind", "rtl"], w, required=["name"])
+        keys(ms, ["name", "node", "traffic", "iommu", "qos", "kind", "rtl", "protocol"], w, required=["name"])
         name = ident(ms["name"], f"{w}.name")
         tr = ms.get("traffic")
         if isinstance(tr, str):
@@ -206,7 +222,8 @@ def elaborate(raw, path="<spec>"):
         mo = Obj(name=name, index=i, node=node(ms.get("node"), f"{w}.node"), traffic=prof, rtl=rtl,
                  iommu=io, qos_class=qc, priority=pri,
                  latency_target=num(q["latency_target"], f"{w}.qos.latency_target")
-                 if "latency_target" in q else 0, kind=kind)
+                 if "latency_target" in q else 0, kind=kind,
+                 protocol=_protocol(ms, w, MASTER_PROTOCOLS, model, kind != "rtl"))
         if io:
             iommu_by[io].masters.append(name)
         m.masters.append(mo)
@@ -220,7 +237,7 @@ def elaborate(raw, path="<spec>"):
     for i, mem in enumerate(raw.get("memories") or []):
         w = f"memories[{i}]"
         keys(mem, ["name", "kind", "base", "size", "channels", "interleave", "access_cycles",
-                   "timing", "placement"], w, required=["name", "base", "size", "channels"])
+                   "timing", "placement", "protocol"], w, required=["name", "base", "size", "channels"])
         name = ident(mem["name"], f"{w}.name")
         base, size = num(mem["base"], f"{w}.base"), num(mem["size"], f"{w}.size")
         nch = num(mem["channels"], f"{w}.channels")
@@ -251,14 +268,15 @@ def elaborate(raw, path="<spec>"):
         for c in range(nch):
             m.targets.append(Obj(name=f"{name}{c}", kind="channel", mem=name, channel=c,
                                  base=base, size=size, node=nodes[c], access=mo.access,
-                                 index=len(m.targets)))
+                                 index=len(m.targets),
+                                 protocol=_protocol(mem, w, SLAVE_PROTOCOLS, model, True)))
     m.nch = sum(x.channels for x in m.memories)
 
     m.apb = None
     for i, sl in enumerate(raw.get("slaves") or []):
         w = f"slaves[{i}]"
         keys(sl, ["name", "kind", "base", "size", "node", "access_cycles", "slot_size",
-                  "peripherals", "rtl"], w, required=["name", "kind", "base", "size"])
+                  "peripherals", "rtl", "protocol"], w, required=["name", "kind", "base", "size"])
         name = ident(sl["name"], f"{w}.name")
         kind = sl["kind"]
         if kind not in ("memory", "apb_bridge", "vip", "rtl"):
@@ -270,7 +288,8 @@ def elaborate(raw, path="<spec>"):
             raise SpecError(f"{w}: base and size must be 4 KB aligned")
         to = Obj(name=name, kind=kind, base=base, size=size, node=node(sl.get("node"), f"{w}.node"),
                  access=num(sl.get("access_cycles", 4 if kind == "apb_bridge" else 2), w),
-                 index=len(m.targets), rtl=_rtl(sl["rtl"], f"{w}.rtl") if kind == "rtl" else None)
+                 index=len(m.targets), rtl=_rtl(sl["rtl"], f"{w}.rtl") if kind == "rtl" else None,
+                 protocol=_protocol(sl, w, SLAVE_PROTOCOLS, model, kind in ("memory", "vip")))
         if kind == "apb_bridge":
             if m.apb is not None:
                 raise SpecError(f"{w}: only one apb_bridge per SoC")
@@ -369,6 +388,22 @@ def elaborate(raw, path="<spec>"):
     _derive_path_addrs(m)
     _derive_regions(m)
     return m
+
+
+MASTER_PROTOCOLS = ("axi4", "axi4lite", "ahb")
+SLAVE_PROTOCOLS = ("axi4", "axi4lite", "ahb", "apb")
+
+
+def _protocol(d, what, allowed, model, may_convert):
+    """AMBA protocol of a NoC port (model mesh puts the protocol adapter in the generated NoC)"""
+    p = d.get("protocol", "axi4")
+    if p not in allowed:
+        raise SpecError(f"{what}.protocol: {p!r} ({' | '.join(allowed)})")
+    if p != "axi4" and model != "mesh":
+        raise SpecError(f"{what}.protocol: {p} needs noc.model: mesh (the generated NoC has the adapters)")
+    if p != "axi4" and not may_convert:
+        raise SpecError(f"{what}.protocol: RTL endpoints and the apb_bridge slave connect as axi4")
+    return p
 
 
 def _node(v, what, cols, rows):
@@ -594,16 +629,33 @@ def hops(a, b):
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 
+# Zero-load timing of the generated NoC RTL (noc.model: mesh), measured with
+# socgen/specs/mini_mesh_soc.yaml (orca_noc_router and noc_router_open give the
+# same numbers): a single-beat read costs MESH_REQ + MESH_RSP + 2 * hops + access
+# cycles from AR to R, plus the protocol adapters' cycles; writes about 2 more.
+MESH_REQ, MESH_RSP, MESH_HOP = 5, 4, 1
+MESH_ADAPTER = {"axi4": 0, "axi4lite": 2, "ahb": 4, "apb": 5}
+
+
 def _derive_latency(m):
     n = m.noc
     iom = {io.name: io for io in m.iommus}
+    mesh = n.model == "mesh"
     for ms in m.masters:
         ms.hops, ms.req, ms.rsp, ms.ideal = [], [], [], []
-        extra = iom[ms.iommu].tlb_hit if ms.iommu else 0
+        # the behavioural NoC adds the IOMMU TLB hit time; the mesh RTL has no IOMMU
+        extra = iom[ms.iommu].tlb_hit if ms.iommu and not mesh else 0
         for t in m.targets:
             h = hops(ms.node, t.node)
-            one = 2 * n.ni + (h + 1) * n.router + h * n.link
             ms.hops.append(h)
+            if mesh:
+                rq = MESH_REQ + h * MESH_HOP + MESH_ADAPTER[ms.protocol] + MESH_ADAPTER[t.protocol]
+                rs = MESH_RSP + h * MESH_HOP
+                ms.req.append(rq)
+                ms.rsp.append(rs)
+                ms.ideal.append(rq + t.access + rs)
+                continue
+            one = 2 * n.ni + (h + 1) * n.router + h * n.link
             ms.req.append(one + extra)
             ms.rsp.append(one)
             ms.ideal.append(one + extra + t.access + one)

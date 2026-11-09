@@ -91,7 +91,8 @@ package {{ m.name }}_env_pkg;
         s_cfg[i].port = AXI_S_PORT[i];
         s_cfg[i].mem  = s_mem[i];
         s_cfg[i].id_width = 8;
-      end
+{% if m.noc.model == 'mesh' %}        s_cfg[i].access_latency = S_ACCESS[AXI_S_PORT[i]];   // the behavioural NoC adds it otherwise
+{% endif %}      end
       for (int i = 0; i < NAPB_VIP; i++) begin
         apb_cfg_h[i] = apb_cfg::type_id::create($sformatf("apb%0d_cfg", i));
         apb_cfg_h[i].role = APB_SLAVE;
@@ -371,7 +372,9 @@ package {{ m.name }}_env_pkg;
       if (si == S_DEF) begin
         foreach (t.resp[i]) begin
           n_checks++;
-          if (t.resp[i] != AXI4_DECERR) err({who, $sformatf(": expected DECERR, got %s", t.resp[i].name())});
+          // AHB-Lite has one error response: a decode miss from an AHB master comes back as SLVERR
+          if (t.resp[i] != AXI4_DECERR && !(M_PROTO[t.port] == "ahb" && t.resp[i] == AXI4_SLVERR))
+            err({who, $sformatf(": expected DECERR, got %s", t.resp[i].name())});
         end
         return;
       end

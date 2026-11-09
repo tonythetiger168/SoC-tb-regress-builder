@@ -6,6 +6,7 @@
 //   s_if[NS]  NoC slave ports: memory VIPs, {% if m.apb %}the APB subsystem (S_{{ m.apb.name|upper }}){% endif %}{% if rtl_slaves %}, RTL slaves{% endif %}
 
 {% if m.noc.model == 'behavioral' %}//   the NoC between them is the env's behavioural {{ m.name }}_noc component
+{% elif m.noc.model == 'mesh' %}//   the NoC between them is the generated {{ m.name }}_noc RTL (router mesh + network interfaces)
 {% else %}//   the NoC between them is {{ m.noc.rtl_module }} (ports: aclk, aresetn, m_if[NM], s_if[NS])
 {% endif %}// ============================================================================
 `timescale 1ns/1ps
@@ -43,7 +44,8 @@ module {{ m.name }}_tb_top;
   end
 {% if m.noc.model == 'rtl' %}
   {{ m.noc.rtl_module }} u_noc (.aclk({{ m.clock.name }}), .aresetn(aresetn), .m_if(m_if), .s_if(s_if));
-{% endif %}{% if m.apb %}
+{% elif m.noc.model == 'mesh' %}
+{{ noc_hookup }}{% endif %}{% if m.apb %}
   // ---------------- APB subsystem on S_{{ m.apb.name|upper }} ----------------
 {% for s in ext_slots if s.kind == 'rtl_master' %}  logic [31:0] {{ s.name }}_paddr, {{ s.name }}_pwdata, {{ s.name }}_prdata;
   logic        {{ s.name }}_psel, {{ s.name }}_penable, {{ s.name }}_pwrite, {{ s.name }}_pready, {{ s.name }}_pslverr;

@@ -29,6 +29,7 @@ class axi4_cfg extends uvm_object;
   int unsigned  max_b_latency    = 0; // cycles from WLAST to BVALID
   int unsigned  max_r_latency    = 0; // cycles from AR to first RVALID
   int unsigned  max_rvalid_gap   = 0; // RVALID low cycles between beats
+  int unsigned  access_latency   = 0; // fixed cycles before the first R beat / before B (memory access time)
   axi4_err_range err_ranges[$];       // start address in range -> resp
 
   function new(string name = "axi4_cfg");

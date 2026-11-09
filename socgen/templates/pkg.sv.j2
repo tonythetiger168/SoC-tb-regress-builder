@@ -119,6 +119,10 @@ package {{ m.name }}_pkg;
   // ---------------- master kind ----------------
   localparam bit M_IS_RTL [NM] = '{ {{ m.masters|map(attribute='kind')|map('is_rtl')|join(', ') }} };
 
+  // ---------------- AMBA protocol of each NoC port (noc.model: mesh) ----------------
+  localparam string M_PROTO [NM] = '{ {{ m.masters|map(attribute='protocol')|map('sv_str')|join(', ') }} };
+  localparam string S_PROTO [NS] = '{ {{ m.targets|map(attribute='protocol')|map('sv_str')|join(', ') }} };
+
   // ---------------- QoS ----------------
   localparam int M_PRIORITY [NM] = '{ {{ m.masters|map(attribute='priority')|join(', ') }} };
   localparam string M_QOS [NM] = '{ {{ m.masters|map(attribute='qos_class')|map('sv_str')|join(', ') }} };
