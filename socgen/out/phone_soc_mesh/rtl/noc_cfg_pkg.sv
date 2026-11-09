@@ -38,13 +38,22 @@ package noc_cfg_pkg;
 
   // ---------------- endpoints ----------------
   localparam int NM  = 15;
-  localparam int NEP = 49;
-  localparam int NS  = NEP - NM;
+  localparam int NS  = 34;
+  localparam int NGW = 0;                  // die-to-die gateways (endpoints NM + NS ..)
+  localparam int NEP = NM + NS + NGW;
+  localparam int NDIE = 1;
   localparam int EPB = 6;                  // endpoint id width
   localparam logic [EPB-1:0] EP_NONE = '1;      // decode miss: DECERR from the master NI
 
   localparam int EP_X [NEP] = '{ 1, 2, 2, 0, 0, 3, 3, 3, 1, 0, 0, 1, 2, 1, 2, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 1, 2 };
   localparam int EP_Y [NEP] = '{ 1, 1, 2, 2, 2, 2, 2, 1, 2, 1, 1, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 2 };
+  localparam int EP_DIE [NEP] = '{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+  // the endpoint a flit for endpoint d leaves the mesh of die `die` at: d
+  // itself, or that die's die-to-die gateway when d is on another die
+  function automatic int local_ep(int d, int die);
+    return (NGW == 0 || EP_DIE[d] == die) ? d : NM + NS + die;
+  endfunction
 
   function automatic string ep_name(int e);
     case (e)
@@ -133,8 +142,8 @@ package noc_cfg_pkg;
     noc_flit_t f;
     f = '0;
     f.payload = PAYLOAD_W'(p);
-    f.dest_x  = XB'(EP_X[p.dst_ep]);
-    f.dest_y  = YB'(EP_Y[p.dst_ep]);
+    f.dest_x  = XB'(EP_X[local_ep(int'(p.dst_ep), EP_DIE[src])]);
+    f.dest_y  = YB'(EP_Y[local_ep(int'(p.dst_ep), EP_DIE[src])]);
     f.src_x   = XB'(EP_X[src]);
     f.src_y   = YB'(EP_Y[src]);
     f.vc_id   = vc;

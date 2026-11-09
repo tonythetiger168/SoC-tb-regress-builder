@@ -155,6 +155,30 @@ Tests: `smoke`, `ral`, `path_latency`, `traffic`. Each list is written to
 | `regress/<soc>_<list>.txt` | regression lists |
 | `doc/<soc>.md`, `doc/<soc>_memmap.h`, `doc/<soc>_paths.csv` | address map, mesh placement, ideal latency per path, C header |
 
+## `chiplet` (optional, `noc.model: mesh`)
+
+Two dies, one mesh each (both `rows` x `cols`), joined by a UCIe die-to-die
+link. Masters, memories and slaves take `die: 0 | 1` (default 0); `node` is
+the router on that die.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `dies` | | 2 |
+| `link` | `ucie` | open-ip-portfolio `UCIe_top` (D2D adapter: 64-byte flits, CRC, Retry) on each die |
+| `gateways` | | `[[x, y], [x, y]]`: the router of each die's die-to-die gateway |
+| `phy_cycles` | 4 | PHY delay each way (`rtl/noc/noc_d2d_phy.sv`, a behavioural PHY) |
+| `retry` | true | UCIe Retry on (`cfg_retry`) |
+
+A flit for an endpoint on the other die is ejected at the local gateway
+(`noc_d2d_gw`), carried as one UCIe flit, and injected on the far die. A
+cross-die path costs the hops to the local gateway plus the far gateway's hops
+to the target, and 5 + `phy_cycles` cycles each way across the link. The
+gateways hold every packet that can be in flight (2 x masters x `max_chunks`),
+so the link needs no credits and never back-pressures the meshes. The VIPs
+start when both adapters reach ACTIVE. `+D2D_ERR_EVERY=<n>` makes the PHY model
+corrupt every n-th flit to exercise CRC and Retry; the log ends with the
+corrupted-flit and replay counts. `specs/chiplet_soc.yaml` is the example.
+
 ## Generated NoC (`noc.model: mesh`)
 
 socgen (`lib/nocgen.py`) writes two more files into `rtl/`:
@@ -175,6 +199,7 @@ The generic RTL it configures is in `rtl/noc/`:
 | `noc_axi2ahb.sv` | AXI4 -> AHB-Lite master, one NONSEQ SINGLE per beat (slave ports; test shim) |
 | `noc_ahb2axi.sv` | AHB-Lite slave -> AXI4, one single-beat AXI transfer per AHB transfer (master ports; test shim) |
 | `noc_apb2axi.sv` | APB4 slave -> AXI4 (test shim for APB slave ports) |
+| `noc_d2d_gw.sv`, `noc_d2d_phy.sv` | chiplet: die-to-die gateway (mesh <-> UCIe adapter) and the behavioural PHY between the two adapters |
 | `rtl/soc/axi2apb_bridge.sv` | AXI4 -> APB4 on APB slave ports |
 
 Protocol notes: AHB-Lite has no write strobes (a narrow write needs a narrow

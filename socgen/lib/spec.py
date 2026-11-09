@@ -88,7 +88,7 @@ def load(path):
 
 def elaborate(raw, path="<spec>"):
     keys(raw, ["socgen", "soc", "clock", "bus", "noc", "traffic", "masters", "iommus",
-               "memories", "slaves", "register_blocks", "scenarios", "regress", "report"],
+               "memories", "slaves", "register_blocks", "scenarios", "regress", "report", "chiplet"],
          path, required=["socgen", "soc", "noc", "masters"])
     if raw["socgen"] != 1:
         raise SpecError(f"{path}: socgen schema version {raw['socgen']!r} not supported (1)")
@@ -158,6 +158,33 @@ def elaborate(raw, path="<spec>"):
                 router=num(t.get("router_cycles", 1), "router_cycles"),
                 link=num(t.get("link_cycles", 1), "link_cycles"))
 
+    # ---- chiplet: several dies, one mesh each, joined by a UCIe die-to-die link ----
+    ch = raw.get("chiplet")
+    if ch is None:
+        m.chiplet = Obj(dies=1, gateways=[], phy_cycles=0, retry=True, link="")
+    else:
+        keys(ch, ["dies", "link", "gateways", "phy_cycles", "retry"], "chiplet", required=["dies", "gateways"])
+        nd = num(ch["dies"], "chiplet.dies")
+        if nd != 2:
+            raise SpecError("chiplet.dies: 2 (one UCIe link between two dies)")
+        if model != "mesh":
+            raise SpecError("chiplet: needs noc.model: mesh")
+        if ch.get("link", "ucie") != "ucie":
+            raise SpecError("chiplet.link: ucie")
+        gws = ch["gateways"]
+        if not isinstance(gws, list) or len(gws) != nd:
+            raise SpecError("chiplet.gateways: one [x, y] router per die")
+        m.chiplet = Obj(dies=nd, link="ucie", gateways=[_node(g, f"chiplet.gateways[{i}]", cols, rows)
+                                                         for i, g in enumerate(gws)],
+                        phy_cycles=num(ch.get("phy_cycles", 4), "chiplet.phy_cycles"),
+                        retry=bool(ch.get("retry", True)))
+
+    def die_of(d, what):
+        v = num(d.get("die", 0), f"{what}.die")
+        if not 0 <= v < m.chiplet.dies:
+            raise SpecError(f"{what}.die: 0..{m.chiplet.dies - 1} (chiplet.dies)")
+        return v
+
     def node(v, what):
         if topo == "crossbar":
             return (0, 0) if v is None else _node(v, what, 1, 1)
@@ -193,7 +220,7 @@ def elaborate(raw, path="<spec>"):
     m.masters = []
     for i, ms in enumerate(raw["masters"]):
         w = f"masters[{i}]"
-        keys(ms, ["name", "node", "traffic", "iommu", "qos", "kind", "rtl", "protocol"], w, required=["name"])
+        keys(ms, ["name", "node", "traffic", "iommu", "qos", "kind", "rtl", "protocol", "die"], w, required=["name"])
         name = ident(ms["name"], f"{w}.name")
         tr = ms.get("traffic")
         if isinstance(tr, str):
@@ -223,7 +250,7 @@ def elaborate(raw, path="<spec>"):
                  iommu=io, qos_class=qc, priority=pri,
                  latency_target=num(q["latency_target"], f"{w}.qos.latency_target")
                  if "latency_target" in q else 0, kind=kind,
-                 protocol=_protocol(ms, w, MASTER_PROTOCOLS, model, kind != "rtl"))
+                 protocol=_protocol(ms, w, MASTER_PROTOCOLS, model, kind != "rtl"), die=die_of(ms, w))
         if io:
             iommu_by[io].masters.append(name)
         m.masters.append(mo)
@@ -237,7 +264,7 @@ def elaborate(raw, path="<spec>"):
     for i, mem in enumerate(raw.get("memories") or []):
         w = f"memories[{i}]"
         keys(mem, ["name", "kind", "base", "size", "channels", "interleave", "access_cycles",
-                   "timing", "placement", "protocol"], w, required=["name", "base", "size", "channels"])
+                   "timing", "placement", "protocol", "die"], w, required=["name", "base", "size", "channels"])
         name = ident(mem["name"], f"{w}.name")
         base, size = num(mem["base"], f"{w}.base"), num(mem["size"], f"{w}.size")
         nch = num(mem["channels"], f"{w}.channels")
@@ -269,14 +296,15 @@ def elaborate(raw, path="<spec>"):
             m.targets.append(Obj(name=f"{name}{c}", kind="channel", mem=name, channel=c,
                                  base=base, size=size, node=nodes[c], access=mo.access,
                                  index=len(m.targets),
-                                 protocol=_protocol(mem, w, SLAVE_PROTOCOLS, model, True)))
+                                 protocol=_protocol(mem, w, SLAVE_PROTOCOLS, model, True),
+                                 die=die_of(mem, w)))
     m.nch = sum(x.channels for x in m.memories)
 
     m.apb = None
     for i, sl in enumerate(raw.get("slaves") or []):
         w = f"slaves[{i}]"
         keys(sl, ["name", "kind", "base", "size", "node", "access_cycles", "slot_size",
-                  "peripherals", "rtl", "protocol"], w, required=["name", "kind", "base", "size"])
+                  "peripherals", "rtl", "protocol", "die"], w, required=["name", "kind", "base", "size"])
         name = ident(sl["name"], f"{w}.name")
         kind = sl["kind"]
         if kind not in ("memory", "apb_bridge", "vip", "rtl"):
@@ -289,7 +317,8 @@ def elaborate(raw, path="<spec>"):
         to = Obj(name=name, kind=kind, base=base, size=size, node=node(sl.get("node"), f"{w}.node"),
                  access=num(sl.get("access_cycles", 4 if kind == "apb_bridge" else 2), w),
                  index=len(m.targets), rtl=_rtl(sl["rtl"], f"{w}.rtl") if kind == "rtl" else None,
-                 protocol=_protocol(sl, w, SLAVE_PROTOCOLS, model, kind in ("memory", "vip")))
+                 protocol=_protocol(sl, w, SLAVE_PROTOCOLS, model, kind in ("memory", "vip")),
+                 die=die_of(sl, w))
         if kind == "apb_bridge":
             if m.apb is not None:
                 raise SpecError(f"{w}: only one apb_bridge per SoC")
@@ -635,6 +664,21 @@ def hops(a, b):
 # cycles from AR to R, plus the protocol adapters' cycles; writes about 2 more.
 MESH_REQ, MESH_RSP, MESH_HOP = 5, 4, 1
 MESH_ADAPTER = {"axi4": 0, "axi4lite": 2, "ahb": 4, "apb": 5}
+# chiplet: one way across the UCIe link (gateways + two UCIe adapters, measured with
+# socgen/specs/chiplet_soc.yaml), plus the PHY delay each way
+MESH_D2D = 5
+
+
+def path_hops(m, a, b):
+    """router hops from endpoint a to endpoint b; across dies via the two gateways"""
+    if a.die == b.die:
+        return hops(a.node, b.node)
+    g = m.chiplet.gateways
+    return hops(a.node, g[a.die]) + hops(g[b.die], b.node)
+
+
+def d2d_cycles(m, a, b):
+    return 0 if a.die == b.die else MESH_D2D + m.chiplet.phy_cycles
 
 
 def _derive_latency(m):
@@ -646,11 +690,12 @@ def _derive_latency(m):
         # the behavioural NoC adds the IOMMU TLB hit time; the mesh RTL has no IOMMU
         extra = iom[ms.iommu].tlb_hit if ms.iommu and not mesh else 0
         for t in m.targets:
-            h = hops(ms.node, t.node)
+            h = path_hops(m, ms, t)
             ms.hops.append(h)
             if mesh:
-                rq = MESH_REQ + h * MESH_HOP + MESH_ADAPTER[ms.protocol] + MESH_ADAPTER[t.protocol]
-                rs = MESH_RSP + h * MESH_HOP
+                x = d2d_cycles(m, ms, t)
+                rq = MESH_REQ + h * MESH_HOP + MESH_ADAPTER[ms.protocol] + MESH_ADAPTER[t.protocol] + x
+                rs = MESH_RSP + h * MESH_HOP + x
                 ms.req.append(rq)
                 ms.rsp.append(rs)
                 ms.ideal.append(rq + t.access + rs)

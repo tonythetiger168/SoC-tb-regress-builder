@@ -24,8 +24,15 @@ module {{ m.name }}_tb_top;
     aresetn <= 1'b1;
   end
 
-  axi4_if m_if [NM] (.aclk({{ m.clock.name }}), .aresetn(aresetn));
-  axi4_if s_if [NS] (.aclk({{ m.clock.name }}), .aresetn(aresetn));
+{% set if_rst = 'vip_resetn' if m.chiplet.dies > 1 else 'aresetn' %}{% if m.chiplet.dies > 1 %}  // chiplet: the VIPs start once the UCIe die-to-die link is up (the NoC and the
+  // APB subsystem come out of reset with aresetn; link training takes some clocks)
+  logic d2d_up, d2d_error, vip_resetn = 1'b0;
+  logic [31:0] d2d_flits, d2d_replays;
+  always @(posedge {{ m.clock.name }}) if (aresetn && d2d_up) vip_resetn <= 1'b1;
+  always @(posedge {{ m.clock.name }}) if (aresetn && d2d_error) $error("die-to-die link error (gateway overflow or UCIe LINKERROR)");
+  final $display("D2D link: %0d flits corrupted by the PHY model, %0d UCIe replays", d2d_flits, d2d_replays);
+{% endif %}  axi4_if m_if [NM] (.aclk({{ m.clock.name }}), .aresetn({{ if_rst }}));
+  axi4_if s_if [NS] (.aclk({{ m.clock.name }}), .aresetn({{ if_rst }}));
 {% for s in vip_slots %}  apb_if  apb_{{ s.name }}_if (.pclk({{ m.clock.name }}), .presetn(aresetn));
 {% endfor %}
   for (genvar i = 0; i < NM; i++) begin : g_m

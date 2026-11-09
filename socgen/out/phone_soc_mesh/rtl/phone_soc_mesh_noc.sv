@@ -1638,8 +1638,8 @@ module phone_soc_mesh_noc
 
   noc_flit_t inj_flit [NEP], ej_flit [NEP];
   logic      inj_valid [NEP], inj_ready [NEP], ej_valid [NEP], ej_ready [NEP];
-  logic      busy;
 
+  logic      busy;
   noc_mesh #(.NUM_VC(4), .BUF_DEPTH(8)) u_mesh (
     .clk, .rst_n, .inj_flit, .inj_valid, .inj_ready, .ej_flit, .ej_valid, .ej_ready, .busy);
 

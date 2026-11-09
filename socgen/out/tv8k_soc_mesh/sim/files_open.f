@@ -41,6 +41,8 @@ rtl/noc/noc_axi2lite.sv
 rtl/noc/noc_axi2ahb.sv
 rtl/noc/noc_ahb2axi.sv
 rtl/noc/noc_apb2axi.sv
+rtl/noc/noc_d2d_gw.sv
+rtl/noc/noc_d2d_phy.sv
 socgen/out/tv8k_soc_mesh/rtl/tv8k_soc_mesh_noc.sv
 socgen/out/tv8k_soc_mesh/rtl/tv8k_soc_mesh_iommu_regs.sv
 socgen/out/tv8k_soc_mesh/rtl/tv8k_soc_mesh_apb_subsys.sv

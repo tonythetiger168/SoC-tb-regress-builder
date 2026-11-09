@@ -21,6 +21,8 @@ rtl/noc/noc_axi2lite.sv
 rtl/noc/noc_axi2ahb.sv
 rtl/noc/noc_ahb2axi.sv
 rtl/noc/noc_apb2axi.sv
+rtl/noc/noc_d2d_gw.sv
+rtl/noc/noc_d2d_phy.sv
 socgen/out/mini_mesh_soc/rtl/mini_mesh_soc_noc.sv
 socgen/out/mini_mesh_soc/rtl/mini_mesh_soc_iommu_regs.sv
 socgen/out/mini_mesh_soc/rtl/mini_mesh_soc_apb_subsys.sv

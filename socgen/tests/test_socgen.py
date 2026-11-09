@@ -237,7 +237,7 @@ class Mesh(unittest.TestCase):
         import nocgen
         m = spec.load(os.path.join(SOCGEN, "specs", "mini_mesh_soc.yaml"))
         pkg = nocgen.cfg_pkg(m)
-        for want in ("package noc_cfg_pkg;", "localparam int NM  = 5;", "localparam int NEP = 14;",
+        for want in ("package noc_cfg_pkg;", "localparam int NM  = 5;", "localparam int NS  = 9;", "localparam int NGW = 0;",
                      "localparam int EPB = 4;", "mini_mesh_soc_pkg::mmesh_decode(a)"):
             self.assertIn(want, pkg)
         rtl = nocgen.noc_module(m)
@@ -248,6 +248,41 @@ class Mesh(unittest.TestCase):
             self.assertIn(want, rtl)
         self.assertEqual(rtl.count("noc_ni_mst #"), 5)
         self.assertEqual(rtl.count("noc_ni_slv #"), 9)
+
+
+class Chiplet(unittest.TestCase):
+    def bad(self, mutate, msg):
+        r = raw("chiplet_soc.yaml")
+        mutate(r)
+        with self.assertRaisesRegex(SpecError, msg):
+            spec.elaborate(r)
+
+    def test_paths(self):
+        m = spec.load(os.path.join(SOCGEN, "specs", "chiplet_soc.yaml"))
+        cpu = m.masters[0]
+        t = {x.name: x for x in m.targets}
+        # cpu [0,0] die 0 -> gateway [1,1]: 2 hops; die 1 gateway [0,0] -> ddr0 [0,1]: 1 hop
+        self.assertEqual(spec.path_hops(m, cpu, t["ddr0"]), 3)
+        # measured on the RTL: 45 cycles (27 on one die + 2 x (5 + 4 PHY))
+        self.assertEqual(cpu.ideal[t["ddr0"].index], 45)
+        self.assertEqual(cpu.ideal[t["sram"].index], 9 + 2 + 1)
+
+    def test_needs_mesh(self):
+        self.bad(lambda r: r["noc"].update(model="behavioral"), "needs noc.model: mesh")
+
+    def test_die_range(self):
+        self.bad(lambda r: r["masters"][0].update(die=2), "die: 0..1")
+
+    def test_generate(self):
+        import nocgen
+        m = spec.load(os.path.join(SOCGEN, "specs", "chiplet_soc.yaml"))
+        pkg = nocgen.cfg_pkg(m)
+        self.assertIn("localparam int NGW = 2;", pkg)
+        self.assertIn("function automatic int local_ep", pkg)
+        rtl = nocgen.noc_module(m)
+        for want in ("noc_mesh #(.NUM_VC(4), .BUF_DEPTH(8), .DIE(1)) u_mesh_d1", "noc_d2d_gw #(.SELF(NM + NS + 1)",
+                     "UCIe_top u_ucie0", "noc_d2d_phy #(.DELAY(4)) u_phy", "output logic d2d_up,"):
+            self.assertIn(want, rtl)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,69 @@
+# Two-die chiplet SoC on the generated NoC RTL: one 2x2 mesh per die, joined
+# by a UCIe die-to-die link (open-ip UCIe_top on each die, Retry on). Compute
+# die 0 has the CPU, DMA, boot SRAM and the APB peripherals; memory die 1 has
+# the NPU, an AHB-Lite MCU, the 4-channel DDR and an AXI4-Lite SRAM. Every
+# path from a master to a slave on the other die crosses the link.
+socgen: 1
+soc: {name: chiplet_soc, prefix: chip, desc: two dies joined by UCIe on the generated NoC}
+clock: {period_ns: 2.0}
+noc:
+  topology: mesh
+  rows: 2
+  cols: 2
+  timing: {ni_cycles: 1, router_cycles: 1, link_cycles: 1}
+  model: mesh
+  router: orca
+
+chiplet:
+  dies: 2
+  link: ucie
+  gateways: [[1, 1], [0, 0]]   # router of the die-to-die gateway on die 0, die 1
+  phy_cycles: 4                # PHY delay each way
+  retry: true                  # UCIe Retry (CRC, Ack/Nak, replay)
+
+traffic:
+  cpu: {read_pct: 60, beats: [1, 8],  targets: [ddr, sram, xsram, periph]}
+  dma: {read_pct: 50, beats: [4, 16], targets: [ddr, sram]}
+  npu: {read_pct: 70, beats: [8, 16], targets: [ddr, sram]}
+  mcu: {read_pct: 50, beats: [1, 4],  targets: [ddr, xsram, sram, periph]}
+
+masters:
+  - {name: cpu, die: 0, node: [0, 0], traffic: cpu}
+  - {name: dma, die: 0, node: [1, 0], traffic: dma}
+  - {name: npu, die: 1, node: [1, 0], traffic: npu}
+  - {name: mcu, die: 1, node: [1, 1], traffic: mcu, protocol: ahb}
+
+memories:
+  - name: ddr
+    die: 1
+    kind: ddr
+    base: 0x8000_0000
+    size: 0x1000_0000
+    channels: 4
+    interleave: {granule: 0x1000, hash: xor}
+    access_cycles: 12
+    placement: {nodes: [[0, 1], [1, 1], [0, 1], [1, 1]]}
+
+slaves:
+  - {name: sram,  die: 0, kind: memory, base: 0x0, size: 0x1_0000, node: [0, 1], access_cycles: 1}
+  - {name: xsram, die: 1, kind: memory, base: 0x2000_0000, size: 0x1_0000, node: [0, 0], protocol: axi4lite}
+  - name: periph
+    die: 0
+    kind: apb_bridge
+    base: 0x1000_0000
+    size: 0x1_0000
+    node: [1, 1]
+    peripherals:
+      - {name: gpio, ip: GPIO}
+      - {name: ext,  vip: apb}
+
+regress:
+  ral_master: cpu
+  lists:
+    testlist:
+      - {test: smoke,        seeds: 1}
+      - {test: ral,          seeds: 1}
+      - {test: path_latency, seeds: 1}
+      - {test: traffic,      seeds: 2}
+      - {test: traffic,      seeds: 1, plusargs: "+SOC_TIMING=2"}
+      - {test: traffic,      seeds: 1, plusargs: "+D2D_ERR_EVERY=7"}

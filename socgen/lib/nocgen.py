@@ -54,8 +54,9 @@ def clog2(n):
 def params(m):
     """derived NoC parameters"""
     nm, ns = len(m.masters), len(m.targets)
-    nep = nm + ns
-    p = dict(nm=nm, ns=ns, nep=nep, epb=clog2(nep + 1),
+    ngw = m.chiplet.dies if m.chiplet.dies > 1 else 0
+    nep = nm + ns + ngw
+    p = dict(nm=nm, ns=ns, ngw=ngw, nep=nep, epb=clog2(nep + 1),
              xb=2 if m.noc.router_ip == "orca" else clog2(m.noc.cols),
              yb=2 if m.noc.router_ip == "orca" else clog2(m.noc.rows),
              qd=nm * m.noc_ni.maxo)
@@ -73,9 +74,11 @@ def _w(width):
 def cfg_pkg(m):
     p = params(m)
     P = f"{m.name}_pkg"
-    eps = [x.name for x in m.masters] + [t.name for t in m.targets]
-    ex = [x.node[0] for x in m.masters] + [t.node[0] for t in m.targets]
-    ey = [x.node[1] for x in m.masters] + [t.node[1] for t in m.targets]
+    gws = m.chiplet.gateways if p["ngw"] else []
+    eps = [x.name for x in m.masters] + [t.name for t in m.targets] + [f"d2d{d}" for d in range(len(gws))]
+    ex = [x.node[0] for x in m.masters] + [t.node[0] for t in m.targets] + [g[0] for g in gws]
+    ey = [x.node[1] for x in m.masters] + [t.node[1] for t in m.targets] + [g[1] for g in gws]
+    ed = [x.die for x in m.masters] + [t.die for t in m.targets] + list(range(len(gws)))
     names = "\n".join(f"      {i}: return \"{n}\";" for i, n in enumerate(eps))
     return f"""// SPDX-License-Identifier: Apache-2.0
 // ============================================================================
@@ -117,13 +120,22 @@ package noc_cfg_pkg;
 
   // ---------------- endpoints ----------------
   localparam int NM  = {p['nm']};
-  localparam int NEP = {p['nep']};
-  localparam int NS  = NEP - NM;
+  localparam int NS  = {p['ns']};
+  localparam int NGW = {p['ngw']};                  // die-to-die gateways (endpoints NM + NS ..)
+  localparam int NEP = NM + NS + NGW;
+  localparam int NDIE = {m.chiplet.dies};
   localparam int EPB = {p['epb']};                  // endpoint id width
   localparam logic [EPB-1:0] EP_NONE = '1;      // decode miss: DECERR from the master NI
 
   localparam int EP_X [NEP] = '{{ {', '.join(map(str, ex))} }};
   localparam int EP_Y [NEP] = '{{ {', '.join(map(str, ey))} }};
+  localparam int EP_DIE [NEP] = '{{ {', '.join(map(str, ed))} }};
+
+  // the endpoint a flit for endpoint d leaves the mesh of die `die` at: d
+  // itself, or that die's die-to-die gateway when d is on another die
+  function automatic int local_ep(int d, int die);
+    return (NGW == 0 || EP_DIE[d] == die) ? d : NM + NS + die;
+  endfunction
 
   function automatic string ep_name(int e);
     case (e)
@@ -164,8 +176,8 @@ package noc_cfg_pkg;
     noc_flit_t f;
     f = '0;
     f.payload = PAYLOAD_W'(p);
-    f.dest_x  = XB'(EP_X[p.dst_ep]);
-    f.dest_y  = YB'(EP_Y[p.dst_ep]);
+    f.dest_x  = XB'(EP_X[local_ep(int'(p.dst_ep), EP_DIE[src])]);
+    f.dest_y  = YB'(EP_Y[local_ep(int'(p.dst_ep), EP_DIE[src])]);
     f.src_x   = XB'(EP_X[src]);
     f.src_y   = YB'(EP_Y[src]);
     f.vc_id   = vc;
@@ -220,16 +232,25 @@ def noc_module(m):
     for t in m.targets:
         ports += [f"  // ---- slave port {t.name}: {PROTO_NAME[t.protocol]} ----"] + \
             _ports(t.name, SLV_SIGS[t.protocol], noc_is_master=True)
+    if p["ngw"]:
+        ports += ["  // ---- die-to-die link status: d2d_up = both UCIe adapters ACTIVE; d2d_error = a",
+                  "  // gateway queue overflowed or an adapter entered LINKERROR; d2d_flits = flits the",
+                  "  // PHY model corrupted (+D2D_ERR_EVERY); d2d_replays = UCIe Retry replays ----",
+                  "  output logic d2d_up", "  output logic d2d_error",
+                  "  output logic [31:0] d2d_flits", "  output logic [31:0] d2d_replays"]
     # commas: every port line but the last gets one (comments excluded)
     idx = [i for i, s in enumerate(ports) if not s.lstrip().startswith("//")]
     for i in idx[:-1]:
         ports[i] += ","
     L += ports + [");", ""]
     L += ["  noc_flit_t inj_flit [NEP], ej_flit [NEP];",
-          "  logic      inj_valid [NEP], inj_ready [NEP], ej_valid [NEP], ej_ready [NEP];",
-          "  logic      busy;", "",
-          f"  noc_mesh #(.NUM_VC({m.noc.num_vc}), .BUF_DEPTH({m.noc.buf_depth})) u_mesh (",
-          "    .clk, .rst_n, .inj_flit, .inj_valid, .inj_ready, .ej_flit, .ej_valid, .ej_ready, .busy);", ""]
+          "  logic      inj_valid [NEP], inj_ready [NEP], ej_valid [NEP], ej_ready [NEP];", ""]
+    if not p["ngw"]:
+        L += ["  logic      busy;",
+              f"  noc_mesh #(.NUM_VC({m.noc.num_vc}), .BUF_DEPTH({m.noc.buf_depth})) u_mesh (",
+              "    .clk, .rst_n, .inj_flit, .inj_valid, .inj_ready, .ej_flit, .ej_valid, .ej_ready, .busy);", ""]
+    else:
+        L += _chiplet(m, p)
     axi_names = [n for n, _, _ in AXI4]
     for i, x in enumerate(m.masters):
         a = f"{x.name}_ax"          # AXI4 wires between the adapter and the NI
@@ -289,6 +310,69 @@ def noc_module(m):
         L.append("")
     L.append("endmodule")
     return "\n".join(L) + "\n"
+
+
+def _chiplet(m, p):
+    """one mesh per die, a gateway + UCIe adapter per die, the PHY model between them"""
+    qd = 2 * p["nm"] * m.noc_ni.maxo
+    nd = m.chiplet.dies
+    L = [f"  // ---------------- chiplet: {nd} dies, one mesh each, UCIe die-to-die link ----------------"]
+    for d in range(nd):
+        L += [f"  noc_flit_t ej_flit_d{d} [NEP];",
+              f"  logic      ej_valid_d{d} [NEP], inj_ready_d{d} [NEP], busy_d{d};",
+              f"  noc_mesh #(.NUM_VC({m.noc.num_vc}), .BUF_DEPTH({m.noc.buf_depth}), .DIE({d})) u_mesh_d{d} (",
+              f"    .clk, .rst_n, .inj_flit, .inj_valid, .inj_ready(inj_ready_d{d}), .ej_flit(ej_flit_d{d}),",
+              f"    .ej_valid(ej_valid_d{d}), .ej_ready, .busy(busy_d{d}));"]
+    L += ["  for (genvar e = 0; e < NEP; e++) begin : g_die"]
+    for d in range(nd):
+        kw = "if" if d == 0 else ("end else begin" if d == nd - 1 else "end else if")
+        cond = f" (EP_DIE[e] == {d}) begin : g_d{d}" if d < nd - 1 else f" : g_d{d}"
+        L.append(f"    {kw}{cond}" if d < nd - 1 else f"    {kw}{cond}")
+        L += [f"      assign inj_ready[e] = inj_ready_d{d}[e];",
+              f"      assign ej_flit[e]   = ej_flit_d{d}[e];",
+              f"      assign ej_valid[e]  = ej_valid_d{d}[e];"]
+    L += ["    end", "  end", ""]
+    L += [f"  logic         lt_v [{nd}], lr_v [{nd}], sbt_v [{nd}], sbr_v [{nd}], tx_v [{nd}], tx_r [{nd}], rx_v [{nd}];",
+          f"  logic [543:0] lt_f [{nd}], lr_f [{nd}];",
+          f"  logic [15:0]  sbt_m [{nd}], sbr_m [{nd}];",
+          f"  logic [511:0] tx_d [{nd}], rx_d [{nd}];",
+          f"  logic [2:0]   lstate [{nd}];",
+          f"  logic         gw_ovf [{nd}], lerr [{nd}], replay [{nd}];",
+          f"  logic [31:0]  n_replay;"]
+    for d in range(nd):
+        e = f"NM + NS + {d}"
+        L += [f"  // die {d}: gateway on router {list(m.chiplet.gateways[d])}",
+              f"  noc_d2d_gw #(.SELF({e}), .QD({qd})) u_gw{d} (.clk, .rst_n,",
+              f"    .inj_flit(inj_flit[{e}]), .inj_valid(inj_valid[{e}]), .inj_ready(inj_ready[{e}]),",
+              f"    .ej_flit(ej_flit[{e}]), .ej_valid(ej_valid[{e}]), .ej_ready(ej_ready[{e}]),",
+              f"    .tx_valid(tx_v[{d}]), .tx_data(tx_d[{d}]), .tx_ready(tx_r[{d}]), .rx_valid(rx_v[{d}]), .rx_data(rx_d[{d}]),",
+              f"    .overflow(gw_ovf[{d}]), .tx_level(), .rx_level());",
+              f"  UCIe_top u_ucie{d} (.clk, .rst_n, .link_en(1'b1), .cfg_retry(1'b{1 if m.chiplet.retry else 0}), "
+              f".cfg_stack1(1'b0), .cfg_l1_ok(1'b0), .pm_req(1'b0),",
+              f"    .tx_valid(tx_v[{d}]), .tx_stack(1'b0), .tx_data(tx_d[{d}]), .tx_ready(tx_r[{d}]),",
+              f"    .rx_valid(rx_v[{d}]), .rx_stack(), .rx_data(rx_d[{d}]),",
+              f"    .phy_up(1'b1), .lp_retrain(), .lt_valid(lt_v[{d}]), .lt_flit(lt_f[{d}]), "
+              f".lr_valid(lr_v[{d}]), .lr_flit(lr_f[{d}]),",
+              f"    .sb_tx_valid(sbt_v[{d}]), .sb_tx_msg(sbt_m[{d}]), .sb_rx_valid(sbr_v[{d}]), .sb_rx_msg(sbr_m[{d}]),",
+              f"    .state(lstate[{d}]), .cap(), .tx_pend(), .ev_crc(), .ev_replay(replay[{d}]), .ev_retrain(),",
+              f"    .ev_pmnak(), .ev_proto(), .ev_lerr(lerr[{d}]));"]
+    L += [f"  noc_d2d_phy #(.DELAY({max(1, m.chiplet.phy_cycles)})) u_phy (.clk, .rst_n,",
+          "    .a_lt_valid(lt_v[0]), .a_lt_flit(lt_f[0]), .a_lr_valid(lr_v[0]), .a_lr_flit(lr_f[0]),",
+          "    .a_sb_tx_valid(sbt_v[0]), .a_sb_tx_msg(sbt_m[0]), .a_sb_rx_valid(sbr_v[0]), .a_sb_rx_msg(sbr_m[0]),",
+          "    .b_lt_valid(lt_v[1]), .b_lt_flit(lt_f[1]), .b_lr_valid(lr_v[1]), .b_lr_flit(lr_f[1]),",
+          "    .b_sb_tx_valid(sbt_v[1]), .b_sb_tx_msg(sbt_m[1]), .b_sb_rx_valid(sbr_v[1]), .b_sb_rx_msg(sbr_m[1]),",
+          "    .n_err(d2d_flits));",
+          "  assign d2d_up = (lstate[0] == 3'd3) && (lstate[1] == 3'd3);   // ACTIVE",
+          "  logic err_q;",
+          "  always_ff @(posedge clk or negedge rst_n)",
+          "    if (!rst_n) begin err_q <= 1'b0; n_replay <= '0; end",
+          "    else begin",
+          "      if (gw_ovf[0] || gw_ovf[1] || lerr[0] || lerr[1]) err_q <= 1'b1;",
+          "      n_replay <= n_replay + 32'(replay[0]) + 32'(replay[1]);",
+          "    end",
+          "  assign d2d_error = err_q;",
+          "  assign d2d_replays = n_replay;", ""]
+    return L
 
 
 def tb_hookup(m):
@@ -358,6 +442,8 @@ def tb_hookup(m):
               f"  assign {S}.awcache = 4'h0;", f"  assign {S}.arcache = 4'h0;"]
         for n, _, _ in sigs:
             conns.append(f".{t.name}_{n}({sh}_{n})")
+    if m.chiplet.dies > 1:
+        conns += [".d2d_up(d2d_up)", ".d2d_error(d2d_error)", ".d2d_flits(d2d_flits)", ".d2d_replays(d2d_replays)"]
     L.append(f"  {m.name}_noc u_noc (.clk({m.clock.name}), .rst_n(aresetn),")
     L.append(",\n".join(f"    {c}" for c in conns))
     L.append("  );")

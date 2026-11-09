@@ -33,7 +33,7 @@ AXI_SIGS = ["awid", "awaddr", "awlen", "awsize", "awburst", "awprot", "awvalid",
 # generic NoC RTL for noc.model: mesh (configured by the generated noc_cfg_pkg)
 NOC_RTL = ["rtl/noc/noc_router_open.sv", "rtl/noc/noc_mesh.sv", "rtl/noc/noc_ni_mst.sv",
            "rtl/noc/noc_ni_slv.sv", "rtl/noc/noc_axi2lite.sv", "rtl/noc/noc_axi2ahb.sv",
-           "rtl/noc/noc_ahb2axi.sv", "rtl/noc/noc_apb2axi.sv"]
+           "rtl/noc/noc_ahb2axi.sv", "rtl/noc/noc_apb2axi.sv", "rtl/noc/noc_d2d_gw.sv", "rtl/noc/noc_d2d_phy.sv"]
 ORCA_RTL = ["+incdir+ext/xuanji-core/rtl/common", "ext/xuanji-core/rtl/common/clock_gate.sv",
             "ext/xuanji-core/rtl/noc/orca_noc_router.sv"]
 # repo files every generated bench compiles (from PR #1's VIPs and bridge)
@@ -171,6 +171,9 @@ def generate(m, out, ip_root, spec_path, write_repo_files=True):
         # router: xuanji-core orca_noc_router (private, scripts/fetch_private_ip.sh puts it in
         # ext/); sim/files_open.f is the same bench with the open router, used when it is missing
         noc_files = (ORCA_RTL if orca else ["+define+NOC_OPEN_ROUTER"]) + NOC_RTL
+        if m.chiplet.dies > 1:             # the open-ip UCIe D2D adapter on each die
+            shutil.copy(os.path.join(ip_root, "rtl", "UCIe_top.sv"), os.path.join(out, "rtl", "ip", "UCIe_top.sv"))
+            noc_files.insert(-len(NOC_RTL), f"{os.path.relpath(out, ROOT)}/rtl/ip/UCIe_top.sv")
     ip_files = []
     if m.apb:
         for bn in sorted({s.regs for s in m.apb.slots if s.kind == "regs"}):

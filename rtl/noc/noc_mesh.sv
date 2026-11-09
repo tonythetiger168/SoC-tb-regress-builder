@@ -19,7 +19,8 @@ module noc_mesh
   import noc_cfg_pkg::*;
 #(
   parameter int NUM_VC    = 4,
-  parameter int BUF_DEPTH = 8
+  parameter int BUF_DEPTH = 8,
+  parameter int DIE       = 0             // chiplet: this mesh carries the endpoints with EP_DIE == DIE
 )(
   input  logic       clk,
   input  logic       rst_n,
@@ -93,7 +94,7 @@ module noc_mesh
 
     // ---------------- node mux ----------------
     function automatic bit here(int e);
-      return EP_X[e] == n % MESH_X && EP_Y[e] == n / MESH_X;
+      return EP_DIE[e] == DIE && EP_X[e] == n % MESH_X && EP_Y[e] == n / MESH_X;
     endfunction
     logic [$clog2(NEP)-1:0] rr, pick;
     logic any;
@@ -117,11 +118,18 @@ module noc_mesh
     end
   end
 
-  // per-endpoint wiring
+  // per-endpoint wiring; a flit for an endpoint on another die ejects at
+  // this die's die-to-die gateway (local_ep)
   for (genvar e = 0; e < NEP; e++) begin : g_ep
-    localparam int N = EP_Y[e] * MESH_X + EP_X[e];
-    assign inj_ready[e] = g_r[N].any && int'(g_r[N].pick) == e && l_rx_r[N];
-    assign ej_flit[e]   = noc_flit_t'(l_tx_d[N]);
-    assign ej_valid[e]  = l_tx_v[N] && int'(pkt_of(noc_flit_t'(l_tx_d[N])).dst_ep) == e;
+    if (EP_DIE[e] == DIE) begin : g_here
+      localparam int N = EP_Y[e] * MESH_X + EP_X[e];
+      assign inj_ready[e] = g_r[N].any && int'(g_r[N].pick) == e && l_rx_r[N];
+      assign ej_flit[e]   = noc_flit_t'(l_tx_d[N]);
+      assign ej_valid[e]  = l_tx_v[N] && local_ep(int'(pkt_of(noc_flit_t'(l_tx_d[N])).dst_ep), DIE) == e;
+    end else begin : g_other
+      assign inj_ready[e] = 1'b0;
+      assign ej_flit[e]   = '0;
+      assign ej_valid[e]  = 1'b0;
+    end
   end
 endmodule

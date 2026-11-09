@@ -29,6 +29,7 @@ jobs:
           python3 socgen/socgen.py socgen/specs/mini_soc.yaml
           python3 socgen/socgen.py socgen/specs/phone_soc.yaml
           python3 socgen/socgen.py socgen/specs/mini_mesh_soc.yaml
+          python3 socgen/socgen.py socgen/specs/chiplet_soc.yaml
           python3 socgen/socgen.py socgen/specs/phone_soc.yaml --noc-model mesh
           git status --short socgen/out regress
       - name: Cache Verilator
@@ -42,8 +43,8 @@ jobs:
           sudo mkdir -p /opt/verilator && sudo chown "$USER" /opt/verilator
           bash scripts/install_tools.sh
           echo "/opt/verilator/bin" >> "$GITHUB_PATH"
-      - name: mini_soc regression (behavioural NoC, and the generated mesh RTL with every AMBA protocol)
-        run: python3 regress/regress.py --suite mini_soc --suite mini_mesh_soc --jobs "$(nproc)"
+      - name: mini_soc regression (behavioural NoC; generated mesh RTL with every AMBA protocol; two-die UCIe chiplet)
+        run: python3 regress/regress.py --suite mini_soc --suite mini_mesh_soc --suite chiplet_soc --jobs "$(nproc)"
       - name: Summary
         if: always()
         run: cat regress_out/summary.md >> "$GITHUB_STEP_SUMMARY" || true
