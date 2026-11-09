@@ -358,17 +358,27 @@ def main():
     ap.add_argument("--noc-model", choices=["behavioral", "mesh"],
                     help="override noc.model; mesh also renames the SoC <name>_mesh, so both benches "
                          "can sit side by side for a latency comparison")
+    ap.add_argument("--no-direct", action="store_true",
+                    help="CHI: turn DMT and DCT off and rename the SoC <name>_nodirect, for a latency "
+                         "comparison against the same spec with them on")
     a = ap.parse_args()
     try:
-        if a.noc_model:
+        if a.noc_model or a.no_direct:
             import yaml
             with open(a.spec) as f:
                 raw = yaml.safe_load(f)
-            if raw["noc"].get("model", "behavioral") != a.noc_model:
+            if a.noc_model and raw["noc"].get("model", "behavioral") != a.noc_model:
                 raw["noc"]["model"] = a.noc_model
                 if a.noc_model == "mesh":
                     raw["soc"]["name"] += "_mesh"
                     raw["soc"]["prefix"] = raw["soc"].get("prefix", raw["soc"]["name"][:-5]) + "_mesh"
+            if a.no_direct:
+                if not raw.get("chi"):
+                    raise SpecError("--no-direct: the spec has no chi section")
+                raw["chi"]["dmt"] = raw["chi"]["dct"] = False
+                pre = raw["soc"].get("prefix", raw["soc"]["name"])
+                raw["soc"]["name"] += "_nodirect"
+                raw["soc"]["prefix"] = pre + "_nd"
             m = specmod.elaborate(raw, a.spec)
         else:
             m = specmod.load(a.spec)

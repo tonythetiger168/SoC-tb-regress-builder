@@ -25,6 +25,15 @@
 //    lines): reads snoop the unique holder SnpCleanShared, writes snoop
 //    every holder SnpUnique; dirty data is written back, then the chunk goes
 //    to memory and its response back to the master NI.
+//  * DMT (CHI_DMT): a ReadShared / ReadUnique line from memory is read with
+//    the requester as the source and the CompData fields on the chunk; the
+//    slave NI sends the data straight to the requester, which sends CompAck
+//    here. DCT (CHI_DCT): with a unique owner, SnpSharedFwd / SnpUniqueFwd;
+//    the owner sends the requester its CompData and this home SnpRespFwded
+//    (SnpRespDataFwded with the dirty line, written back). If the owner has
+//    already dropped the line it answers SnpResp I and the home reads memory.
+//  * Several homes (NHN): each owns the lines hn_ep maps to it and keeps the
+//    filter for those lines only; nothing is shared between homes.
 //  * Memory: the slave NI of the line's channel (decode_tgt), 32-byte
 //    chunks; the home waits for every response before it moves on, so its
 //    accesses are ordered.
@@ -94,7 +103,7 @@ module noc_hnf
   // ---------------- transaction ----------------
   typedef enum logic [3:0] {
     H_IDLE, H_SETUP, H_SNP, H_SNPW, H_POST, H_NEXT, H_WB, H_MRD, H_MEMW, H_FWD,
-    H_REPLY, H_ACK, H_DBID, H_WDATA
+    H_REPLY, H_ACK, H_DBID, H_WDATA, H_DMT, H_GRANT
   } hst_e;
   hst_e st, after_wb;                     // after_wb: state after H_MEMW
 
@@ -118,6 +127,7 @@ module noc_hnf
   logic [1:0]    rep_n;                   // reply flits sent
   logic          lost;                    // CleanUnique: requester no longer holds the line
   logic          nderr;                   // NoSnp: no slave at the address
+  logic          fwded;                   // DCT: the owner sent the requester its CompData
 
   wire [5:0] opc = cur.copc;
   wire is_rs  = !ni_chunk && opc == REQ_READSHARED;
@@ -137,6 +147,16 @@ module noc_hnf
     return sf_v[r][set_of(l)] && sf_t[r][set_of(l)] == tag_of(l);
   endfunction
 
+  // ReadShared / ReadUnique: the requester's state (ReadShared: SC if another
+  // cache keeps the line after the snoops, else UC)
+  logic [2:0] gr_cresp;
+  always_comb begin
+    gr_cresp = is_ru ? (dirty ? RESP_UD_PD : RESP_UC) : RESP_UC;
+    if (is_rs)
+      for (int r = 0; r < NRN; r++)
+        if (r != rqr && holds(r, L)) gr_cresp = RESP_SC;
+  end
+
   // the packet sent in the current state (combinational), see H_* below
   pkt_t np;
   always_comb begin
@@ -150,6 +170,8 @@ module noc_hnf
         np.op   = OP_CSNP;
         np.copc = {1'b0, snp_op};
         np.addr = {L, 6'd0};
+        np.fwd  = cur.src_ep;               // DCT: FwdNID, FwdTxnID
+        np.dbid = cur.tag;
       end
       H_WB, H_MRD: begin                    // a 32-byte half of line L
         np.op     = (st == H_WB) ? OP_WR : OP_RD;
@@ -160,6 +182,18 @@ module noc_hnf
         np.size   = 3'd2;
         np.strb   = '1;
         np.data   = lbuf[mem_sent[0]];
+      end
+      H_DMT: begin                          // DMT: memory sends the requester its CompData
+        np.op     = OP_RD;
+        np.dst_ep = decode_tgt({L, 6'd0});
+        np.src_ep = cur.src_ep;
+        np.addr   = {L, mem_sent[0], 5'd0};
+        np.nm1    = 3'd7;
+        np.size   = 3'd2;
+        np.copc   = {2'b0, DAT_COMPDATA};
+        np.cresp  = gr_cresp;
+        np.dataid = {mem_sent[0], 1'b0};
+        np.hnid   = EPB'(SELF);
       end
       H_FWD: begin
         if (ni_chunk) np = cur;             // the chunk as the master NI sent it
@@ -191,15 +225,14 @@ module noc_hnf
           np.copc   = {2'b0, DAT_COMPDATA};
           np.dataid = {rep_n[0], 1'b0};
           np.data   = lbuf[rep_n[0]];
-          np.cresp  = is_ru ? (dirty ? RESP_UD_PD : RESP_UC) : RESP_UC;
-          if (is_rs)
-            for (int r = 0; r < NRN; r++)
-              if (r != rqr && holds(r, L)) np.cresp = RESP_SC;
+          np.cresp  = gr_cresp;
+          np.hnid   = EPB'(SELF);
         end else if (is_rns) begin
           np.op     = OP_CDAT;
           np.copc   = {2'b0, DAT_COMPDATA};
           np.dataid = {cur.addr[5], 1'b0};
           np.cresp  = RESP_UC;
+          np.hnid   = EPB'(SELF);
           np.resp   = nderr ? RESPERR_NDERR : fwd_rsp.rresp[0] == 2'b11 ? RESPERR_NDERR :
                       fwd_rsp.rresp[0] == 2'b10 ? RESPERR_DERR : RESPERR_OK;
           if (!nderr) np.data[cur.addr[4:2]] = fwd_rsp.data[0];
@@ -235,7 +268,7 @@ module noc_hnf
       lbuf[0] <= '0; lbuf[1] <= '0; dirty <= 1'b0;
       wd_resp <= '0; wd_be <= '0; wd_n <= '0;
       mem_pend <= '0; mem_sent <= '0; fwd_rsp <= '0; ack_got <= 1'b0; rep_n <= '0;
-      lost <= 1'b0; nderr <= 1'b0;
+      lost <= 1'b0; nderr <= 1'b0; fwded <= 1'b0;
     end else begin
       // ---------------- eject ----------------
       if (ej_req) begin
@@ -252,7 +285,8 @@ module noc_hnf
           end
           OP_CRSP: begin
             if (ej.copc[3:0] == RSP_COMPACK) ack_got <= 1'b1;
-            else if (ej.copc[3:0] == RSP_SNPRESP && r >= 0) begin
+            else if ((ej.copc[3:0] == RSP_SNPRESP || ej.copc[3:0] == RSP_SNPRESPFWDED) && r >= 0) begin
+              if (ej.copc[3:0] == RSP_SNPRESPFWDED) fwded <= 1'b1;
               if (holds(r, L)) begin
                 sf_v[r][LS] <= (ej.cresp[1:0] != 2'd0);
                 sf_u[r][LS] <= (ej.cresp[1:0] == 2'd2);
@@ -262,7 +296,8 @@ module noc_hnf
           end
           OP_CDAT: begin
             lbuf[ej.dataid[1]] <= ej.data;
-            if (ej.copc[3:0] == DAT_SNPRESPDATA && r >= 0) begin
+            if ((ej.copc[3:0] == DAT_SNPRESPDATA || ej.copc[3:0] == DAT_SNPRESPDATAFWDED) && r >= 0) begin
+              if (ej.copc[3:0] == DAT_SNPRESPDATAFWDED) fwded <= 1'b1;
               if (ej.cresp[2]) dirty <= 1'b1;
               snp_half[r] <= snp_half[r] + 2'd1;
               if (snp_half[r] == 2'd1) begin
@@ -304,7 +339,7 @@ module noc_hnf
           nl2 <= (q.op != OP_CREQ) && (last[31:6] != q.addr[31:6]);
           li <= 1'b0;
           dirty <= 1'b0; ack_got <= 1'b0; rep_n <= '0; wd_n <= '0; mem_sent <= '0;
-          lost <= 1'b0;
+          lost <= 1'b0; fwded <= 1'b0;
           nderr <= (q.op == OP_CREQ) && decode_tgt(q.addr) == EP_NONE;
           st <= H_SETUP;
         end
@@ -321,6 +356,14 @@ module noc_hnf
             else if (is_ru) msk[r] = 1'b1;
             else if (is_cu) msk[r] = holds(rqr, L);
           end
+          // DCT: ReadShared / ReadUnique with a unique owner: it forwards the line
+          if (CHI_DCT && (is_rs || is_ru))
+            for (int r = 0; r < NRN; r++)
+              if (r != rqr && holds(r, L) && sf_u[r][LS]) begin
+                so = is_rs ? SNP_SHAREDFWD : SNP_UNIQUEFWD;
+                msk = '0;
+                msk[r] = 1'b1;
+              end
           if (is_cu && !holds(rqr, L)) lost <= 1'b1;
           snp_op <= so;
           snp_todo <= msk;
@@ -348,12 +391,15 @@ module noc_hnf
             automatic hst_e nx = (nl2 && !li) ? H_NEXT : H_FWD;
             if (dirty) begin after_wb <= nx; st <= H_WB; end
             else st <= nx;
+          end else if (fwded) begin         // DCT: the owner sent the CompData
+            after_wb <= H_GRANT;
+            st <= dirty ? H_WB : H_GRANT;   // SnpSharedFwd of a dirty line: to memory
           end else if (is_rs) begin
             after_wb <= H_REPLY;
-            st <= dirty ? H_WB : H_MRD;     // dirty: to memory, and the data from lbuf
+            st <= dirty ? H_WB : CHI_DMT ? H_DMT : H_MRD;   // dirty: to memory, and the data from lbuf
           end else if (is_ru) begin
             after_wb <= H_REPLY;
-            st <= dirty ? H_REPLY : H_MRD;  // dirty: passed on as UD_PD
+            st <= dirty ? H_REPLY : CHI_DMT ? H_DMT : H_MRD; // dirty: passed on as UD_PD
           end else st <= H_REPLY;           // CleanUnique
         end
 
@@ -366,6 +412,23 @@ module noc_hnf
         H_WB, H_MRD: if (can_push) begin    // two halves of line L
           mem_sent <= mem_sent + 2'd1;
           if (mem_sent == 2'd1) st <= H_MEMW;
+        end
+
+        H_DMT: if (can_push) begin          // two halves, then the requester's CompAck
+          mem_sent <= mem_sent + 2'd1;
+          if (mem_sent == 2'd1) begin
+            mem_sent <= '0;
+            st <= H_GRANT;
+          end
+        end
+
+        H_GRANT: begin                      // the requester's line in the filter
+          if (!(is_cu && lost)) begin
+            sf_v[rqr][LS] <= 1'b1;
+            sf_t[rqr][LS] <= LT;
+            sf_u[rqr][LS] <= is_ru || is_cu || gr_cresp == RESP_UC;
+          end
+          st <= H_ACK;
         end
 
         H_MEMW: if (mem_pend == 0) begin
@@ -393,14 +456,7 @@ module noc_hnf
         H_REPLY: if (can_push) begin
           rep_n <= rep_n + 2'd1;
           if (rep_n + 2'd1 == n_reply) begin
-            if (!ni_chunk && (is_rs || is_ru || is_cu)) begin
-              if (is_rs || is_ru || !lost) begin
-                sf_v[rqr][LS] <= 1'b1;
-                sf_t[rqr][LS] <= LT;
-                sf_u[rqr][LS] <= is_ru || is_cu || np.cresp == RESP_UC;
-              end
-              st <= H_ACK;
-            end else st <= H_IDLE;
+            st <= (!ni_chunk && (is_rs || is_ru || is_cu)) ? H_GRANT : H_IDLE;
           end
         end
 
@@ -416,10 +472,27 @@ module noc_hnf
 
   always_comb
     push = can_push && (st == H_SNP || st == H_WB || st == H_MRD || st == H_FWD ||
-                        st == H_DBID || st == H_REPLY);
+                        st == H_DBID || st == H_REPLY || st == H_DMT);
 
   // synopsys translate_off
   always @(posedge clk)
     if (rst_n && overflow) $error("noc_hnf: request queue overflow (QD %0d too small)", QD);
+
+  // activity counts, printed at the end: HNF <name> txn=.. rni=.. snp=.. dct=.. dmt=.. wb=..
+  int unsigned n_txn, n_rni, n_snp, n_dct, n_dmt, n_wb;
+  always @(posedge clk) if (rst_n) begin
+    if (st == H_IDLE && rq_cnt != 0) begin
+      n_txn++;
+      if (rq[rq_rp].op != OP_CREQ) n_rni++;
+    end
+    if (push && st == H_SNP) begin
+      n_snp++;
+      if (snp_op == SNP_SHAREDFWD || snp_op == SNP_UNIQUEFWD) n_dct++;
+    end
+    if (push && st == H_DMT) n_dmt++;
+    if (push && st == H_WB) n_wb++;
+  end
+  final $display("HNF %s txn=%0d rni=%0d snp=%0d dct=%0d dmt=%0d wb=%0d", ep_name(SELF),
+                 n_txn, n_rni, n_snp, n_dct, n_dmt / 2, n_wb / 2);
   // synopsys translate_on
 endmodule

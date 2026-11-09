@@ -417,8 +417,8 @@ def elaborate(raw, path="<spec>"):
     m.split_rw = bool(rp.get("split_rw", True))
     m.zero_load_slack = num(rp.get("zero_load_slack", 12), "zero_load_slack")
 
-    _derive_latency(m)
     _derive_path_addrs(m)
+    _derive_latency(m)
     _derive_regions(m)
     return m
 
@@ -440,25 +440,44 @@ def _protocol(d, what, allowed, model, may_convert):
 
 
 def _chi(m, c, model, cols, rows):
-    """CHI coherence: one HN-F on the mesh keeps the `coherent` memories coherent
-    for the `protocol: chi` masters (RN-F, each with a cache bridge in the bench)
-    and the AMBA masters (RN-I)"""
+    """CHI coherence: HN-Fs on the mesh keep the `coherent` memories coherent for
+    the `protocol: chi` masters (RN-F, each with a cache bridge in the bench) and
+    the AMBA masters (RN-I)"""
     rn = [x for x in m.masters if x.protocol == "chi"]
     if c is None:
         if rn:
             raise SpecError(f"masters {rn[0].name}: protocol chi needs a chi section")
-        m.chi = Obj(home=None, coherent=[], lines=0, rn=[], coh_targets=set())
+        m.chi = Obj(home=None, homes=[], coherent=[], lines=0, rn=[], coh_targets=set(), base=None,
+                    dmt=False, dct=False, granule=4096, hbits=0)
         return
-    keys(c, ["home", "coherent", "cache_lines"], "chi", required=["home", "coherent"])
+    keys(c, ["home", "coherent", "cache_lines", "dmt", "dct", "home_granule"], "chi",
+         required=["home", "coherent"])
     if model != "mesh":
         raise SpecError("chi: needs noc.model: mesh")
-    if m.chiplet.dies > 1:
-        raise SpecError("chi: not supported with chiplet yet (one die)")
     if not rn:
         raise SpecError("chi: at least one master with protocol: chi")
     for x in rn:
         if x.kind != "vip":
             raise SpecError(f"masters {x.name}: protocol chi only on a VIP master (the bench's RN-F cache bridge)")
+    # home: [x, y], or a list of homes, each [x, y] or {node: [x, y], die: d}
+    h = c["home"]
+    hl = h if isinstance(h, list) and h and isinstance(h[0], (list, dict)) else [h]
+    homes = []
+    for i, e in enumerate(hl):
+        w = f"chi.home[{i}]"
+        if isinstance(e, dict):
+            keys(e, ["node", "die"], w, required=["node"])
+            nd, die = e["node"], num(e.get("die", 0), f"{w}.die")
+        else:
+            nd, die = e, 0
+        if not 0 <= die < m.chiplet.dies:
+            raise SpecError(f"{w}.die: 0..{m.chiplet.dies - 1} (chiplet.dies)")
+        homes.append(Obj(node=_node(nd, w, cols, rows), die=die))
+    if len(homes) not in (1, 2, 4):
+        raise SpecError("chi.home: 1, 2 or 4 homes (the address interleaves over them)")
+    gran = num(c.get("home_granule", 4096), "chi.home_granule")
+    if not pow2(gran) or gran < 4096:
+        raise SpecError("chi.home_granule: power of two >= 4 KB (an AXI burst never crosses a home)")
     coh = c["coherent"]
     if not isinstance(coh, list) or not coh:
         raise SpecError("chi.coherent: a list of memory names")
@@ -467,19 +486,31 @@ def _chi(m, c, model, cols, rows):
     for n in coh:
         mem = [x for x in m.memories if x.name == n]
         sl = [x for x in m.slaves if x.name == n and x.kind == "memory"]
+        if not (mem or sl):
+            raise SpecError(f"chi.coherent: {n!r} is not a memory (memories, or a slave of kind memory)")
         if mem:
             ts |= {mem[0].first + k for k in range(mem[0].channels)}
-        elif sl:
-            ts.add(sl[0].index)
-        if base is None and (mem or sl):
-            base = (mem or sl)[0].base
         else:
-            raise SpecError(f"chi.coherent: {n!r} is not a memory (memories, or a slave of kind memory)")
+            ts.add(sl[0].index)
+        if base is None:
+            base = (mem or sl)[0].base
     lines = num(c.get("cache_lines", 64), "chi.cache_lines")
     if not pow2(lines) or not 4 <= lines <= 1024:
         raise SpecError("chi.cache_lines: power of two, 4..1024")
-    m.chi = Obj(home=_node(c["home"], "chi.home", cols, rows), coherent=list(coh), lines=lines,
-                rn=[x.index for x in rn], coh_targets=ts, base=base)
+    m.chi = Obj(home=homes[0].node, homes=homes, coherent=list(coh), lines=lines,
+                rn=[x.index for x in rn], coh_targets=ts, base=base,
+                dmt=bool(c.get("dmt", True)), dct=bool(c.get("dct", True)),
+                granule=gran, hbits=int(math.log2(len(homes))))
+
+
+def home_of(m, a):
+    """the home (index into m.chi.homes) of address a: granule-interleaved, xor-folded"""
+    if m.chi.hbits == 0:
+        return 0
+    g = int(math.log2(m.chi.granule))
+    k = m.chi.hbits
+    msk = (1 << k) - 1
+    return ((a >> g) ^ (a >> (g + k))) & msk
 
 
 def _node(v, what, cols, rows):
@@ -725,6 +756,7 @@ MESH_D2D = 5
 # take 2 cycles, so the lower bound is not checked for CHI masters.
 MESH_ADAPTER["chi"] = 0
 CHI_HN, CHI_MISS, CHI_NOSNP_WR, CHI_VICTIM = 1, 32, 9, 64
+CHI_MISS_DMT = 31
 
 
 def path_hops(m, a, b):
@@ -752,11 +784,19 @@ def _derive_latency(m):
             ms.hops.append(h)
             via_hn = mesh and m.chi.rn and (ms.protocol == "chi" or t.index in m.chi.coh_targets)
             if via_hn:
-                h1, h2 = hops(ms.node, m.chi.home), hops(m.chi.home, t.node)
-                rq = 2 * MESH_REQ + (h1 + h2) * MESH_HOP + CHI_HN + MESH_ADAPTER[ms.protocol] + MESH_ADAPTER[t.protocol]
-                rs = 2 * MESH_RSP + (h1 + h2) * MESH_HOP
-                if ms.protocol == "chi":
-                    rq += CHI_MISS if t.index in m.chi.coh_targets else CHI_NOSNP_WR + 2 * h1 * MESH_HOP
+                hm = m.chi.homes[home_of(m, ms.path_addr[t.index])]
+                l1 = path_hops(m, ms, hm) * MESH_HOP + d2d_cycles(m, ms, hm)     # master -> home
+                l2 = path_hops(m, hm, t) * MESH_HOP + d2d_cycles(m, hm, t)       # home -> slave
+                l3 = path_hops(m, t, ms) * MESH_HOP + d2d_cycles(m, t, ms)       # slave -> master (DMT)
+                ad = MESH_ADAPTER[ms.protocol] + MESH_ADAPTER[t.protocol]
+                if ms.protocol == "chi" and t.index in m.chi.coh_targets and m.chi.dmt:
+                    rq = 2 * MESH_REQ + l1 + l2 + CHI_HN + ad + CHI_MISS_DMT
+                    rs = MESH_RSP + l3          # CompData straight from the slave (CompAck in parallel)
+                else:
+                    rq = 2 * MESH_REQ + l1 + l2 + CHI_HN + ad
+                    rs = 2 * MESH_RSP + l2 + l1
+                    if ms.protocol == "chi":
+                        rq += CHI_MISS if t.index in m.chi.coh_targets else CHI_NOSNP_WR + 2 * l1
                 ms.req.append(rq)
                 ms.rsp.append(rs)
                 ms.ideal.append(rq + t.access + rs)

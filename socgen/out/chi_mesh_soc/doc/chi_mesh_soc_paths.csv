@@ -1,11 +1,11 @@
 master,slave,hops,req_cycles,rsp_cycles,access_cycles,ideal_read_cycles
-cpu0,ddr0,1,46,11,12,69
-cpu0,ddr1,2,45,10,12,67
+cpu0,ddr0,1,45,5,12,62
+cpu0,ddr1,2,44,6,12,62
 cpu0,sram,0,24,10,1,35
 cpu0,apb_ram,1,28,9,2,39
 cpu0,periph,1,23,9,4,36
-cpu1,ddr0,0,47,12,12,71
-cpu1,ddr1,1,46,11,12,69
+cpu1,ddr0,0,46,4,12,62
+cpu1,ddr1,1,43,5,12,60
 cpu1,sram,1,27,11,1,39
 cpu1,apb_ram,2,31,10,2,43
 cpu1,periph,2,26,10,4,40

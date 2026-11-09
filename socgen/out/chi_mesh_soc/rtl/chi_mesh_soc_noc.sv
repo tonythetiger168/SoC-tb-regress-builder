@@ -312,21 +312,21 @@ module chi_mesh_soc_noc
     .ej_flit(ej_flit[3]), .ej_valid(ej_valid[3]), .ej_ready(ej_ready[3]));
 
   // ---------------- slave port 0: ddr0 (AXI4) ----------------
-  noc_ni_slv #(.SELF(4), .QD(40), .OUTS(4), .IDW(ID_WIDTH)) u_ni_ddr0 (
+  noc_ni_slv #(.SELF(4), .QD(48), .OUTS(4), .IDW(ID_WIDTH)) u_ni_ddr0 (
     .clk, .rst_n,
     .m_awid(ddr0_awid), .m_awaddr(ddr0_awaddr), .m_awlen(ddr0_awlen), .m_awsize(ddr0_awsize), .m_awburst(ddr0_awburst), .m_awprot(ddr0_awprot), .m_awvalid(ddr0_awvalid), .m_awready(ddr0_awready), .m_wdata(ddr0_wdata), .m_wstrb(ddr0_wstrb), .m_wlast(ddr0_wlast), .m_wvalid(ddr0_wvalid), .m_wready(ddr0_wready), .m_bresp(ddr0_bresp), .m_bvalid(ddr0_bvalid), .m_bready(ddr0_bready), .m_arid(ddr0_arid), .m_araddr(ddr0_araddr), .m_arlen(ddr0_arlen), .m_arsize(ddr0_arsize), .m_arburst(ddr0_arburst), .m_arprot(ddr0_arprot), .m_arvalid(ddr0_arvalid), .m_arready(ddr0_arready), .m_rdata(ddr0_rdata), .m_rresp(ddr0_rresp), .m_rlast(ddr0_rlast), .m_rvalid(ddr0_rvalid), .m_rready(ddr0_rready),
     .inj_flit(inj_flit[4]), .inj_valid(inj_valid[4]), .inj_ready(inj_ready[4]),
     .ej_flit(ej_flit[4]), .ej_valid(ej_valid[4]), .ej_ready(ej_ready[4]));
 
   // ---------------- slave port 1: ddr1 (AXI4) ----------------
-  noc_ni_slv #(.SELF(5), .QD(40), .OUTS(4), .IDW(ID_WIDTH)) u_ni_ddr1 (
+  noc_ni_slv #(.SELF(5), .QD(48), .OUTS(4), .IDW(ID_WIDTH)) u_ni_ddr1 (
     .clk, .rst_n,
     .m_awid(ddr1_awid), .m_awaddr(ddr1_awaddr), .m_awlen(ddr1_awlen), .m_awsize(ddr1_awsize), .m_awburst(ddr1_awburst), .m_awprot(ddr1_awprot), .m_awvalid(ddr1_awvalid), .m_awready(ddr1_awready), .m_wdata(ddr1_wdata), .m_wstrb(ddr1_wstrb), .m_wlast(ddr1_wlast), .m_wvalid(ddr1_wvalid), .m_wready(ddr1_wready), .m_bresp(ddr1_bresp), .m_bvalid(ddr1_bvalid), .m_bready(ddr1_bready), .m_arid(ddr1_arid), .m_araddr(ddr1_araddr), .m_arlen(ddr1_arlen), .m_arsize(ddr1_arsize), .m_arburst(ddr1_arburst), .m_arprot(ddr1_arprot), .m_arvalid(ddr1_arvalid), .m_arready(ddr1_arready), .m_rdata(ddr1_rdata), .m_rresp(ddr1_rresp), .m_rlast(ddr1_rlast), .m_rvalid(ddr1_rvalid), .m_rready(ddr1_rready),
     .inj_flit(inj_flit[5]), .inj_valid(inj_valid[5]), .inj_ready(inj_ready[5]),
     .ej_flit(ej_flit[5]), .ej_valid(ej_valid[5]), .ej_ready(ej_ready[5]));
 
   // ---------------- slave port 2: sram (AXI4) ----------------
-  noc_ni_slv #(.SELF(6), .QD(40), .OUTS(4), .IDW(ID_WIDTH)) u_ni_sram (
+  noc_ni_slv #(.SELF(6), .QD(48), .OUTS(4), .IDW(ID_WIDTH)) u_ni_sram (
     .clk, .rst_n,
     .m_awid(sram_awid), .m_awaddr(sram_awaddr), .m_awlen(sram_awlen), .m_awsize(sram_awsize), .m_awburst(sram_awburst), .m_awprot(sram_awprot), .m_awvalid(sram_awvalid), .m_awready(sram_awready), .m_wdata(sram_wdata), .m_wstrb(sram_wstrb), .m_wlast(sram_wlast), .m_wvalid(sram_wvalid), .m_wready(sram_wready), .m_bresp(sram_bresp), .m_bvalid(sram_bvalid), .m_bready(sram_bready), .m_arid(sram_arid), .m_araddr(sram_araddr), .m_arlen(sram_arlen), .m_arsize(sram_arsize), .m_arburst(sram_arburst), .m_arprot(sram_arprot), .m_arvalid(sram_arvalid), .m_arready(sram_arready), .m_rdata(sram_rdata), .m_rresp(sram_rresp), .m_rlast(sram_rlast), .m_rvalid(sram_rvalid), .m_rready(sram_rready),
     .inj_flit(inj_flit[6]), .inj_valid(inj_valid[6]), .inj_ready(inj_ready[6]),
@@ -367,24 +367,31 @@ module chi_mesh_soc_noc
   axi2apb_bridge #(.IDW(ID_WIDTH)) u_apb_ram_apb (.clk, .rst_n,
     .awid(apb_ram_ax_awid), .awaddr(apb_ram_ax_awaddr), .awlen(apb_ram_ax_awlen), .awsize(apb_ram_ax_awsize), .awburst(apb_ram_ax_awburst), .awprot(apb_ram_ax_awprot), .awvalid(apb_ram_ax_awvalid), .awready(apb_ram_ax_awready), .wdata(apb_ram_ax_wdata), .wstrb(apb_ram_ax_wstrb), .wlast(apb_ram_ax_wlast), .wvalid(apb_ram_ax_wvalid), .wready(apb_ram_ax_wready), .bid(apb_ram_ax_bid), .bresp(apb_ram_ax_bresp), .bvalid(apb_ram_ax_bvalid), .bready(apb_ram_ax_bready), .arid(apb_ram_ax_arid), .araddr(apb_ram_ax_araddr), .arlen(apb_ram_ax_arlen), .arsize(apb_ram_ax_arsize), .arburst(apb_ram_ax_arburst), .arprot(apb_ram_ax_arprot), .arvalid(apb_ram_ax_arvalid), .arready(apb_ram_ax_arready), .rid(apb_ram_ax_rid), .rdata(apb_ram_ax_rdata), .rresp(apb_ram_ax_rresp), .rlast(apb_ram_ax_rlast), .rvalid(apb_ram_ax_rvalid), .rready(apb_ram_ax_rready),
     .paddr(apb_ram_paddr), .psel(apb_ram_psel), .penable(apb_ram_penable), .pwrite(apb_ram_pwrite), .pwdata(apb_ram_pwdata), .pstrb(apb_ram_pstrb), .pprot(apb_ram_pprot), .prdata(apb_ram_prdata), .pready(apb_ram_pready), .pslverr(apb_ram_pslverr));
-  noc_ni_slv #(.SELF(7), .QD(40), .OUTS(4), .IDW(ID_WIDTH)) u_ni_apb_ram (
+  noc_ni_slv #(.SELF(7), .QD(48), .OUTS(4), .IDW(ID_WIDTH)) u_ni_apb_ram (
     .clk, .rst_n,
     .m_awid(apb_ram_ax_awid), .m_awaddr(apb_ram_ax_awaddr), .m_awlen(apb_ram_ax_awlen), .m_awsize(apb_ram_ax_awsize), .m_awburst(apb_ram_ax_awburst), .m_awprot(apb_ram_ax_awprot), .m_awvalid(apb_ram_ax_awvalid), .m_awready(apb_ram_ax_awready), .m_wdata(apb_ram_ax_wdata), .m_wstrb(apb_ram_ax_wstrb), .m_wlast(apb_ram_ax_wlast), .m_wvalid(apb_ram_ax_wvalid), .m_wready(apb_ram_ax_wready), .m_bresp(apb_ram_ax_bresp), .m_bvalid(apb_ram_ax_bvalid), .m_bready(apb_ram_ax_bready), .m_arid(apb_ram_ax_arid), .m_araddr(apb_ram_ax_araddr), .m_arlen(apb_ram_ax_arlen), .m_arsize(apb_ram_ax_arsize), .m_arburst(apb_ram_ax_arburst), .m_arprot(apb_ram_ax_arprot), .m_arvalid(apb_ram_ax_arvalid), .m_arready(apb_ram_ax_arready), .m_rdata(apb_ram_ax_rdata), .m_rresp(apb_ram_ax_rresp), .m_rlast(apb_ram_ax_rlast), .m_rvalid(apb_ram_ax_rvalid), .m_rready(apb_ram_ax_rready),
     .inj_flit(inj_flit[7]), .inj_valid(inj_valid[7]), .inj_ready(inj_ready[7]),
     .ej_flit(ej_flit[7]), .ej_valid(ej_valid[7]), .ej_ready(ej_ready[7]));
 
   // ---------------- slave port 4: periph (AXI4) ----------------
-  noc_ni_slv #(.SELF(8), .QD(40), .OUTS(4), .IDW(ID_WIDTH)) u_ni_periph (
+  noc_ni_slv #(.SELF(8), .QD(48), .OUTS(4), .IDW(ID_WIDTH)) u_ni_periph (
     .clk, .rst_n,
     .m_awid(periph_awid), .m_awaddr(periph_awaddr), .m_awlen(periph_awlen), .m_awsize(periph_awsize), .m_awburst(periph_awburst), .m_awprot(periph_awprot), .m_awvalid(periph_awvalid), .m_awready(periph_awready), .m_wdata(periph_wdata), .m_wstrb(periph_wstrb), .m_wlast(periph_wlast), .m_wvalid(periph_wvalid), .m_wready(periph_wready), .m_bresp(periph_bresp), .m_bvalid(periph_bvalid), .m_bready(periph_bready), .m_arid(periph_arid), .m_araddr(periph_araddr), .m_arlen(periph_arlen), .m_arsize(periph_arsize), .m_arburst(periph_arburst), .m_arprot(periph_arprot), .m_arvalid(periph_arvalid), .m_arready(periph_arready), .m_rdata(periph_rdata), .m_rresp(periph_rresp), .m_rlast(periph_rlast), .m_rvalid(periph_rvalid), .m_rready(periph_rready),
     .inj_flit(inj_flit[8]), .inj_valid(inj_valid[8]), .inj_ready(inj_ready[8]),
     .ej_flit(ej_flit[8]), .ej_valid(ej_valid[8]), .ej_ready(ej_ready[8]));
 
-  // ---------------- CHI home node (HN-F) on router [1, 0]: coherent ddr ----------------
-  logic hnf_overflow;
-  noc_hnf #(.SELF(HN_EP), .QD(64), .NL(CHI_LINES)) u_hnf (.clk, .rst_n,
-    .inj_flit(inj_flit[HN_EP]), .inj_valid(inj_valid[HN_EP]), .inj_ready(inj_ready[HN_EP]),
-    .ej_flit(ej_flit[HN_EP]), .ej_valid(ej_valid[HN_EP]), .ej_ready(ej_ready[HN_EP]),
-    .overflow(hnf_overflow));
+  // ---------------- CHI home node 0 (HN-F) on router [1, 0]: coherent ddr ----------------
+  logic hnf0_overflow;
+  noc_hnf #(.SELF(HN_EP + 0), .QD(64), .NL(CHI_LINES)) u_hnf0 (.clk, .rst_n,
+    .inj_flit(inj_flit[HN_EP + 0]), .inj_valid(inj_valid[HN_EP + 0]), .inj_ready(inj_ready[HN_EP + 0]),
+    .ej_flit(ej_flit[HN_EP + 0]), .ej_valid(ej_valid[HN_EP + 0]), .ej_ready(ej_ready[HN_EP + 0]),
+    .overflow(hnf0_overflow));
+
+  // ---------------- CHI home node 1 (HN-F) on router [0, 1]: coherent ddr ----------------
+  logic hnf1_overflow;
+  noc_hnf #(.SELF(HN_EP + 1), .QD(64), .NL(CHI_LINES)) u_hnf1 (.clk, .rst_n,
+    .inj_flit(inj_flit[HN_EP + 1]), .inj_valid(inj_valid[HN_EP + 1]), .inj_ready(inj_ready[HN_EP + 1]),
+    .ej_flit(ej_flit[HN_EP + 1]), .ej_valid(ej_valid[HN_EP + 1]), .ej_ready(ej_ready[HN_EP + 1]),
+    .overflow(hnf1_overflow));
 
 endmodule

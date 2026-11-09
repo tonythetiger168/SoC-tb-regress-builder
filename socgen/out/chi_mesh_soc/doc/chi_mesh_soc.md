@@ -54,7 +54,7 @@ open-ip-portfolio commit `359f40a67051a7da5dba4d0bf57c01e67bdcf2fa`.
 
 | master | ddr0 | ddr1 | sram | apb_ram | periph |
 |---|---|---|---|---|---|
-| cpu0 | 69 | 67 | 35 | 39 | 36 |
-| cpu1 | 71 | 69 | 39 | 43 | 40 |
+| cpu0 | 62 | 62 | 35 | 39 | 36 |
+| cpu1 | 62 | 60 | 39 | 43 | 40 |
 | dma | 37 | 35 | 14 | 18 | 15 |
 | mcu | 41 | 39 | 18 | 22 | 19 |

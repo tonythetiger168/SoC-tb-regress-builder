@@ -182,39 +182,56 @@ start when both adapters reach ACTIVE. `+D2D_ERR_EVERY=<n>` makes the PHY model
 corrupt every n-th flit to exercise CRC and Retry; the log ends with the
 corrupted-flit and replay counts. `specs/chiplet_soc.yaml` is the example.
 
-## `chi` (optional, `noc.model: mesh`, one die)
+## `chi` (optional, `noc.model: mesh`)
 
 CHI coherence on the generated NoC: masters with `protocol: chi` are RN-Fs, the
-other masters are RN-Is, and one HN-F on the mesh is the home of the coherent
-memory.
+other masters are RN-Is, and one or more HN-Fs on the mesh are the homes of
+the coherent memory.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `home` | | `[x, y]`: the HN-F's router |
-| `coherent` | | memories (or slaves of kind `memory`) the home keeps coherent |
-| `cache_lines` | 64 | lines of each RN-F cache (64-byte, direct-mapped, power of two 4..1024); also sizes the snoop filter |
+| `home` | | the HN-F routers: `[x, y]`, or a list of 1, 2 or 4 homes, each `[x, y]` or `{node: [x, y], die: d}` (chiplet) |
+| `coherent` | | memories (or slaves of kind `memory`) the homes keep coherent |
+| `cache_lines` | 64 | lines of each RN-F cache (64-byte, direct-mapped, power of two 4..1024); also sizes each snoop filter |
+| `home_granule` | 4096 | the homes interleave the address space on this granule (xor-folded); at least 4 KB so an AXI burst never spans two homes |
+| `dmt` | true | Direct Memory Transfer: memory sends a ReadShared / ReadUnique line straight to the requester |
+| `dct` | true | Direct Cache Transfer: a unique owner forwards the line to the requester (SnpSharedFwd / SnpUniqueFwd) |
 
 - RN-F port: the CHI channels TXREQ / TXRSP / TXDAT and RXRSP / RXDAT / RXSNP
-  as `noc_cfg_pkg` flit structs (CHI Issue B fields, narrowed: one home, so no
-  node IDs; 256-bit data, a line is two DAT flits; valid / ready on TX instead
-  of L-Credits, and the RN-F always accepts on RX). In the bench the AXI4 VIP
-  is the CPU and `noc_chi_rnf` its cache: MESI (I / SC / UC / UD), ReadShared,
-  ReadUnique, CleanUnique, WriteBackFull, Evict, CompAck; ReadNoSnp /
-  WriteNoSnpPtl (one beat each) for addresses outside the coherent memory.
-- HN-F (`noc_hnf`): exact inclusive snoop filter (a copy of every RN-F's tags),
-  one transaction at a time; SnpShared / SnpUnique / SnpCleanShared; dirty
-  data written back or passed on as UD_PD.
-- RN-I: an AMBA master's chunks to coherent memory go to the home, which snoops
-  (reads: the unique holder, SnpCleanShared; writes: every holder, SnpUnique),
-  writes dirty lines back, and forwards the chunk to memory.
-- Latency: a CHI master's paths, and an AMBA master's paths to coherent memory,
-  go master -> home -> slave -> home -> master. `path_latency` does not check a
-  CHI master's lower bound (cache hits).
+  as `noc_cfg_pkg` flit structs (CHI Issue B / C fields, narrowed: node IDs are
+  NoC endpoints, a request goes to the home of its address; 256-bit data, a
+  line is two DAT flits; valid / ready on TX instead of L-Credits, and the RN-F
+  always accepts on RX). In the bench the AXI4 VIP is the CPU and
+  `noc_chi_rnf` its cache: MESI (I / SC / UC / UD), ReadShared, ReadUnique,
+  CleanUnique, WriteBackFull, Evict, CompAck (to the CompData's HomeNID);
+  ReadNoSnp / WriteNoSnpPtl (one beat each) for addresses outside the
+  coherent memory; it answers forwarded snoops with CompData to the requester.
+- HN-F (`noc_hnf`): exact inclusive snoop filter for its address slice (a copy
+  of every RN-F's tags), one transaction at a time; SnpShared / SnpUnique /
+  SnpCleanShared, and the Fwd snoops with `dct`; dirty data written back or
+  passed on as UD_PD. With `dmt` the home reads memory with the requester as
+  the source; the slave NI returns the data to the requester as CompData.
+- RN-I: an AMBA master's chunks to coherent memory go to the address's home,
+  which snoops (reads: the unique holder, SnpCleanShared; writes: every
+  holder, SnpUnique), writes dirty lines back, and forwards the chunk.
+- Chiplet: homes, RN-Fs and the memory may sit on either die; every CHI
+  message crosses the UCIe link like any other packet (the gateways are sized
+  for the CHI messages in flight too).
+- Latency (calibrated on the RTL): via the home, 2 x 5 + 2 x 4 + 1 + 2 x
+  (master -> home + home -> slave) + access; a CHI master's miss with DMT is
+  10 + 1 + 31 + (master -> home) + (home -> slave) + 4 + (slave -> master) +
+  access; without DMT + 32 over the via-home cost; a dirty victim write-back
+  adds up to 64. Legs across the link add 5 + `phy_cycles`. `path_latency`
+  does not check a CHI master's lower bound (cache hits take 2 cycles).
 - `coherence` test: false sharing, dirty lines migrating between caches and
   RN-Is (bursts across line boundaries), producer / consumer for every pair.
+  Each home prints `HNF <name> txn= rni= snp= dct= dmt= wb=` at the end.
+- `socgen.py --no-direct` builds the same spec with DMT and DCT off as
+  `<soc>_nodirect`; `noc_compare.py` charts the difference.
 
-`specs/chi_mesh_soc.yaml` is the example. Not yet: DMT / DCT, retry and
-P-Credits, atomics, CMOs, more than one home, chiplet.
+Examples: `specs/chi_mesh_soc.yaml` (two homes on one die),
+`specs/chi_chiplet_soc.yaml` (one home and one CPU per die, DDR on die 1).
+Not yet: retry and P-Credits, atomics, CMOs, stashing, DMT for RN-I reads.
 
 ## Generated NoC (`noc.model: mesh`)
 

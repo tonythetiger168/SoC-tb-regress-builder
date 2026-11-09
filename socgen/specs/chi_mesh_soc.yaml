@@ -1,8 +1,9 @@
 # CHI coherence on the generated NoC RTL: two CPU clusters as CHI RN-Fs (each a
-# noc_chi_rnf cache in the bench), an HN-F with an exact snoop filter keeping
-# the DDR coherent, and AMBA masters as RN-Is (their DDR accesses go through
-# the home, which snoops the caches). Other slaves are reached with ReadNoSnp /
-# WriteNoSnpPtl through the home. CI-sized: 2x2 mesh.
+# noc_chi_rnf cache in the bench), two HN-Fs (4 KB-interleaved) with exact snoop
+# filters keeping the DDR coherent, DMT and DCT, and AMBA masters as RN-Is
+# (their DDR accesses go through the home, which snoops the caches). Other
+# slaves are reached with ReadNoSnp / WriteNoSnpPtl through a home. CI-sized:
+# 2x2 mesh.
 socgen: 1
 soc: {name: chi_mesh_soc, prefix: cmesh, desc: CHI RN-F / HN-F / RN-I coherence on the generated NoC RTL}
 clock: {period_ns: 2.0}
@@ -15,7 +16,9 @@ noc:
   router: orca
 
 chi:
-  home: [1, 0]             # HN-F router
+  home: [[1, 0], [0, 1]]   # two HN-F routers; addresses interleave over them per 4 KB
+  dmt: true                # memory sends CompData straight to the requester
+  dct: true                # a unique owner forwards the line to the requester
   coherent: [ddr]          # the home keeps this memory coherent
   cache_lines: 16          # per RN-F: 16 x 64 B, direct-mapped (small: many evictions)
 
