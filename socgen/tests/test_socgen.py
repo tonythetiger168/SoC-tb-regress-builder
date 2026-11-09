@@ -382,11 +382,33 @@ class Chi(unittest.TestCase):
     def test_coherent_is_memory(self):
         self.bad(lambda r: r["chi"].update(coherent=["periph"]), "is not a memory")
 
-    def test_not_with_chiplet(self):
+    def test_homes(self):
+        r = raw("chi_mesh_soc.yaml")
+        r["chi"]["home"] = [[1, 0], [0, 1]]
+        m = spec.elaborate(r)
+        self.assertEqual(len(m.chi.homes), 2)
+        self.assertEqual({spec.home_of(m, a) for a in range(0x8000_0000, 0x8001_0000, 0x1000)}, {0, 1})
+        self.assertEqual(spec.home_of(m, 0x8000_0000), spec.home_of(m, 0x8000_0FC0))   # 4 KB granule
+
+    def test_latency_model(self):
+        # measured on the RTL (path_latency, clean misses with DMT)
+        m = spec.load(os.path.join(SOCGEN, "specs", "chi_mesh_soc.yaml"))
+        t = {x.name: x.index for x in m.targets}
+        self.assertEqual(m.masters[0].ideal[t["ddr0"]], 62)
+        self.assertEqual(m.masters[2].ideal[t["ddr1"]], 35)      # RN-I dma via home 1
+        m = spec.load(os.path.join(SOCGEN, "specs", "chi_chiplet_soc.yaml"))
+        t = {x.name: x.index for x in m.targets}
+        self.assertEqual(m.masters[0].ideal[t["ddr0"]], 82)      # die 0 cpu -> die 1 ddr
+        self.assertEqual(m.masters[3].ideal[t["ddr0"]], 77)      # die 1 npu via the die-0 home
+
+    def test_three_homes(self):
+        self.bad(lambda r: r["chi"].update(home=[[0, 0], [1, 0], [1, 1]]), "1, 2 or 4 homes")
+
+    def test_home_die(self):
         r = raw("chiplet_soc.yaml")
-        r["chi"] = {"home": [0, 0], "coherent": ["ddr"]}
+        r["chi"] = {"home": [{"node": [0, 0], "die": 2}], "coherent": ["ddr"]}
         r["masters"][0]["protocol"] = "chi"
-        with self.assertRaisesRegex(SpecError, "chiplet"):
+        with self.assertRaisesRegex(SpecError, "die: 0..1"):
             spec.elaborate(r)
 
     def test_coherence_test_needs_chi(self):
@@ -399,13 +421,13 @@ class Chi(unittest.TestCase):
         import nocgen
         m = spec.load(os.path.join(SOCGEN, "specs", "chi_mesh_soc.yaml"))
         pkg = nocgen.cfg_pkg(m)
-        for want in ("localparam int NHN = 1;", "localparam int RN_EP [NRN] = '{ 0, 1 };", "localparam int CHI_LINES = 16;",
-                     "return cacheable(a) ? EPB'(HN_EP) : decode_tgt(a);", "typedef struct packed {", "chi_dat_t;"):
+        for want in ("localparam int NHN = 2;", "localparam int HN_K = 1;", "localparam int RN_EP [NRN] = '{ 0, 1 };", "localparam int CHI_LINES = 16;",
+                     "return cacheable(a) ? hn_ep(a) : decode_tgt(a);", "typedef struct packed {", "chi_dat_t;"):
             self.assertIn(want, pkg)
         rtl = nocgen.noc_module(m)
         for want in ("noc_ni_chi #(.SELF(0)) u_ni_cpu0", "noc_ni_chi #(.SELF(1)) u_ni_cpu1",
                      "input  chi_req_t cpu0_txreq_flit", "output chi_snp_t cpu1_rxsnp_flit",
-                     "noc_hnf #(.SELF(HN_EP), .QD(64), .NL(CHI_LINES)) u_hnf"):
+                     "noc_hnf #(.SELF(HN_EP + 0), .QD(64), .NL(CHI_LINES)) u_hnf0", "u_hnf1"):
             self.assertIn(want, rtl)
         self.assertEqual(rtl.count("noc_ni_mst #"), 2)
         tb = nocgen.tb_hookup(m)

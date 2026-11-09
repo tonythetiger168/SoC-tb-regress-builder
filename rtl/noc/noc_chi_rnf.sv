@@ -16,6 +16,11 @@
 //                          CopyBackWrData; SC / UC: Evict), then ReadShared
 //                          (read) or ReadUnique (write), two CompData, CompAck
 //    so at most one request is outstanding.
+//  * DCT: SnpSharedFwd / SnpUniqueFwd on a line it holds: CompData straight
+//    to the requester (FwdNID / FwdTxnID, HomeNID = the home), SnpRespFwded
+//    to the home (SnpRespDataFwded with the dirty line on SnpSharedFwd).
+//  * CompAck goes to the HomeNID of the CompData (DMT: the slave sends it on
+//    the home's behalf; DCT: the owner) or to the source of the Comp.
 //  * Snoops (SnpShared, SnpCleanShared, SnpUnique) are answered between beats
 //    and while a request is outstanding: SnpResp with the new state, or
 //    SnpRespData (_PD) with the line when it is dirty.
@@ -99,7 +104,7 @@ module noc_chi_rnf
   assign txreq_valid = nreq != 0;  assign txreq_flit = qreq[rreq];
   assign txrsp_valid = nrsp != 0;  assign txrsp_flit = qrsp[rrsp];
   assign txdat_valid = ndat != 0;  assign txdat_flit = qdat[rdat];
-  wire room_req = nreq < 2'd2, room_rsp = nrsp < 3'd4, room_dat2 = ndat < 3'd3;
+  wire room_req = nreq < 2'd2, room_rsp = nrsp < 3'd4, room_dat2 = ndat < 3'd3, room_dat1 = ndat < 3'd4;
 
   // ---------------- responses to our request (latched) ----------------
   logic         rsp_got;
@@ -110,14 +115,19 @@ module noc_chi_rnf
   logic [1:0]   dat_err;
 
   // ---------------- snoops ----------------
-  chi_snp_t   snq [2];
-  logic [1:0] nsnq;
-  logic       wsnq, rsnq;
-  typedef enum logic [1:0] { S_IDLE, S_DAT0, S_DAT1 } sst_e;
+  chi_snp_t   snq [4];                    // one snoop per home in flight (NHN <= 4)
+  logic [2:0] nsnq;
+  logic [1:0] wsnq, rsnq;
+  // after the pop: CompData to the requester (DCT, F0 / F1), then data to the home (H0 / H1)
+  typedef enum logic [2:0] { S_IDLE, S_F0, S_F1, S_H0, S_H1 } sst_e;
   sst_e       sst;
-  logic [IB-1:0] s_idx;
-  logic [2:0]    s_resp;
-  logic [TAGW-1:0] s_txn;
+  logic [IB-1:0]   s_idx;
+  logic [EPB-1:0]  s_home, s_fwdnid;
+  logic [TAGW-1:0] s_txn, s_fwdtxn;
+  logic [2:0]      s_hresp, s_fresp;
+  logic [3:0]      s_hopc;
+  logic            s_hdat;
+  logic [EPB-1:0]  ack_nid;                 // where CompAck goes (HomeNID / the Comp's source)
   wire  snp_busy = (nsnq != 0) || (sst != S_IDLE);
 
   // ---------------- AXI burst ----------------
@@ -211,44 +221,58 @@ module noc_chi_rnf
   // the snoop at the head of the queue
   chi_snp_t      sn;
   logic [IB-1:0] si;
-  logic          sh, sud, snp_pop;
-  assign sn  = snq[rsnq];
-  assign si  = sn.addr[6 +: IB];
-  assign sh  = cs[si] != CS_I && ctag[si] == sn.addr[31:6+IB];
-  assign sud = sh && cs[si] == CS_UD;
-  // taken this cycle: SnpResp pushed, or the SnpRespData sequence started
-  assign snp_pop = sst == S_IDLE && nsnq != 0 && room_rsp && room_dat2;
+  logic          sh, sud, sfwd, snp_pop;
+  logic          p_hdat, p_fdat, p_rsp1;    // its plan: data to the home, CompData forwarded, a RSP
+  assign sn   = snq[rsnq];
+  assign si   = sn.addr[6 +: IB];
+  assign sh   = cs[si] != CS_I && ctag[si] == sn.addr[31:6+IB];
+  assign sud  = sh && cs[si] == CS_UD;
+  assign sfwd = sn.opcode == SNP_SHAREDFWD || sn.opcode == SNP_UNIQUEFWD;
+  // forwarded snoop on a line we hold: CompData to the requester; the home
+  // gets the dirty data only on SnpSharedFwd (the requester gets it clean, SC)
+  assign p_fdat = sfwd && sh;
+  assign p_hdat = sfwd ? (sud && sn.opcode == SNP_SHAREDFWD) : sud;
+  assign p_rsp1 = !p_hdat;
+  // taken this cycle: its RSP (if any) is pushed and the data sequence starts
+  assign snp_pop = sst == S_IDLE && nsnq != 0 && room_rsp;
 
   // snoop FSM / main FSM pushes on RSP and DAT (never both in one cycle)
   always_comb begin
     push_rsp = 1'b0; p_rsp = '0;
     push_dat = 1'b0; p_dat = '0;
     if (sst == S_IDLE && nsnq != 0) begin
-      if (!sud && snp_pop) begin
+      if (snp_pop && p_rsp1) begin
         push_rsp = 1'b1;
+        p_rsp.nid    = sn.nid;
         p_rsp.txnid  = sn.txnid;
-        p_rsp.opcode = RSP_SNPRESP;
+        p_rsp.opcode = p_fdat ? RSP_SNPRESPFWDED : RSP_SNPRESP;
         p_rsp.resp   = !sh ? RESP_I :
-                       (sn.opcode == SNP_UNIQUE) ? RESP_I :
-                       (sn.opcode == SNP_SHARED) ? RESP_SC :
+                       (sn.opcode == SNP_UNIQUE || sn.opcode == SNP_UNIQUEFWD) ? RESP_I :
+                       (sn.opcode == SNP_SHARED || sn.opcode == SNP_SHAREDFWD) ? RESP_SC :
                        (cs[si] == CS_UC) ? RESP_UC : RESP_SC;
       end
-    end else if (sst == S_DAT0 || sst == S_DAT1) begin
-      push_dat = 1'b1;
-      p_dat.txnid  = s_txn;
-      p_dat.opcode = DAT_SNPRESPDATA;
-      p_dat.resp   = s_resp;
-      p_dat.dataid = {sst == S_DAT1, 1'b0};
-      p_dat.be     = '1;
-      p_dat.data   = cdat[s_idx][256*(sst == S_DAT1) +: 256];
+    end else if (sst != S_IDLE) begin
+      automatic logic f = (sst == S_F0 || sst == S_F1);
+      automatic logic h1 = (sst == S_F1 || sst == S_H1);
+      push_dat = room_dat1;
+      p_dat.nid     = f ? s_fwdnid : s_home;
+      p_dat.homenid = s_home;
+      p_dat.txnid   = f ? s_fwdtxn : s_txn;
+      p_dat.opcode  = f ? DAT_COMPDATA : s_hopc;
+      p_dat.resp    = f ? s_fresp : s_hresp;
+      p_dat.dataid  = {h1, 1'b0};
+      p_dat.be      = '1;
+      p_dat.data    = cdat[s_idx][256*h1 +: 256];
     end else if (go) begin
       if (st == M_ACK && room_rsp) begin
         push_rsp = 1'b1;
+        p_rsp.nid    = ack_nid;
         p_rsp.txnid  = txn;
         p_rsp.opcode = RSP_COMPACK;
       end
       if (st == M_WAIT && wk == W_NSDBID && rsp_got && room_dat2) begin
         push_dat = 1'b1;
+        p_dat.nid    = rsp_q.nid;
         p_dat.txnid  = rsp_q.dbid;
         p_dat.opcode = DAT_NONCOPYBACKWRDATA;
         p_dat.dataid = {a[5], 1'b0};
@@ -257,6 +281,7 @@ module noc_chi_rnf
       end
       if ((st == M_WBD0 || st == M_WBD1) && room_dat2) begin
         push_dat = 1'b1;
+        p_dat.nid    = rsp_q.nid;
         p_dat.txnid  = rsp_q.dbid;
         p_dat.opcode = DAT_COPYBACKWRDATA;
         p_dat.resp   = wb_resp;
@@ -275,7 +300,9 @@ module noc_chi_rnf
       ndat <= '0; wdat <= '0; rdat <= '0;
       rsp_got <= 1'b0; rsp_q <= '0; dat_n <= '0; dat_q[0] <= '0; dat_q[1] <= '0;
       dat_resp <= '0; dat_err <= '0;
-      nsnq <= '0; wsnq <= 1'b0; rsnq <= 1'b0; sst <= S_IDLE; s_idx <= '0; s_resp <= '0; s_txn <= '0;
+      nsnq <= '0; wsnq <= '0; rsnq <= '0; sst <= S_IDLE; s_idx <= '0; s_txn <= '0; s_fwdtxn <= '0;
+      s_home <= '0; s_fwdnid <= '0; s_hresp <= '0; s_fresp <= '0; s_hopc <= '0; s_hdat <= 1'b0;
+      ack_nid <= '0;
       st <= M_IDLE; wk <= W_FILL; b_wr <= 1'b0; last_rd <= 1'b0; b_id <= '0; b_addr <= '0;
       b_len <= '0; b_i <= '0; b_size <= '0; b_burst <= '0; b_worst <= '0;
       r_data <= '0; r_resp <= '0; txn <= '0; wb_idx <= '0; wb_resp <= '0; wb_line <= '0;
@@ -292,39 +319,51 @@ module noc_chi_rnf
       ndat <= ndat + 3'(push_dat) - 3'(txdat_valid && txdat_ready);
 
       // ---------------- RX ----------------
-      if (rxrsp_valid) begin rsp_got <= 1'b1; rsp_q <= rxrsp_flit; end
+      if (rxrsp_valid) begin rsp_got <= 1'b1; rsp_q <= rxrsp_flit; ack_nid <= rxrsp_flit.nid; end
       if (rxdat_valid) begin
+        ack_nid  <= rxdat_flit.homenid;
         dat_q[rxdat_flit.dataid[1]] <= rxdat_flit.data;
         dat_resp <= rxdat_flit.resp;
         dat_err  <= rxdat_flit.resperr;
         dat_n    <= dat_n + 2'd1;
       end
-      if (rxsnp_valid) begin snq[wsnq] <= rxsnp_flit; wsnq <= ~wsnq; end
+      if (rxsnp_valid) begin snq[wsnq] <= rxsnp_flit; wsnq <= wsnq + 2'd1; end
 
       // ---------------- snoop FSM ----------------
       unique case (sst)
         S_IDLE: if (snp_pop) begin
-          rsnq <= ~rsnq;
-          if (sud) begin
-            s_idx <= si; s_txn <= sn.txnid;
-            unique case (sn.opcode)
-              SNP_SHARED:      begin cs[si] <= CS_SC; s_resp <= RESP_SC_PD; end
-              SNP_CLEANSHARED: begin cs[si] <= CS_UC; s_resp <= RESP_UC_PD; end
-              default:         begin cs[si] <= CS_I;  s_resp <= RESP_I_PD;  end
-            endcase
-            sst <= S_DAT0;
-          end else if (sh)
-            unique case (sn.opcode)
-              SNP_SHARED:      cs[si] <= CS_SC;
-              SNP_CLEANSHARED: ;
-              default:         cs[si] <= CS_I;
-            endcase
+          rsnq <= rsnq + 2'd1;
+          s_idx <= si; s_home <= sn.nid; s_txn <= sn.txnid;
+          s_fwdnid <= sn.fwdnid; s_fwdtxn <= sn.fwdtxnid;
+          s_hdat <= p_hdat;
+          s_hopc <= sfwd ? DAT_SNPRESPDATAFWDED : DAT_SNPRESPDATA;
+          if (sh) unique case (sn.opcode)
+            SNP_SHARED: begin
+              cs[si] <= CS_SC; s_hresp <= RESP_SC_PD;
+            end
+            SNP_CLEANSHARED: begin
+              if (sud) cs[si] <= CS_UC;
+              s_hresp <= RESP_UC_PD;
+            end
+            SNP_SHAREDFWD: begin            // requester SC; dirty data to the home
+              cs[si] <= CS_SC; s_fresp <= RESP_SC; s_hresp <= RESP_SC_PD;
+            end
+            SNP_UNIQUEFWD: begin            // requester takes the line, dirty or not
+              cs[si] <= CS_I; s_fresp <= sud ? RESP_UD_PD : RESP_UC;
+            end
+            default: begin                  // SnpUnique
+              cs[si] <= CS_I; s_hresp <= RESP_I_PD;
+            end
+          endcase
+          sst <= p_fdat ? S_F0 : p_hdat ? S_H0 : S_IDLE;
         end
-        S_DAT0: sst <= S_DAT1;              // push_dat is on (room checked at the pop)
-        S_DAT1: sst <= S_IDLE;
+        S_F0: if (push_dat) sst <= S_F1;
+        S_F1: if (push_dat) sst <= s_hdat ? S_H0 : S_IDLE;
+        S_H0: if (push_dat) sst <= S_H1;
+        S_H1: if (push_dat) sst <= S_IDLE;
         default: sst <= S_IDLE;
       endcase
-      nsnq <= nsnq + 2'(rxsnp_valid) - 2'(snp_pop);
+      nsnq <= nsnq + 3'(rxsnp_valid) - 3'(snp_pop);
 
       // ---------------- main FSM ----------------
       unique case (st)

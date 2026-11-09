@@ -110,20 +110,20 @@ package chi_mesh_soc_pkg;
   // request path (one way + IOMMU TLB hit), response path, ideal single-beat
   // zero-load read latency (request + access + response), in clock cycles
   localparam int REQ_LAT [NM][NS] = '{
-    '{ 46, 45, 24, 28, 23 },
-    '{ 47, 46, 27, 31, 26 },
+    '{ 45, 44, 24, 28, 23 },
+    '{ 46, 43, 27, 31, 26 },
     '{ 14, 13, 7, 11, 6 },
     '{ 18, 17, 11, 15, 10 }
   };
   localparam int RSP_LAT [NM][NS] = '{
-    '{ 11, 10, 10, 9, 9 },
-    '{ 12, 11, 11, 10, 10 },
+    '{ 5, 6, 10, 9, 9 },
+    '{ 4, 5, 11, 10, 10 },
     '{ 11, 10, 6, 5, 5 },
     '{ 11, 10, 6, 5, 5 }
   };
   localparam int IDEAL_LAT [NM][NS] = '{
-    '{ 69, 67, 35, 39, 36 },
-    '{ 71, 69, 39, 43, 40 },
+    '{ 62, 62, 35, 39, 36 },
+    '{ 62, 60, 39, 43, 40 },
     '{ 37, 35, 14, 18, 15 },
     '{ 41, 39, 18, 22, 19 }
   };

@@ -40,7 +40,7 @@ package noc_cfg_pkg;
   localparam int NM  = 4;
   localparam int NS  = 7;
   localparam int NGW = 2;                  // die-to-die gateways (endpoints NM + NS ..)
-  localparam int NHN = 0;                  // CHI home node (HN-F), endpoint NM + NS + NGW
+  localparam int NHN = 0;                  // CHI home nodes (HN-F), endpoints NM + NS + NGW ..
   localparam int NEP = NM + NS + NGW + NHN;
   localparam int NDIE = 2;
   localparam int EPB = 4;                  // endpoint id width
@@ -76,7 +76,11 @@ package noc_cfg_pkg;
   endfunction
 
   // ---------------- CHI coherence ----------------
-  localparam int HN_EP = NM + NS + NGW;           // the HN-F endpoint (when NHN = 1)
+  localparam int HN_EP = NM + NS + NGW;           // the first HN-F endpoint
+  localparam int HN_G = 12;                     // homes interleave on 2**HN_G bytes
+  localparam int HN_K = 0;                      // log2(NHN)
+  localparam bit CHI_DMT = 1'b0;             // memory data straight to the requester
+  localparam bit CHI_DCT = 1'b0;             // the owner forwards the line to the requester
   localparam int NRN = 1;                   // RN-F ports (protocol chi masters)
   localparam int RN_EP [NRN] = '{ 0 };
   localparam int CHI_LINES = 4;            // RN-F cache lines (64-byte, direct-mapped)
@@ -95,9 +99,16 @@ package noc_cfg_pkg;
     return NHN != 0 && s < NS && S_COH[s];
   endfunction
 
-  // where a master NI sends a chunk: the slave port, or the HN-F for coherent memory
+  // the home of address a: granule-interleaved over the NHN homes, xor-folded
+  function automatic logic [EPB-1:0] hn_ep(logic [31:0] a);
+    logic [31:0] k;
+    k = (HN_K == 0) ? 32'd0 : (((a >> HN_G) ^ (a >> (HN_G + HN_K))) & ((32'd1 << HN_K) - 1));
+    return EPB'(HN_EP + int'(k));
+  endfunction
+
+  // where a master NI sends a chunk: the slave port, or the home for coherent memory
   function automatic logic [EPB-1:0] decode(logic [31:0] a);
-    return cacheable(a) ? EPB'(HN_EP) : decode_tgt(a);
+    return cacheable(a) ? hn_ep(a) : decode_tgt(a);
   endfunction
 
   // ---------------- NI packet (flit payload) ----------------
@@ -123,6 +134,8 @@ package noc_cfg_pkg;
     logic [2:0]        cresp;             // CHI Resp (cache state)
     logic [TAGW-1:0]   dbid;              // CHI DBID
     logic [1:0]        dataid;            // CHI DataID: 0 / 2 = bytes 0..31 / 32..63 of the line
+    logic [EPB-1:0]    hnid;              // CHI HomeNID: where the requester sends CompAck
+    logic [EPB-1:0]    fwd;               // CHI FwdNID (DCT snoop; FwdTxnID in dbid)
     logic [CW-1:0][1:0]  rresp;           // RDATA: RRESP per word
     logic [CW-1:0][3:0]  strb;            // WR: WSTRB per word
     logic [CW-1:0][31:0] data;            // WR / RDATA
@@ -130,8 +143,9 @@ package noc_cfg_pkg;
   localparam int PKT_W = $bits(pkt_t);
 
   // ---------------- CHI port (RN-F <-> NoC) ----------------
-  // CHI Issue B fields, narrowed: one HN-F, so no SrcID / TgtID; 256-bit data
-  // (a 64-byte line is two DAT flits, DataID 0 and 2); L-Credits replaced by
+  // CHI Issue B/C fields, narrowed: node IDs are NoC endpoints (nid = SrcID on
+  // RX, TgtID on TX; requests go to the address's home); 256-bit data (a
+  // 64-byte line is two DAT flits, DataID 0 and 2); L-Credits replaced by
   // valid / ready on the RN-F's TX channels, and the RN-F always accepts on RX.
   typedef struct packed {
     logic [TAGW-1:0] txnid;
@@ -140,11 +154,15 @@ package noc_cfg_pkg;
     logic [2:0]      size;
   } chi_req_t;
   typedef struct packed {
+    logic [EPB-1:0]  nid;                 // SrcID (the home)
     logic [TAGW-1:0] txnid;
     logic [4:0]      opcode;
     logic [31:0]     addr;
+    logic [EPB-1:0]  fwdnid;              // DCT: the requester to forward to
+    logic [TAGW-1:0] fwdtxnid;
   } chi_snp_t;
   typedef struct packed {
+    logic [EPB-1:0]  nid;                 // RX: SrcID, TX: TgtID
     logic [TAGW-1:0] txnid;
     logic [3:0]      opcode;
     logic [2:0]      resp;
@@ -152,6 +170,8 @@ package noc_cfg_pkg;
     logic [TAGW-1:0] dbid;
   } chi_rsp_t;
   typedef struct packed {
+    logic [EPB-1:0]  nid;                 // RX: SrcID, TX: TgtID
+    logic [EPB-1:0]  homenid;             // CompData: the home that gets the CompAck
     logic [TAGW-1:0] txnid;
     logic [3:0]      opcode;
     logic [2:0]      resp;
@@ -165,11 +185,12 @@ package noc_cfg_pkg;
   localparam logic [5:0] REQ_READSHARED = 6'h01, REQ_READNOSNP = 6'h04, REQ_READUNIQUE = 6'h07,
                          REQ_CLEANUNIQUE = 6'h0B, REQ_EVICT = 6'h0D, REQ_WRITEBACKFULL = 6'h1B,
                          REQ_WRITENOSNPPTL = 6'h1C;
-  localparam logic [4:0] SNP_SHARED = 5'h01, SNP_UNIQUE = 5'h07, SNP_CLEANSHARED = 5'h08;
+  localparam logic [4:0] SNP_SHARED = 5'h01, SNP_UNIQUE = 5'h07, SNP_CLEANSHARED = 5'h08,
+                         SNP_SHAREDFWD = 5'h11, SNP_UNIQUEFWD = 5'h17;
   localparam logic [3:0] RSP_SNPRESP = 4'h1, RSP_COMPACK = 4'h2, RSP_COMP = 4'h4,
-                         RSP_COMPDBIDRESP = 4'h5, RSP_DBIDRESP = 4'h6;
+                         RSP_COMPDBIDRESP = 4'h5, RSP_DBIDRESP = 4'h6, RSP_SNPRESPFWDED = 4'h9;
   localparam logic [3:0] DAT_SNPRESPDATA = 4'h1, DAT_COPYBACKWRDATA = 4'h2,
-                         DAT_NONCOPYBACKWRDATA = 4'h3, DAT_COMPDATA = 4'h4;
+                         DAT_NONCOPYBACKWRDATA = 4'h3, DAT_COMPDATA = 4'h4, DAT_SNPRESPDATAFWDED = 4'h6;
   // Resp: cache state (Comp / CompData / CopyBackWrData: I, SC, UC, UD_PD;
   // SnpResp*: I, SC, UC, plus _PD = dirty data passed to the home)
   localparam logic [2:0] RESP_I = 3'd0, RESP_SC = 3'd1, RESP_UC = 3'd2, RESP_UD_PD = 3'd6,

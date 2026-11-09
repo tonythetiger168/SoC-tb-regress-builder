@@ -63,7 +63,7 @@ def params(m):
     """derived NoC parameters"""
     nm, ns = len(m.masters), len(m.targets)
     ngw = m.chiplet.dies if m.chiplet.dies > 1 else 0
-    nhn = 1 if m.chi.rn else 0
+    nhn = len(m.chi.homes) if m.chi.rn else 0
     nep = nm + ns + ngw + nhn
     p = dict(nm=nm, ns=ns, ngw=ngw, nhn=nhn, nep=nep, epb=clog2(nep + 1),
              xb=2 if m.noc.router_ip == "orca" else clog2(m.noc.cols),
@@ -95,11 +95,11 @@ def cfg_pkg(m):
     ex = [x.node[0] for x in m.masters] + [t.node[0] for t in m.targets] + [g[0] for g in gws]
     ey = [x.node[1] for x in m.masters] + [t.node[1] for t in m.targets] + [g[1] for g in gws]
     ed = [x.die for x in m.masters] + [t.die for t in m.targets] + list(range(len(gws)))
-    if p["nhn"]:
-        eps.append("hnf")
-        ex.append(m.chi.home[0])
-        ey.append(m.chi.home[1])
-        ed.append(0)
+    for k, h in enumerate(m.chi.homes if p["nhn"] else []):
+        eps.append(f"hnf{k}")
+        ex.append(h.node[0])
+        ey.append(h.node[1])
+        ed.append(h.die)
     coh = ", ".join("1'b1" if t.index in m.chi.coh_targets else "1'b0" for t in m.targets)
     rn_ep = ", ".join(str(i) for i in m.chi.rn) if m.chi.rn else "0"
     names = "\n".join(f"      {i}: return \"{n}\";" for i, n in enumerate(eps))
@@ -145,7 +145,7 @@ package noc_cfg_pkg;
   localparam int NM  = {p['nm']};
   localparam int NS  = {p['ns']};
   localparam int NGW = {p['ngw']};                  // die-to-die gateways (endpoints NM + NS ..)
-  localparam int NHN = {p['nhn']};                  // CHI home node (HN-F), endpoint NM + NS + NGW
+  localparam int NHN = {p['nhn']};                  // CHI home nodes (HN-F), endpoints NM + NS + NGW ..
   localparam int NEP = NM + NS + NGW + NHN;
   localparam int NDIE = {m.chiplet.dies};
   localparam int EPB = {p['epb']};                  // endpoint id width
@@ -169,7 +169,11 @@ package noc_cfg_pkg;
   endfunction
 
   // ---------------- CHI coherence ----------------
-  localparam int HN_EP = NM + NS + NGW;           // the HN-F endpoint (when NHN = 1)
+  localparam int HN_EP = NM + NS + NGW;           // the first HN-F endpoint
+  localparam int HN_G = {int(math.log2(m.chi.granule)) if m.chi.rn else 12};                     // homes interleave on 2**HN_G bytes
+  localparam int HN_K = {m.chi.hbits if m.chi.rn else 0};                      // log2(NHN)
+  localparam bit CHI_DMT = 1'b{1 if m.chi.dmt else 0};             // memory data straight to the requester
+  localparam bit CHI_DCT = 1'b{1 if m.chi.dct else 0};             // the owner forwards the line to the requester
   localparam int NRN = {len(m.chi.rn) if m.chi.rn else 1};                   // RN-F ports (protocol chi masters)
   localparam int RN_EP [NRN] = '{{ {rn_ep} }};
   localparam int CHI_LINES = {m.chi.lines or 4};            // RN-F cache lines (64-byte, direct-mapped)
@@ -188,9 +192,16 @@ package noc_cfg_pkg;
     return NHN != 0 && s < NS && S_COH[s];
   endfunction
 
-  // where a master NI sends a chunk: the slave port, or the HN-F for coherent memory
+  // the home of address a: granule-interleaved over the NHN homes, xor-folded
+  function automatic logic [EPB-1:0] hn_ep(logic [31:0] a);
+    logic [31:0] k;
+    k = (HN_K == 0) ? 32'd0 : (((a >> HN_G) ^ (a >> (HN_G + HN_K))) & ((32'd1 << HN_K) - 1));
+    return EPB'(HN_EP + int'(k));
+  endfunction
+
+  // where a master NI sends a chunk: the slave port, or the home for coherent memory
   function automatic logic [EPB-1:0] decode(logic [31:0] a);
-    return cacheable(a) ? EPB'(HN_EP) : decode_tgt(a);
+    return cacheable(a) ? hn_ep(a) : decode_tgt(a);
   endfunction
 
   // ---------------- NI packet (flit payload) ----------------
@@ -216,6 +227,8 @@ package noc_cfg_pkg;
     logic [2:0]        cresp;             // CHI Resp (cache state)
     logic [TAGW-1:0]   dbid;              // CHI DBID
     logic [1:0]        dataid;            // CHI DataID: 0 / 2 = bytes 0..31 / 32..63 of the line
+    logic [EPB-1:0]    hnid;              // CHI HomeNID: where the requester sends CompAck
+    logic [EPB-1:0]    fwd;               // CHI FwdNID (DCT snoop; FwdTxnID in dbid)
     logic [CW-1:0][1:0]  rresp;           // RDATA: RRESP per word
     logic [CW-1:0][3:0]  strb;            // WR: WSTRB per word
     logic [CW-1:0][31:0] data;            // WR / RDATA
@@ -223,8 +236,9 @@ package noc_cfg_pkg;
   localparam int PKT_W = $bits(pkt_t);
 
   // ---------------- CHI port (RN-F <-> NoC) ----------------
-  // CHI Issue B fields, narrowed: one HN-F, so no SrcID / TgtID; 256-bit data
-  // (a 64-byte line is two DAT flits, DataID 0 and 2); L-Credits replaced by
+  // CHI Issue B/C fields, narrowed: node IDs are NoC endpoints (nid = SrcID on
+  // RX, TgtID on TX; requests go to the address's home); 256-bit data (a
+  // 64-byte line is two DAT flits, DataID 0 and 2); L-Credits replaced by
   // valid / ready on the RN-F's TX channels, and the RN-F always accepts on RX.
   typedef struct packed {{
     logic [TAGW-1:0] txnid;
@@ -233,11 +247,15 @@ package noc_cfg_pkg;
     logic [2:0]      size;
   }} chi_req_t;
   typedef struct packed {{
+    logic [EPB-1:0]  nid;                 // SrcID (the home)
     logic [TAGW-1:0] txnid;
     logic [4:0]      opcode;
     logic [31:0]     addr;
+    logic [EPB-1:0]  fwdnid;              // DCT: the requester to forward to
+    logic [TAGW-1:0] fwdtxnid;
   }} chi_snp_t;
   typedef struct packed {{
+    logic [EPB-1:0]  nid;                 // RX: SrcID, TX: TgtID
     logic [TAGW-1:0] txnid;
     logic [3:0]      opcode;
     logic [2:0]      resp;
@@ -245,6 +263,8 @@ package noc_cfg_pkg;
     logic [TAGW-1:0] dbid;
   }} chi_rsp_t;
   typedef struct packed {{
+    logic [EPB-1:0]  nid;                 // RX: SrcID, TX: TgtID
+    logic [EPB-1:0]  homenid;             // CompData: the home that gets the CompAck
     logic [TAGW-1:0] txnid;
     logic [3:0]      opcode;
     logic [2:0]      resp;
@@ -258,11 +278,12 @@ package noc_cfg_pkg;
   localparam logic [5:0] REQ_READSHARED = 6'h01, REQ_READNOSNP = 6'h04, REQ_READUNIQUE = 6'h07,
                          REQ_CLEANUNIQUE = 6'h0B, REQ_EVICT = 6'h0D, REQ_WRITEBACKFULL = 6'h1B,
                          REQ_WRITENOSNPPTL = 6'h1C;
-  localparam logic [4:0] SNP_SHARED = 5'h01, SNP_UNIQUE = 5'h07, SNP_CLEANSHARED = 5'h08;
+  localparam logic [4:0] SNP_SHARED = 5'h01, SNP_UNIQUE = 5'h07, SNP_CLEANSHARED = 5'h08,
+                         SNP_SHAREDFWD = 5'h11, SNP_UNIQUEFWD = 5'h17;
   localparam logic [3:0] RSP_SNPRESP = 4'h1, RSP_COMPACK = 4'h2, RSP_COMP = 4'h4,
-                         RSP_COMPDBIDRESP = 4'h5, RSP_DBIDRESP = 4'h6;
+                         RSP_COMPDBIDRESP = 4'h5, RSP_DBIDRESP = 4'h6, RSP_SNPRESPFWDED = 4'h9;
   localparam logic [3:0] DAT_SNPRESPDATA = 4'h1, DAT_COPYBACKWRDATA = 4'h2,
-                         DAT_NONCOPYBACKWRDATA = 4'h3, DAT_COMPDATA = 4'h4;
+                         DAT_NONCOPYBACKWRDATA = 4'h3, DAT_COMPDATA = 4'h4, DAT_SNPRESPDATAFWDED = 4'h6;
   // Resp: cache state (Comp / CompData / CopyBackWrData: I, SC, UC, UD_PD;
   // SnpResp*: I, SC, UC, plus _PD = dirty data passed to the home)
   localparam logic [2:0] RESP_I = 3'd0, RESP_SC = 3'd1, RESP_UC = 3'd2, RESP_UD_PD = 3'd6,
@@ -413,22 +434,28 @@ def noc_module(m):
         L.append(f"    .inj_flit(inj_flit[{e}]), .inj_valid(inj_valid[{e}]), .inj_ready(inj_ready[{e}]),")
         L.append(f"    .ej_flit(ej_flit[{e}]), .ej_valid(ej_valid[{e}]), .ej_ready(ej_ready[{e}]));")
         L.append("")
-    if p["nhn"]:
-        h = "HN_EP"
-        L += [f"  // ---------------- CHI home node (HN-F) on router {list(m.chi.home)}: coherent "
-              f"{', '.join(m.chi.coherent)} ----------------",
-              "  logic hnf_overflow;",
-              f"  noc_hnf #(.SELF({h}), .QD({p['hq']}), .NL(CHI_LINES)) u_hnf (.clk, .rst_n,",
+    for k, hm in enumerate(m.chi.homes if p["nhn"] else []):
+        h = f"HN_EP + {k}"
+        L += [f"  // ---------------- CHI home node {k} (HN-F) on router {list(hm.node)}"
+              f"{f', die {hm.die}' if m.chiplet.dies > 1 else ''}: coherent {', '.join(m.chi.coherent)} ----------------",
+              f"  logic hnf{k}_overflow;",
+              f"  noc_hnf #(.SELF({h}), .QD({p['hq']}), .NL(CHI_LINES)) u_hnf{k} (.clk, .rst_n,",
               f"    .inj_flit(inj_flit[{h}]), .inj_valid(inj_valid[{h}]), .inj_ready(inj_ready[{h}]),",
               f"    .ej_flit(ej_flit[{h}]), .ej_valid(ej_valid[{h}]), .ej_ready(ej_ready[{h}]),",
-              "    .overflow(hnf_overflow));", ""]
+              f"    .overflow(hnf{k}_overflow));", ""]
     L.append("endmodule")
     return "\n".join(L) + "\n"
 
 
 def _chiplet(m, p):
     """one mesh per die, a gateway + UCIe adapter per die, the PHY model between them"""
-    qd = 2 * p["nm"] * m.noc_ni.maxo
+    # every packet that can be in flight: the master NIs' chunks, plus CHI
+    # (per RN-F a request, write data and a CompAck; per home one snoop per
+    # RN-F with up to four data flits and a response each, and its CompData /
+    # DMT reads)
+    nrn, nhn = len(m.chi.rn), p["nhn"]
+    chi = 4 * nrn + nhn * (6 * nrn + 8) if nhn else 0
+    qd = 2 * p["nm"] * m.noc_ni.maxo + chi
     nd = m.chiplet.dies
     L = [f"  // ---------------- chiplet: {nd} dies, one mesh each, UCIe die-to-die link ----------------"]
     for d in range(nd):

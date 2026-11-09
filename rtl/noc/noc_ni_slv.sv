@@ -68,6 +68,12 @@ module noc_ni_slv
     logic [EPB-1:0]  src;
     logic [TAGW-1:0] tag;
     logic [2:0]      nm1;
+    // CHI fields a home puts on a chunk and gets back on the response (DMT:
+    // the read data goes to the requester as CompData)
+    logic [5:0]      copc;
+    logic [2:0]      cresp;
+    logic [1:0]      dataid;
+    logic [EPB-1:0]  hnid;
   } pend_t;
 
   pkt_t ej_pkt;
@@ -150,7 +156,7 @@ module noc_ni_slv
       if (ej_wr) begin wq[wq_wp] <= ej_pkt; wq_wp <= (int'(wq_wp) == QD - 1) ? '0 : wq_wp + 1'b1; end
       if (ar_hs) begin
         rq_rp <= (int'(rq_rp) == QD - 1) ? '0 : rq_rp + 1'b1;
-        rp[rp_wp] <= '{src: rh.src_ep, tag: rh.tag, nm1: rh.nm1};
+        rp[rp_wp] <= '{src: rh.src_ep, tag: rh.tag, nm1: rh.nm1, copc: rh.copc, cresp: rh.cresp, dataid: rh.dataid, hnid: rh.hnid};
         rp_wp <= (int'(rp_wp) == OUTS - 1) ? '0 : rp_wp + 1'b1;
       end
       rq_cnt <= rq_cnt + (QB+1)'(ej_rd) - (QB+1)'(ar_hs);
@@ -166,6 +172,7 @@ module noc_ni_slv
           s[r_k] = m_rresp;
           p.op = OP_RDATA; p.dst_ep = rp[rp_rp].src; p.src_ep = EPB'(SELF);
           p.tag = rp[rp_rp].tag; p.nm1 = rp[rp_rp].nm1; p.data = d; p.rresp = s;
+          p.copc = rp[rp_rp].copc; p.cresp = rp[rp_rp].cresp; p.dataid = rp[rp_rp].dataid; p.hnid = rp[rp_rp].hnid;
           rr_pkt <= p;
           rr_v   <= 1'b1;
           r_k    <= '0;
@@ -177,7 +184,7 @@ module noc_ni_slv
       // writes
       if (aw_hs) begin
         aw_done <= 1'b1;
-        wp[wp_wp] <= '{src: wh.src_ep, tag: wh.tag, nm1: wh.nm1};
+        wp[wp_wp] <= '{src: wh.src_ep, tag: wh.tag, nm1: wh.nm1, copc: wh.copc, cresp: wh.cresp, dataid: wh.dataid, hnid: wh.hnid};
         wp_wp <= (int'(wp_wp) == OUTS - 1) ? '0 : wp_wp + 1'b1;
       end
       if (w_hs) w_k <= w_end ? '0 : w_k + 3'd1;
@@ -190,6 +197,7 @@ module noc_ni_slv
         automatic pkt_t p = '0;
         p.op = OP_WRSP; p.dst_ep = wp[wp_rp].src; p.src_ep = EPB'(SELF);
         p.tag = wp[wp_rp].tag; p.resp = m_bresp;
+        p.copc = wp[wp_rp].copc; p.cresp = wp[wp_rp].cresp; p.dataid = wp[wp_rp].dataid; p.hnid = wp[wp_rp].hnid;
         wr_pkt <= p;
         wr_v   <= 1'b1;
         wp_rp  <= (int'(wp_rp) == OUTS - 1) ? '0 : wp_rp + 1'b1;
