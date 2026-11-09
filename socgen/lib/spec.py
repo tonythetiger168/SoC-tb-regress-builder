@@ -220,7 +220,7 @@ def elaborate(raw, path="<spec>"):
     for i, mem in enumerate(raw.get("memories") or []):
         w = f"memories[{i}]"
         keys(mem, ["name", "kind", "base", "size", "channels", "interleave", "access_cycles",
-                   "timing", "placement"], w, required=["name", "base", "size", "channels"])
+                   "timing", "placement", "model", "model_params"], w, required=["name", "base", "size", "channels"])
         name = ident(mem["name"], f"{w}.name")
         base, size = num(mem["base"], f"{w}.base"), num(mem["size"], f"{w}.size")
         nch = num(mem["channels"], f"{w}.channels")
@@ -244,14 +244,27 @@ def elaborate(raw, path="<spec>"):
         if kind not in ("lpddr5", "ddr", "hbm", "sram"):
             raise SpecError(f"{w}.kind: lpddr5 | ddr | hbm | sram")
         nodes = _placement(mem.get("placement"), nch, f"{w}.placement", node, topo, rows, cols)
+        model = mem.get("model", "vip")
+        if model not in DRAM_MODELS:
+            raise SpecError(f"{w}.model: {' | '.join(DRAM_MODELS)}")
+        mp = dict(mem.get("model_params") or {})
+        if model == "vip" and mp:
+            raise SpecError(f"{w}.model_params: only with a DRAM model (model: ddr4)")
+        timing = str(mem.get("timing", ""))
+        acc = mem.get("access_cycles")
+        if model != "vip":
+            mp = _dram_params(model, timing, mp, f"{w}.model_params")
+            if acc is None:     # zero-load closed-bank read in NoC clock cycles (ACT + tRCD + CL + BL8 + CDC)
+                acc = math.ceil(mp["_zero_load_ps"] / (m.clock.period_ns * 1000))
         mo = Obj(name=name, kind=kind, base=base, size=size, channels=nch, granule=gran,
-                 gbits=g, cbits=n, hash=hsh, access=num(mem.get("access_cycles", 20), w),
-                 timing=str(mem.get("timing", "")), first=len(m.targets))
+                 gbits=g, cbits=n, hash=hsh, access=num(acc if acc is not None else 20, w),
+                 timing=timing, first=len(m.targets), model=model,
+                 params={k: v for k, v in mp.items() if not k.startswith("_")})
         m.memories.append(mo)
         for c in range(nch):
             m.targets.append(Obj(name=f"{name}{c}", kind="channel", mem=name, channel=c,
                                  base=base, size=size, node=nodes[c], access=mo.access,
-                                 index=len(m.targets)))
+                                 index=len(m.targets), model=model, params=mo.params))
     m.nch = sum(x.channels for x in m.memories)
 
     m.apb = None
@@ -391,6 +404,44 @@ def _node(v, what, cols, rows):
     if not (0 <= x < cols and 0 <= y < rows):
         raise SpecError(f"{what}: [{x}, {y}] outside the {cols}x{rows} mesh")
     return (x, y)
+
+
+# DRAM models behind a memory channel (memories[].model). vip: the AXI slave
+# VIP answers after access_cycles; ddr4: vip/dram/soc_ddr4_chan (open-ip
+# DDR4_JEDEC_AXI controller + PHY + ddr4_dev_model, or Micron's DDR4 model
+# when the build has it). Presets give soc_ddr4_chan parameters in nCK.
+DRAM_MODELS = ("vip", "ddr4")
+DDR4_PRESETS = {
+    # tCK ps (kept a multiple of 4 for the behavioural PHY), CL, CWL, then ns timings
+    "ddr4-3200": dict(TCK_PS=628, CL=22, CWL=16, ns=dict(T_RCD=13.75, T_RP=13.75, T_RAS=32, T_RC=45.75,
+                      T_RRD_S=5.3, T_RRD_L=6.4, T_FAW=30, T_WTR_S=2.5, T_WTR_L=7.5, T_WR=15,
+                      T_RTP=7.5, T_RFC=350, T_REFI=7800), T_CCD_L=8),
+    "ddr4-2666": dict(TCK_PS=752, CL=19, CWL=14, ns=dict(T_RCD=14.25, T_RP=14.25, T_RAS=32, T_RC=46.25,
+                      T_RRD_S=5.3, T_RRD_L=6.4, T_FAW=30, T_WTR_S=2.5, T_WTR_L=7.5, T_WR=15,
+                      T_RTP=7.5, T_RFC=350, T_REFI=7800), T_CCD_L=7),
+}
+DDR4_MIN_NCK = dict(T_RRD_S=4, T_RRD_L=4, T_WTR_S=2, T_WTR_L=4, T_RTP=4, T_WR=10)
+
+
+def _dram_params(model, timing, mp, what):
+    """soc_ddr4_chan parameters from the timing preset (default ddr4-3200),
+    overridden by model_params. '_zero_load_ps' is the closed-bank read time."""
+    preset = timing if timing in DDR4_PRESETS else "ddr4-3200"
+    if timing and timing not in DDR4_PRESETS:
+        raise SpecError(f"{what}: timing {timing!r} has no ddr4 preset ({', '.join(DDR4_PRESETS)})")
+    p = DDR4_PRESETS[preset]
+    t = p["TCK_PS"]
+    out = dict(TCK_PS=t, CL=p["CL"], CWL=p["CWL"], T_CCD_S=4, T_CCD_L=p["T_CCD_L"])
+    for k, ns in p["ns"].items():
+        out[k] = max(DDR4_MIN_NCK.get(k, 1), math.ceil(ns * 1000 / t - 0.025))
+    for k, v in mp.items():
+        if k not in ("NDEV", "TCK_PS", "CL", "CWL") and not k.startswith("T_"):
+            raise SpecError(f"{what}: unknown parameter {k!r}")
+        out[k] = num(v, f"{what}.{k}")
+    out.setdefault("NDEV", 1)
+    # ACT + tRCD + RD + CL + BL8 + PHY + two CDC crossings (~3 ns each way)
+    out["_zero_load_ps"] = (out["T_RCD"] + out["CL"] + 4 + 6) * out["TCK_PS"] + 2 * 6000
+    return out
 
 
 def _rtl(r, what):

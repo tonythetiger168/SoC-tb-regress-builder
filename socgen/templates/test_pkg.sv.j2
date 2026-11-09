@@ -133,6 +133,7 @@ package {{ m.name }}_test_pkg;
 
     task run_phase(uvm_phase phase);
       phase.raise_objection(this);
+      wait (dram_ready);
       #(20 * TCK * 1ns);
       body();
       #(50 * TCK * 1ns);

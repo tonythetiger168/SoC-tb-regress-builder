@@ -22,6 +22,9 @@ TOP      := $(TOP_$(TB))
 FLIST    := $(or $(FLIST_$(TB)),sim/$(TB).f)
 JOBS     ?= $(shell nproc)
 PLUSARGS ?=
+# Micron vendor models (scripts/fetch_micron_models.sh): added to every build
+# when present; benches fall back to the open models otherwise
+MICRON_F ?= $(wildcard ext/micron/micron.f)
 
 .PHONY: build run regress vip_build vip_run uvm clean
 
@@ -35,7 +38,7 @@ build: uvm
 	mkdir -p $(BUILD)
 	verilator --binary --timing -j $(JOBS) -Wno-fatal -Wno-lint -Wno-style \
 	  --timescale 1ns/1ps --top-module $(TOP) -Mdir $(BUILD)/obj +define+UVM_NO_DPI \
-	  +incdir+$(UVM_HOME) $(UVM_HOME)/uvm_pkg.sv -f $(FLIST) > $(BUILD)/build.log 2>&1 \
+	  +incdir+$(UVM_HOME) $(UVM_HOME)/uvm_pkg.sv $(if $(MICRON_F),-f $(MICRON_F)) -f $(FLIST) > $(BUILD)/build.log 2>&1 \
 	  || (grep -E '^%Error' $(BUILD)/build.log | head -20; exit 1)
 RUN_CMD = $(EXE) +UVM_TESTNAME=$(TEST) +verilator+seed+$(SEED) $(PLUSARGS)
 else ifeq ($(SIM),vcs)

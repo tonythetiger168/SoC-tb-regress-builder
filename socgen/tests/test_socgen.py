@@ -317,3 +317,57 @@ endmodule
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DramModel(unittest.TestCase):
+    """memories[].model: ddr4 puts soc_ddr4_chan on every channel of that memory."""
+
+    def _spec(self, **mem):
+        r = raw("mini_soc.yaml")
+        r["memories"][0].update(mem)
+        return spec.elaborate(r, "mini_soc.yaml")
+
+    def test_default_is_vip(self):
+        m = self._spec()
+        self.assertTrue(all(t.model == "vip" for t in m.targets if t.kind == "channel"))
+
+    def test_ddr4_params_and_access(self):
+        m = self._spec(model="ddr4", timing="ddr4-2666", model_params={"NDEV": 2}, access_cycles=None)
+        t = next(t for t in m.targets if t.kind == "channel")
+        self.assertEqual(t.model, "ddr4")
+        self.assertEqual(t.params["TCK_PS"], 752)
+        self.assertEqual(t.params["CL"], 19)
+        self.assertEqual(t.params["T_RCD"], 19)       # 14.25 ns / 0.752 ns
+        self.assertEqual(t.params["NDEV"], 2)
+        self.assertNotIn("_zero_load_ps", t.params)
+        self.assertGreater(t.access, 20)              # closed-bank read, derived
+
+    def test_errors(self):
+        with self.assertRaises(SpecError):
+            self._spec(model="hbm9")
+        with self.assertRaises(SpecError):
+            self._spec(model_params={"NDEV": 2})                      # needs a DRAM model
+        with self.assertRaises(SpecError):
+            self._spec(model="ddr4", timing="lpddr5-6400")            # no ddr4 preset
+        with self.assertRaises(SpecError):
+            self._spec(model="ddr4", model_params={"FOO": 1})
+
+    @unittest.skipUnless(HAVE_IP and os.path.exists(os.path.join(IP_ROOT, "rtl", "DDR4_JEDEC_AXI_top.sv")),
+                         "open-ip-portfolio with DDR4_JEDEC_AXI not found")
+    def test_generate(self):
+        import socgen
+        m = self._spec(model="ddr4")
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "out")
+            socgen.generate(m, out, IP_ROOT, os.path.join(SOCGEN, "specs", "mini_soc.yaml"), False)
+            top = open(os.path.join(out, "tb", "mini_soc_tb_top.sv")).read()
+            env = open(os.path.join(out, "tb", "mini_soc_env_pkg.sv")).read()
+            pkg = open(os.path.join(out, "rtl", "mini_soc_pkg.sv")).read()
+            fl = open(os.path.join(out, "sim", "files.f")).read()
+        nch = sum(1 for t in m.targets if t.kind == "channel")
+        self.assertEqual(top.count("soc_ddr4_chan #("), nch)
+        self.assertIn("dram_ready = 1'b1;", top)
+        self.assertIn("bit dram_ready = 1'b0;", pkg)
+        self.assertRegex(env, r"NAXI_S = %d;" % (len(m.targets) - nch - sum(1 for t in m.targets if t.kind not in ("channel", "memory", "vip"))))
+        for f in ("rtl/ip/ddr4_jedec_ctrl.sv", "rtl/ip/ddr4_dev_model.sv", "vip/dram/soc_ddr4_chan.sv"):
+            self.assertIn(f, fl)

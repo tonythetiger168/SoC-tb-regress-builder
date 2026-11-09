@@ -93,7 +93,23 @@ module {{ m.name }}_tb_top;
     .{{ x.rtl.prefix }}{{ sig }}(s_if[S_{{ x.name|upper }}].{{ sig }}){% endfor %}
 
   );
-{% endfor %}
+{% endfor %}{% for t in dram_chans %}
+  // ---------------- DRAM channel {{ t.name }}: {{ t.model }} model ----------------
+  soc_ddr4_chan #(.NAME("{{ t.name }}"), .IDW(8){% for k, v in t.params.items() %}, .{{ k }}({{ v }}){% endfor %}) u_{{ t.name }} (
+    .aclk({{ m.clock.name }}), .aresetn(aresetn){% for sig in axi_sigs %},
+    .s_{{ sig }}(s_if[S_{{ t.name|upper }}].{{ sig }}){% endfor %}
+
+  );
+{% endfor %}{% if dram_chans %}
+  initial begin
+    wait ({% for t in dram_chans %}u_{{ t.name }}.init_done{{ ' && ' if not loop.last }}{% endfor %});
+    dram_ready = 1'b1;
+    `uvm_info("DRAM", "all DRAM channels initialised", UVM_LOW)
+  end
+{% for t in dram_chans %}  always @(u_{{ t.name }}.errors)
+    if (u_{{ t.name }}.errors != 0)
+      `uvm_error("DRAM", $sformatf("{{ t.name }}: DRAM device model reports %0d protocol / timing violations", u_{{ t.name }}.errors))
+{% endfor %}{% endif %}
   initial begin
     if ($test$plusargs("VCD")) begin
       $dumpfile("{{ m.name }}.vcd");
