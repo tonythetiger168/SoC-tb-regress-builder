@@ -258,19 +258,22 @@ def elaborate(raw, path="<spec>"):
     for i, sl in enumerate(raw.get("slaves") or []):
         w = f"slaves[{i}]"
         keys(sl, ["name", "kind", "base", "size", "node", "access_cycles", "slot_size",
-                  "peripherals", "rtl"], w, required=["name", "kind", "base", "size"])
+                  "peripherals", "rtl", "periph", "prefix"], w, required=["name", "kind", "base", "size"])
         name = ident(sl["name"], f"{w}.name")
         kind = sl["kind"]
-        if kind not in ("memory", "apb_bridge", "vip", "rtl"):
-            raise SpecError(f"{w}.kind: memory | apb_bridge | vip | rtl")
+        if kind not in ("memory", "apb_bridge", "vip", "rtl", "periph"):
+            raise SpecError(f"{w}.kind: memory | apb_bridge | vip | rtl | periph")
         if (kind == "rtl") != ("rtl" in sl):
             raise SpecError(f"{w}: kind rtl and an rtl block go together")
+        if (kind == "periph") != ("periph" in sl) or ("prefix" in sl and kind != "periph"):
+            raise SpecError(f"{w}: kind periph and periph (a peripheral name) go together; prefix only with periph")
         base, size = num(sl["base"], f"{w}.base"), num(sl["size"], f"{w}.size")
         if base % 4096 or size % 4096:
             raise SpecError(f"{w}: base and size must be 4 KB aligned")
         to = Obj(name=name, kind=kind, base=base, size=size, node=node(sl.get("node"), f"{w}.node"),
                  access=num(sl.get("access_cycles", 4 if kind == "apb_bridge" else 2), w),
-                 index=len(m.targets), rtl=_rtl(sl["rtl"], f"{w}.rtl") if kind == "rtl" else None)
+                 index=len(m.targets), rtl=_rtl(sl["rtl"], f"{w}.rtl") if kind == "rtl" else None,
+                 periph=sl.get("periph"), prefix=str(sl.get("prefix", "s_")))
         if kind == "apb_bridge":
             if m.apb is not None:
                 raise SpecError(f"{w}: only one apb_bridge per SoC")
@@ -285,6 +288,16 @@ def elaborate(raw, path="<spec>"):
         m.slaves.append(to)
     if m.iommus and m.apb is None:
         raise SpecError("iommus need an apb_bridge slave for their register blocks")
+    # kind periph: the NoC port is the AXI subordinate port of an APB peripheral (e.g. an XIP window)
+    for sl in m.slaves:
+        if sl.kind != "periph":
+            continue
+        slot = next((x for x in (m.apb.slots if m.apb else []) if x.name == sl.periph), None)
+        if slot is None or slot.kind != "ip":
+            raise SpecError(f"slave {sl.name}.periph: {sl.periph!r} is not an ip peripheral of the apb_bridge")
+        if slot.axi_slave is not None:
+            raise SpecError(f"slave {sl.name}.periph: {sl.periph} already serves slave {slot.axi_slave.name}")
+        slot.axi_slave = sl
     if not m.targets:
         raise SpecError("no memories or slaves")
     if len(m.targets) > 63:
@@ -510,11 +523,14 @@ def _placement(pl, nch, what, node, topo, rows, cols):
 
 
 def _inout(x, what):
-    """inout entry: "pin", "pin[3]", "pin[7:4]" or {pin: "dat[0]", port: dat0}"""
-    port = None
+    """inout entry: "pin", "pin[3]", "pin[7:4]" or {pin: "dat[0]", port: dat0}; out / oe name the
+    model's drive and enable outputs when they are not <port>_s / <port>_s_oe"""
+    port = out = oe = None
     if isinstance(x, dict):
-        keys(x, ["pin", "port"], what, required=["pin"])
-        port, x = x.get("port"), x["pin"]
+        keys(x, ["pin", "port", "out", "oe"], what, required=["pin"])
+        if ("out" in x) != ("oe" in x):
+            raise SpecError(f"{what}: out and oe go together")
+        port, out, oe, x = x.get("port"), x.get("out"), x.get("oe"), x["pin"]
     mm = re.fullmatch(r"\s*(\w+)\s*(?:\[\s*(\d+)\s*(?::\s*(\d+)\s*)?\])?\s*", str(x))
     if not mm:
         raise SpecError(f"{what}: {x!r} is not pin, pin[n] or pin[msb:lsb]")
@@ -522,7 +538,7 @@ def _inout(x, what):
     lo = hi if mm.group(3) is None else int(mm.group(3))
     if hi is not None and lo > hi:
         raise SpecError(f"{what}: {x!r}: msb < lsb")
-    return Obj(pin=mm.group(1), hi=hi, lo=lo, port=port or mm.group(1))
+    return Obj(pin=mm.group(1), hi=hi, lo=lo, port=port or mm.group(1), out=out, oe=oe)
 
 
 def _apb_slots(periphs, br, m, what):
@@ -586,7 +602,7 @@ def _apb_slots(periphs, br, m, what):
                      clock=v.get("clock", "clk"), reset=v.get("reset", "rst_n"))
         slots.append(Obj(name=ident(p["name"], f"{w}.name"), slot=slot, kind=kind, pins_vip=pv,
                          ip=p.get("ip"), regs=p.get("regs") or p.get("ral"), iommu=io,
-                         rtl_master=p.get("rtl_master"),
+                         rtl_master=p.get("rtl_master"), axi_slave=None,
                          params=dict(p.get("params") or {}), pins=dict(p.get("pins") or {}),
                          base=br.base + slot * br.slot_size))
     return sorted(slots, key=lambda s: s.slot)
@@ -671,7 +687,7 @@ def _derive_path_addrs(m):
         sl = (mem.size // nm) & ~(mem.granule - 1)
         mem.slice = sl
     for s in m.slaves:
-        if s.kind in ("memory", "vip", "rtl"):
+        if s.kind in ("memory", "vip", "rtl", "periph"):
             s.slice = (s.size // nm) & ~0xFFF
             if s.slice == 0:
                 raise SpecError(f"{s.name}: too small for a 4 KB slice per master")
