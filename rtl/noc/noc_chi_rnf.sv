@@ -115,9 +115,11 @@ module noc_chi_rnf
   logic [1:0]   dat_err;
 
   // ---------------- snoops ----------------
-  chi_snp_t   snq [4];                    // one snoop per home in flight (NHN <= 4)
-  logic [2:0] nsnq;
-  logic [1:0] wsnq, rsnq;
+  // a home sends at most one snoop per transaction slot: room for all of them
+  localparam int SQB = $clog2(NHN * HN_SLOTS) > 0 ? $clog2(NHN * HN_SLOTS) : 1;
+  chi_snp_t   snq [2 ** SQB];
+  logic [SQB:0]   nsnq;
+  logic [SQB-1:0] wsnq, rsnq;
   // after the pop: CompData to the requester (DCT, F0 / F1), then data to the home (H0 / H1)
   typedef enum logic [2:0] { S_IDLE, S_F0, S_F1, S_H0, S_H1 } sst_e;
   sst_e       sst;
@@ -267,7 +269,7 @@ module noc_chi_rnf
       if (st == M_ACK && room_rsp) begin
         push_rsp = 1'b1;
         p_rsp.nid    = ack_nid;
-        p_rsp.txnid  = txn;
+        p_rsp.txnid  = txn - 1'b1;          // the request's TxnID (txn moved on at its push)
         p_rsp.opcode = RSP_COMPACK;
       end
       if (st == M_WAIT && wk == W_NSDBID && rsp_got && room_dat2) begin
@@ -327,12 +329,12 @@ module noc_chi_rnf
         dat_err  <= rxdat_flit.resperr;
         dat_n    <= dat_n + 2'd1;
       end
-      if (rxsnp_valid) begin snq[wsnq] <= rxsnp_flit; wsnq <= wsnq + 2'd1; end
+      if (rxsnp_valid) begin snq[wsnq] <= rxsnp_flit; wsnq <= wsnq + 1'b1; end
 
       // ---------------- snoop FSM ----------------
       unique case (sst)
         S_IDLE: if (snp_pop) begin
-          rsnq <= rsnq + 2'd1;
+          rsnq <= rsnq + 1'b1;
           s_idx <= si; s_home <= sn.nid; s_txn <= sn.txnid;
           s_fwdnid <= sn.fwdnid; s_fwdtxn <= sn.fwdtxnid;
           s_hdat <= p_hdat;
@@ -363,7 +365,7 @@ module noc_chi_rnf
         S_H1: if (push_dat) sst <= S_IDLE;
         default: sst <= S_IDLE;
       endcase
-      nsnq <= nsnq + 3'(rxsnp_valid) - 3'(snp_pop);
+      nsnq <= nsnq + (SQB+1)'(rxsnp_valid) - (SQB+1)'(snp_pop);
 
       // ---------------- main FSM ----------------
       unique case (st)

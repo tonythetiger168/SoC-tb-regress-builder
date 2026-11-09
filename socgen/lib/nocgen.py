@@ -68,7 +68,7 @@ def params(m):
     p = dict(nm=nm, ns=ns, ngw=ngw, nhn=nhn, nep=nep, epb=clog2(nep + 1),
              xb=2 if m.noc.router_ip == "orca" else clog2(m.noc.cols),
              yb=2 if m.noc.router_ip == "orca" else clog2(m.noc.rows),
-             qd=(nm + nhn) * m.noc_ni.maxo, hq=2 * nm * m.noc_ni.maxo)
+             qd=nm * m.noc_ni.maxo + nhn * max(m.noc_ni.maxo, 2 * (m.chi.slots if nhn else 1)), hq=2 * nm * m.noc_ni.maxo)
     return p
 
 
@@ -172,6 +172,7 @@ package noc_cfg_pkg;
   localparam int HN_EP = NM + NS + NGW;           // the first HN-F endpoint
   localparam int HN_G = {int(math.log2(m.chi.granule)) if m.chi.rn else 12};                     // homes interleave on 2**HN_G bytes
   localparam int HN_K = {m.chi.hbits if m.chi.rn else 0};                      // log2(NHN)
+  localparam int HN_SLOTS = {m.chi.slots if m.chi.rn else 1};                  // transactions in flight per home
   localparam bit CHI_DMT = 1'b{1 if m.chi.dmt else 0};             // memory data straight to the requester
   localparam bit CHI_DCT = 1'b{1 if m.chi.dct else 0};             // the owner forwards the line to the requester
   localparam int NRN = {len(m.chi.rn) if m.chi.rn else 1};                   // RN-F ports (protocol chi masters)
@@ -450,11 +451,11 @@ def noc_module(m):
 def _chiplet(m, p):
     """one mesh per die, a gateway + UCIe adapter per die, the PHY model between them"""
     # every packet that can be in flight: the master NIs' chunks, plus CHI
-    # (per RN-F a request, write data and a CompAck; per home one snoop per
-    # RN-F with up to four data flits and a response each, and its CompData /
-    # DMT reads)
+    # (per RN-F a request, write data and a CompAck; per home transaction
+    # slot one snoop per RN-F with up to four data flits and a response each,
+    # and its CompData / DMT reads)
     nrn, nhn = len(m.chi.rn), p["nhn"]
-    chi = 4 * nrn + nhn * (6 * nrn + 8) if nhn else 0
+    chi = 4 * nrn + nhn * m.chi.slots * (6 * nrn + 8) if nhn else 0
     qd = 2 * p["nm"] * m.noc_ni.maxo + chi
     nd = m.chiplet.dies
     L = [f"  // ---------------- chiplet: {nd} dies, one mesh each, UCIe die-to-die link ----------------"]

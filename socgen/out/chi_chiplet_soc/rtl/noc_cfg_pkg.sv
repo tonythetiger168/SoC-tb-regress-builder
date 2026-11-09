@@ -78,6 +78,7 @@ package noc_cfg_pkg;
   localparam int HN_EP = NM + NS + NGW;           // the first HN-F endpoint
   localparam int HN_G = 12;                     // homes interleave on 2**HN_G bytes
   localparam int HN_K = 1;                      // log2(NHN)
+  localparam int HN_SLOTS = 4;                  // transactions in flight per home
   localparam bit CHI_DMT = 1'b1;             // memory data straight to the requester
   localparam bit CHI_DCT = 1'b1;             // the owner forwards the line to the requester
   localparam int NRN = 2;                   // RN-F ports (protocol chi masters)

@@ -448,9 +448,9 @@ def _chi(m, c, model, cols, rows):
         if rn:
             raise SpecError(f"masters {rn[0].name}: protocol chi needs a chi section")
         m.chi = Obj(home=None, homes=[], coherent=[], lines=0, rn=[], coh_targets=set(), base=None,
-                    dmt=False, dct=False, granule=4096, hbits=0)
+                    dmt=False, dct=False, granule=4096, hbits=0, slots=1)
         return
-    keys(c, ["home", "coherent", "cache_lines", "dmt", "dct", "home_granule"], "chi",
+    keys(c, ["home", "coherent", "cache_lines", "dmt", "dct", "home_granule", "home_slots"], "chi",
          required=["home", "coherent"])
     if model != "mesh":
         raise SpecError("chi: needs noc.model: mesh")
@@ -475,6 +475,9 @@ def _chi(m, c, model, cols, rows):
         homes.append(Obj(node=_node(nd, w, cols, rows), die=die))
     if len(homes) not in (1, 2, 4):
         raise SpecError("chi.home: 1, 2 or 4 homes (the address interleaves over them)")
+    slots = num(c.get("home_slots", 4), "chi.home_slots")
+    if not 1 <= slots <= 16:
+        raise SpecError("chi.home_slots: 1 to 16 transactions per home")
     gran = num(c.get("home_granule", 4096), "chi.home_granule")
     if not pow2(gran) or gran < 4096:
         raise SpecError("chi.home_granule: power of two >= 4 KB (an AXI burst never crosses a home)")
@@ -500,7 +503,7 @@ def _chi(m, c, model, cols, rows):
     m.chi = Obj(home=homes[0].node, homes=homes, coherent=list(coh), lines=lines,
                 rn=[x.index for x in rn], coh_targets=ts, base=base,
                 dmt=bool(c.get("dmt", True)), dct=bool(c.get("dct", True)),
-                granule=gran, hbits=int(math.log2(len(homes))))
+                granule=gran, hbits=int(math.log2(len(homes))), slots=slots)
 
 
 def home_of(m, a):

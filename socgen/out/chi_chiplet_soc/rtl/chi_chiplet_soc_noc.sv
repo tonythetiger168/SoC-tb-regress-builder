@@ -292,7 +292,7 @@ module chi_chiplet_soc_noc
   logic         gw_ovf [2], lerr [2], replay [2];
   logic [31:0]  n_replay;
   // die 0: gateway on router [1, 1]
-  noc_d2d_gw #(.SELF(NM + NS + 0), .QD(112)) u_gw0 (.clk, .rst_n,
+  noc_d2d_gw #(.SELF(NM + NS + 0), .QD(232)) u_gw0 (.clk, .rst_n,
     .inj_flit(inj_flit[NM + NS + 0]), .inj_valid(inj_valid[NM + NS + 0]), .inj_ready(inj_ready[NM + NS + 0]),
     .ej_flit(ej_flit[NM + NS + 0]), .ej_valid(ej_valid[NM + NS + 0]), .ej_ready(ej_ready[NM + NS + 0]),
     .tx_valid(tx_v[0]), .tx_data(tx_d[0]), .tx_ready(tx_r[0]), .rx_valid(rx_v[0]), .rx_data(rx_d[0]),
@@ -305,7 +305,7 @@ module chi_chiplet_soc_noc
     .state(lstate[0]), .cap(), .tx_pend(), .ev_crc(), .ev_replay(replay[0]), .ev_retrain(),
     .ev_pmnak(), .ev_proto(), .ev_lerr(lerr[0]));
   // die 1: gateway on router [0, 0]
-  noc_d2d_gw #(.SELF(NM + NS + 1), .QD(112)) u_gw1 (.clk, .rst_n,
+  noc_d2d_gw #(.SELF(NM + NS + 1), .QD(232)) u_gw1 (.clk, .rst_n,
     .inj_flit(inj_flit[NM + NS + 1]), .inj_valid(inj_valid[NM + NS + 1]), .inj_ready(inj_ready[NM + NS + 1]),
     .ej_flit(ej_flit[NM + NS + 1]), .ej_valid(ej_valid[NM + NS + 1]), .ej_ready(ej_ready[NM + NS + 1]),
     .tx_valid(tx_v[1]), .tx_data(tx_d[1]), .tx_ready(tx_r[1]), .rx_valid(rx_v[1]), .rx_data(rx_d[1]),
