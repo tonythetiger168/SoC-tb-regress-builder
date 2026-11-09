@@ -1,0 +1,3 @@
+tv8k_npu_gemm_test   20
+tv8k_npu_gemm_test   5  +NPU_JOBS=16 +NPU_KMAX=2048 +VDEC_BG=100
+tv8k_npu_gemm_test   5  +SOC_TIMING=0

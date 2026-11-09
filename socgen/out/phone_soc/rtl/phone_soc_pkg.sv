@@ -241,6 +241,10 @@ package phone_soc_pkg;
   // ---------------- master kind ----------------
   localparam bit M_IS_RTL [NM] = '{ 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0 };
 
+  // ---------------- AMBA protocol of each NoC port (noc.model: mesh) ----------------
+  localparam string M_PROTO [NM] = '{ "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4" };
+  localparam string S_PROTO [NS] = '{ "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4", "axi4" };
+
   // ---------------- QoS ----------------
   localparam int M_PRIORITY [NM] = '{ 10, 4, 4, 12, 6, 6, 6, 14, 11, 9, 5, 2, 3, 2, 1 };
   localparam string M_QOS [NM] = '{ "nrt", "nrt", "nrt", "rt", "nrt", "nrt", "nrt", "rt", "rt", "rt", "nrt", "be", "nrt", "be", "be" };

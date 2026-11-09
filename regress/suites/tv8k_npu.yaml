@@ -1,0 +1,16 @@
+# Subsystem suite of the 8K TV SoC: the NPU is xuanji-core's NPU subsystem
+# (orca_npu_ss_apb, X1: 8x8 INT8 array, 4 CUs; private, fetched into ext/ by
+# scripts/fetch_private_ip.sh) on the xuanji NoC: registers behind npu_regs via
+# AXI4 -> APB4, its 64-byte line DMA port on the NPU master NI. The CPU VIP runs
+# GEMM jobs (DMA A/B in, GEMM, DMA C out) through the NoC; C is checked against
+# the product, plus a 2D DMA copy. Without xuanji-core the suite is not run.
+name: tv8k_npu
+level: subsystem
+soc: tv8k
+subsystem: npu
+description: GEMM jobs and 2D DMA by the xuanji NPU subsystem RTL out of DRAM through the NoC, checked against the computed product.
+filelist: sim/tv8k_npu.f
+top: tv8k_noc_tb_top
+list: {default: regress/lists/tv8k_npu.txt, nightly: regress/lists/tv8k_npu_nightly.txt}
+cov_include: ["*rtl/tv8k/*"]
+requires: [ext/xuanji-core/rtl/npu/orca_npu_ss_apb.sv]

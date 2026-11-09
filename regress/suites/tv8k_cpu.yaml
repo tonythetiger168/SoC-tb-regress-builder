@@ -1,0 +1,19 @@
+# Subsystem suite of the 8K TV SoC: the application CPU is xuanji-core's
+# RV64IMAC out-of-order core (orca_v63_cpu_core; private, fetched into ext/ by
+# scripts/fetch_private_ip.sh) on the xuanji NoC, its L2 line port bridged to
+# the CPU master NI (tv8k_core2axi). It boots sw/tv8k_cpu (built by
+# make tv8k_cpu_sw) from DRAM through the NoC: fills a table, sorts it, copies
+# it and writes a signature, all checked at the end, with background traffic
+# from the other masters. Without xuanji-core or the program the suite is not run.
+name: tv8k_cpu
+level: subsystem
+soc: tv8k
+subsystem: cpu
+description: The xuanji RV64 core boots a sort program from DRAM through the NoC; result and signature checked.
+filelist: sim/tv8k_cpu.f
+top: tv8k_noc_tb_top
+list: {default: regress/lists/tv8k_cpu.txt, nightly: regress/lists/tv8k_cpu_nightly.txt}
+cov_include: ["*rtl/tv8k/*"]
+timeout: 3600
+requires: [ext/xuanji-core/rtl/cpu/orca_v63_cpu_core.sv, ext/xuanji-core/rtl/noc/orca_noc_router.sv,
+           build/tv8k_cpu/tv8k_cpu.hex]

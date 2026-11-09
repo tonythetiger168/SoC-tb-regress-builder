@@ -1,0 +1,9 @@
+# Subsystem suite: on-chip SRAM (open-ip AXI4_top) through the interconnect
+name: amba_sram
+level: subsystem
+soc: amba
+subsystem: sram
+description: Random bursts in the SRAM window and over its edge (WRAP, long bursts, out of range).
+filelist: sim/soc.f
+top: soc_tb_top
+list: {default: regress/lists/amba_sram.txt, nightly: regress/lists/amba_sram_nightly.txt}

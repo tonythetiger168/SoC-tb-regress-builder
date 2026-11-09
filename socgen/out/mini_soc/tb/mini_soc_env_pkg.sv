@@ -382,6 +382,7 @@ package mini_soc_env_pkg;
     uvm_analysis_imp_mst #(axi4_item, mini_soc_scoreboard) mst_imp;
     byte unsigned shadow [int unsigned];     // byte address -> last written value
     int unsigned n_checks, n_err;
+    bit [31:0] ign_lo [$], ign_hi [$];       // ranges not checked (racy flags of the coherence test)
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -401,7 +402,9 @@ package mini_soc_env_pkg;
       if (si == S_DEF) begin
         foreach (t.resp[i]) begin
           n_checks++;
-          if (t.resp[i] != AXI4_DECERR) err({who, $sformatf(": expected DECERR, got %s", t.resp[i].name())});
+          // AHB-Lite has one error response: a decode miss from an AHB master comes back as SLVERR
+          if (t.resp[i] != AXI4_DECERR && !(M_PROTO[t.port] == "ahb" && t.resp[i] == AXI4_SLVERR))
+            err({who, $sformatf(": expected DECERR, got %s", t.resp[i].name())});
         end
         return;
       end
@@ -424,6 +427,9 @@ package mini_soc_env_pkg;
       // memory target
       for (int b = 0; b < t.beats(); b++) begin
         bit [31:0] a = t.beat_addr(b) & ~32'h3;
+        bit ign = 0;
+        foreach (ign_lo[k]) if (a >= ign_lo[k] && a < ign_hi[k]) ign = 1;
+        if (ign) continue;
         n_checks++;
         if (t.resp[t.write ? 0 : b] != AXI4_OKAY) begin
           err({who, $sformatf(": beat %0d answered %s", b, t.resp[t.write ? 0 : b].name())});
@@ -489,8 +495,11 @@ package mini_soc_env_pkg;
       t_last = t.t_end;
       $display("LAT %s %s %s %0d", M_NAME[t.port], s, t.write ? "W" : "R", cyc);
       if (cfg.zero_load_check && si != S_DEF) begin
-        int lo = REQ_LAT[t.port][si] + RSP_LAT[t.port][si] + (S_KIND[si] == "apb_bridge" ? 0 : S_ACCESS[si]);
+        // a CHI master's cache hit is not bounded below by the NoC
+        int lo = (M_PROTO[t.port] == "chi") ? 0 :
+                 REQ_LAT[t.port][si] + RSP_LAT[t.port][si] + (S_KIND[si] == "apb_bridge" ? 0 : S_ACCESS[si]);
         int hi = IDEAL_LAT[t.port][si] + cfg.zero_load_slack + (t.write ? 2 : 1) * int'(t.len);
+
         if (cyc < lo)
           `uvm_error("LAT", $sformatf("%s -> %s %s: %0d cycles is below the NoC minimum %0d",
                      M_NAME[t.port], s, t.write ? "W" : "R", cyc, lo))

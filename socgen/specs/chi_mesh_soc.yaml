@@ -1,0 +1,66 @@
+# CHI coherence on the generated NoC RTL: two CPU clusters as CHI RN-Fs (each a
+# noc_chi_rnf cache in the bench), two HN-Fs (4 KB-interleaved) with exact snoop
+# filters keeping the DDR coherent, DMT and DCT, and AMBA masters as RN-Is
+# (their DDR accesses go through the home, which snoops the caches). Other
+# slaves are reached with ReadNoSnp / WriteNoSnpPtl through a home. CI-sized:
+# 2x2 mesh.
+socgen: 1
+soc: {name: chi_mesh_soc, prefix: cmesh, desc: CHI RN-F / HN-F / RN-I coherence on the generated NoC RTL}
+clock: {period_ns: 2.0}
+noc:
+  topology: mesh
+  rows: 2
+  cols: 2
+  timing: {ni_cycles: 1, router_cycles: 1, link_cycles: 1}
+  model: mesh
+  router: orca
+
+chi:
+  home: [[1, 0], [0, 1]]   # two HN-F routers; addresses interleave over them per 4 KB
+  dmt: true                # memory sends CompData straight to the requester
+  dct: true                # a unique owner forwards the line to the requester
+  coherent: [ddr]          # the home keeps this memory coherent
+  cache_lines: 16          # per RN-F: 16 x 64 B, direct-mapped (small: many evictions)
+
+traffic:
+  cpu:  {read_pct: 60, beats: [1, 8], targets: [ddr, sram, periph]}
+  dma:  {read_pct: 50, beats: [4, 16], targets: [ddr, sram]}
+  mcu:  {read_pct: 60, beats: [1, 4], targets: [ddr, sram, apb_ram]}
+
+masters:
+  - {name: cpu0, node: [0, 0], traffic: cpu, protocol: chi}
+  - {name: cpu1, node: [0, 1], traffic: cpu, protocol: chi}
+  - {name: dma,  node: [1, 1], traffic: dma}
+  - {name: mcu,  node: [1, 1], traffic: mcu, protocol: ahb}
+
+memories:
+  - name: ddr
+    kind: lpddr5
+    base: 0x8000_0000
+    size: 0x1000_0000
+    channels: 2
+    interleave: {granule: 0x1000, hash: xor}
+    access_cycles: 12
+    placement: {rows: [1], fill: block}
+
+slaves:
+  - {name: sram, kind: memory, base: 0x0, size: 0x1_0000, node: [0, 0], access_cycles: 1}
+  - {name: apb_ram, kind: memory, base: 0x2002_0000, size: 0x1_0000, node: [1, 0], protocol: apb}
+  - name: periph
+    kind: apb_bridge
+    base: 0x1000_0000
+    size: 0x1_0000
+    node: [1, 0]
+    peripherals:
+      - {name: gpio, ip: GPIO}
+      - {name: uart, ip: UART, pins: {rxd: "1'b1"}}
+
+regress:
+  ral_master: cpu0
+  lists:
+    testlist:
+      - {test: smoke,        seeds: 1}
+      - {test: ral,          seeds: 1}
+      - {test: path_latency, seeds: 1}
+      - {test: traffic,      seeds: 2}
+      - {test: coherence,    seeds: 2}

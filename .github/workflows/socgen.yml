@@ -1,9 +1,9 @@
 name: socgen
 on:
   push:
-    paths: ["socgen/**", "vip/**", "rtl/soc/axi2apb_bridge.sv", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
+    paths: ["socgen/**", "vip/**", "rtl/soc/axi2apb_bridge.sv", "rtl/noc/**", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
   pull_request:
-    paths: ["socgen/**", "vip/**", "rtl/soc/axi2apb_bridge.sv", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
+    paths: ["socgen/**", "vip/**", "rtl/soc/axi2apb_bridge.sv", "rtl/noc/**", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
   workflow_dispatch:
 jobs:
   socgen:
@@ -28,6 +28,12 @@ jobs:
           for s in socgen/specs/*.yaml; do python3 socgen/socgen.py "$s" --check; done
           python3 socgen/socgen.py socgen/specs/mini_soc.yaml
           python3 socgen/socgen.py socgen/specs/phone_soc.yaml
+          python3 socgen/socgen.py socgen/specs/mini_mesh_soc.yaml
+          python3 socgen/socgen.py socgen/specs/chiplet_soc.yaml
+          python3 socgen/socgen.py socgen/specs/chi_mesh_soc.yaml
+          python3 socgen/socgen.py socgen/specs/chi_mesh_soc.yaml --no-direct
+          python3 socgen/socgen.py socgen/specs/chi_chiplet_soc.yaml
+          python3 socgen/socgen.py socgen/specs/phone_soc.yaml --noc-model mesh
           git status --short socgen/out regress
       - name: Cache Verilator
         uses: actions/cache@v4
@@ -36,12 +42,12 @@ jobs:
           key: verilator-${{ env.VERILATOR_VERSION }}-${{ runner.os }}-ubuntu-24.04
       - name: Install tools
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq libfl2 ccache
+          sudo apt-get update -qq && sudo apt-get install -y -qq libfl2 ccache python3-yaml
           sudo mkdir -p /opt/verilator && sudo chown "$USER" /opt/verilator
           bash scripts/install_tools.sh
           echo "/opt/verilator/bin" >> "$GITHUB_PATH"
-      - name: mini_soc regression
-        run: python3 regress/regress.py --list regress/mini_soc_testlist.txt --jobs "$(nproc)"
+      - name: mini_soc regression (behavioural NoC; generated mesh RTL with every AMBA protocol; two-die UCIe chiplet; CHI coherence)
+        run: python3 regress/regress.py --suite mini_soc --suite mini_mesh_soc --suite chiplet_soc --suite chi_mesh_soc --suite chi_chiplet_soc --jobs "$(nproc)"
       - name: Summary
         if: always()
         run: cat regress_out/summary.md >> "$GITHUB_STEP_SUMMARY" || true

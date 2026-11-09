@@ -2,7 +2,11 @@
 # AMBA SoC UVM testbench -- build and run
 #   make build                       compile the SoC testbench (Verilator by default)
 #   make run TEST=soc_smoke_test SEED=1
-#   make regress [LIST=regress/testlist.txt JOBS=4]
+#   make regress                     every suite in regress/suites/, merged coverage + latency report
+#   make regress SUITE='amba_*' LEVEL=subsystem PROFILE=nightly
+#   make regress LIST=regress/testlist.txt     (legacy single test list)
+#   make suites                      list the suites
+#   make covmerge DIRS="out1 out2" OUT=cumulative
 #   make vip_build / make vip_run TEST=vip_axi4_loopback_test
 #   make build TB=<soc> for a socgen-generated bench (socgen/out/<soc>/socgen.mk)
 # SIM=verilator (default) | vcs | xrun | questa
@@ -14,13 +18,31 @@ UVM_HOME ?= $(CURDIR)/uvm-core/src
 BUILD    := build/$(SIM)/$(TB)
 TOP_soc  := soc_tb_top
 TOP_vip  := vip_tb_top
+TOP_tv8k_noc := tv8k_noc_tb_top
+TOP_tv8k_noc_open := tv8k_noc_tb_top
+TOP_tv8k_vdec := tv8k_noc_tb_top
+TOP_tv8k_npu := tv8k_noc_tb_top
+TOP_tv8k_cpu := tv8k_noc_tb_top
 -include $(wildcard socgen/out/*/socgen.mk)
 TOP      := $(TOP_$(TB))
 FLIST    := $(or $(FLIST_$(TB)),sim/$(TB).f)
+# TB=tv8k_noc needs the xuanji-core router (scripts/fetch_private_ip.sh puts it
+# in ext/); without it the build falls back to the open stand-in router
+ifeq ($(TB),tv8k_noc)
+ifeq ($(wildcard ext/xuanji-core/rtl/noc/orca_noc_router.sv),)
+$(info ext/xuanji-core not fetched: building tv8k_noc with the open router (sim/tv8k_noc_open.f))
+FLIST    := sim/tv8k_noc_open.f
+endif
+endif
 JOBS     ?= $(shell nproc)
 PLUSARGS ?=
 
-.PHONY: build run regress vip_build vip_run uvm clean
+.PHONY: build run regress suites covmerge vip_build vip_run uvm clean
+SUITE   ?=
+LEVEL   ?=
+SOC     ?=
+PROFILE ?= default
+OUT     ?= regress_out
 
 uvm: $(UVM_HOME)/uvm_pkg.sv
 $(UVM_HOME)/uvm_pkg.sv:
@@ -55,8 +77,29 @@ endif
 run:
 	$(RUN_CMD)
 
-regress:
-	python3 regress/regress.py --sim $(SIM) --jobs $(JOBS) $(if $(LIST),--list $(LIST),)
+# HEVC vectors for the tv8k VDEC bench (needs ext/c1p-codec)
+TV8K_VDEC_VEC ?= base lft4k lfw4k b10 aq16 w8k10
+.PHONY: tv8k_vdec_vec
+tv8k_vdec_vec:
+	@if [ -d ext/c1p-codec ]; then scripts/tv8k_vdec_prep.sh build/tv8k_vdec_vec $(TV8K_VDEC_VEC); \
+	else echo "ext/c1p-codec not fetched: tv8k_vdec suites will not run"; fi
+
+# RISC-V program for the tv8k CPU bench (clang + ld.lld)
+.PHONY: tv8k_cpu_sw
+tv8k_cpu_sw:
+	@if command -v clang >/dev/null && command -v ld.lld >/dev/null; then sw/tv8k_cpu/build.sh $(CURDIR)/build/tv8k_cpu; \
+	else echo "clang/ld.lld not found: tv8k_cpu suite will not run"; fi
+
+regress: tv8k_vdec_vec tv8k_cpu_sw
+	python3 regress/regress.py --sim $(SIM) --jobs $(JOBS) --profile $(PROFILE) --out $(OUT) \
+	  $(if $(LIST),--list $(LIST),) $(foreach s,$(SUITE),--suite '$(s)') $(foreach l,$(LEVEL),--level $(l)) \
+	  $(foreach c,$(SOC),--soc $(c))
+
+suites:
+	python3 regress/regress.py --list-suites
+
+covmerge:
+	python3 regress/covmerge.py $(DIRS) -o $(OUT)
 
 vip_build:
 	$(MAKE) build TB=vip
