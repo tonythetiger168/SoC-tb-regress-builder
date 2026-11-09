@@ -1,0 +1,6 @@
+build/
+regress_out/
+uvm-core
+uvm-core/
+*.vcd
+__pycache__/
