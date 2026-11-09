@@ -1,0 +1,87 @@
+# mini_soc on the generated NoC RTL (noc.model: mesh), with every AMBA port
+# protocol the NoC generator supports: AXI4, AXI4-Lite and AHB-Lite masters;
+# AXI4, AXI4-Lite, AHB-Lite and APB4 slave ports. CI-sized: 5 masters on a 2x2
+# mesh, 4-channel DDR, SRAMs, APB subsystem with open-ip GPIO/UART.
+socgen: 1
+soc: {name: mini_mesh_soc, prefix: mmesh, desc: mini_soc on the generated AMBA NoC RTL}
+clock: {period_ns: 2.0}
+noc:
+  topology: mesh
+  rows: 2
+  cols: 2
+  timing: {ni_cycles: 1, router_cycles: 1, link_cycles: 1}
+  model: mesh                # generated NoC RTL: routers + network interfaces + AMBA adapters
+  router: orca               # xuanji-core orca_noc_router when fetched, else the open router
+
+traffic:
+  cpu:  {read_pct: 60, beats: [1, 4], targets: [ddr, sram, periph]}
+  disp: {read_pct: 100, beats: 16, bandwidth_mbps: 400, pace: true, pattern: linear, region: {offset: 0x600_0000, size: 0x8000}, targets: [ddr]}
+  dma:  {read_pct: 50, beats: [4, 16], targets: [ddr, sram]}
+  blk:  {read_pct: 50, beats: [4, 8], pattern: block2d, block: [64, 8], stride: 1024, region: {offset: 0xC00_0000, size: 0x2000}, targets: [ddr]}
+  mcu:  {read_pct: 60, beats: [1, 4], targets: [ddr, sram, ahb_ram, lite_ram, apb_ram]}
+  ctl:  {read_pct: 50, beats: 1, targets: [sram, ahb_ram, lite_ram, apb_ram, periph]}
+
+masters:
+  - {name: cpu,  node: [0, 0], traffic: cpu,  qos: {class: nrt, priority: 8, latency_target: 80}}
+  - {name: disp, node: [1, 0], traffic: disp, iommu: iommu0, qos: {class: rt, priority: 12, latency_target: 120}}
+  - {name: dma,  node: [0, 1], traffic: dma,  qos: {class: be, priority: 1}}
+  - {name: mcu,  node: [1, 1], traffic: mcu,  protocol: ahb}
+  - {name: ctl,  node: [1, 1], traffic: ctl,  protocol: axi4lite}
+
+iommus:
+  - {name: iommu0, tlb_hit_cycles: 2}
+
+memories:
+  - name: ddr
+    kind: lpddr5
+    base: 0x8000_0000
+    size: 0x1000_0000
+    channels: 4
+    interleave: {granule: 0x1000, hash: xor}
+    access_cycles: 12
+    placement: {rows: [1], fill: block}
+
+slaves:
+  - {name: sram, kind: memory, base: 0x0, size: 0x1_0000, node: [0, 0], access_cycles: 1}
+  - {name: ahb_ram,  kind: memory, base: 0x2000_0000, size: 0x1_0000, node: [1, 1], protocol: ahb}
+  - {name: lite_ram, kind: memory, base: 0x2001_0000, size: 0x1_0000, node: [0, 1], protocol: axi4lite}
+  - {name: apb_ram,  kind: memory, base: 0x2002_0000, size: 0x1_0000, node: [1, 0], protocol: apb}
+  - name: periph
+    kind: apb_bridge
+    base: 0x1000_0000
+    size: 0x1_0000
+    node: [1, 0]
+    peripherals:
+      - {name: gpio, ip: GPIO}
+      - {name: uart, ip: UART, pins: {rxd: "1'b1"}}
+      - {name: ext,  vip: apb}
+
+register_blocks:
+  iommu:
+    desc: minimal IOMMU registers
+    regs:
+      - {name: ID,      offset: 0x000, access: RO,  reset: 0x494F0100}
+      - {name: CTRL,    offset: 0x004, access: RW,  fields: [{name: EN, bits: "0"}, {name: IRQ_EN, bits: "1"}]}
+      - {name: PT_BASE, offset: 0x008, access: RW,  fields: [{name: PPN, bits: "31:12"}]}
+      - {name: FAULT,   offset: 0x00C, access: W1C, fields: [{name: VALID, bits: "0"}]}
+      - {name: SCRATCH, offset: 0x010, access: RW}
+
+scenarios:
+  display_only:
+    desc: the display streams alone
+    masters: {disp: disp}
+  blit:
+    desc: the DMA copies 2D blocks while the CPU runs
+    masters: {dma: blk, cpu: cpu}
+
+regress:
+  ral_master: cpu
+  lists:
+    testlist:
+      - {test: smoke,        seeds: 1}
+      - {test: ral,          seeds: 1}
+      - {test: path_latency, seeds: 1}
+      - {test: traffic,      seeds: 2}
+      - {test: traffic,      seeds: 1, plusargs: "+SOC_TIMING=2"}
+      - {test: scenario,     seeds: 1, plusargs: "+SCENARIO=display_only"}
+      - {test: scenario,     seeds: 1, plusargs: "+SCENARIO=blit"}

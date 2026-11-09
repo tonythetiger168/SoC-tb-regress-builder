@@ -1,0 +1,424 @@
+// SPDX-License-Identifier: Apache-2.0
+// ============================================================================
+// noc_chi_rnf -- CHI RN-F with a small cache: AXI4 slave port (32-bit, from a
+// CPU model or the bench's AXI4 VIP) -> write-back cache -> CHI port
+// (noc_cfg_pkg chi_*_t channels, to noc_ni_chi)
+// ----------------------------------------------------------------------------
+//  * Cache: NL 64-byte lines, direct-mapped, MESI as CHI states I / SC / UC /
+//    UD. Addresses in coherent memory (noc_cfg_pkg::cacheable) are cached;
+//    everything else is one ReadNoSnp / WriteNoSnpPtl per beat.
+//  * One AXI burst at a time (reads and writes alternate), beat by beat:
+//      read hit            data from the line
+//      write hit, UC / UD  bytes written, line UD
+//      write hit, SC       CleanUnique; Comp UC -> UC, Comp I (the line was
+//                          lost to a snoop first) -> miss
+//      miss                victim out first (UD: WriteBackFull + two
+//                          CopyBackWrData; SC / UC: Evict), then ReadShared
+//                          (read) or ReadUnique (write), two CompData, CompAck
+//    so at most one request is outstanding.
+//  * Snoops (SnpShared, SnpCleanShared, SnpUnique) are answered between beats
+//    and while a request is outstanding: SnpResp with the new state, or
+//    SnpRespData (_PD) with the line when it is dirty.
+//  * RespErr maps to RRESP / BRESP: OK -> OKAY, DERR -> SLVERR, NDERR -> DECERR.
+// ============================================================================
+module noc_chi_rnf
+  import noc_cfg_pkg::*;
+#(
+  parameter int IDW = 4,
+  parameter int NL  = CHI_LINES
+)(
+  input  logic           clk,
+  input  logic           rst_n,
+  // ---------------- AXI4 slave port ----------------
+  input  logic [IDW-1:0] s_awid,
+  input  logic [31:0]    s_awaddr,
+  input  logic [7:0]     s_awlen,
+  input  logic [2:0]     s_awsize,
+  input  logic [1:0]     s_awburst,
+  input  logic [2:0]     s_awprot,
+  input  logic           s_awvalid,
+  output logic           s_awready,
+  input  logic [31:0]    s_wdata,
+  input  logic [3:0]     s_wstrb,
+  input  logic           s_wlast,
+  input  logic           s_wvalid,
+  output logic           s_wready,
+  output logic [IDW-1:0] s_bid,
+  output logic [1:0]     s_bresp,
+  output logic           s_bvalid,
+  input  logic           s_bready,
+  input  logic [IDW-1:0] s_arid,
+  input  logic [31:0]    s_araddr,
+  input  logic [7:0]     s_arlen,
+  input  logic [2:0]     s_arsize,
+  input  logic [1:0]     s_arburst,
+  input  logic [2:0]     s_arprot,
+  input  logic           s_arvalid,
+  output logic           s_arready,
+  output logic [IDW-1:0] s_rid,
+  output logic [31:0]    s_rdata,
+  output logic [1:0]     s_rresp,
+  output logic           s_rlast,
+  output logic           s_rvalid,
+  input  logic           s_rready,
+  // ---------------- CHI port ----------------
+  output logic           txreq_valid,
+  input  logic           txreq_ready,
+  output chi_req_t       txreq_flit,
+  output logic           txrsp_valid,
+  input  logic           txrsp_ready,
+  output chi_rsp_t       txrsp_flit,
+  output logic           txdat_valid,
+  input  logic           txdat_ready,
+  output chi_dat_t       txdat_flit,
+  input  logic           rxrsp_valid,
+  input  chi_rsp_t       rxrsp_flit,
+  input  logic           rxdat_valid,
+  input  chi_dat_t       rxdat_flit,
+  input  logic           rxsnp_valid,
+  input  chi_snp_t       rxsnp_flit
+);
+  localparam int IB = $clog2(NL);
+  localparam int TW = 26 - IB;
+  typedef enum logic [1:0] { CS_I = 2'd0, CS_SC = 2'd1, CS_UC = 2'd2, CS_UD = 2'd3 } cst_e;
+
+  // ---------------- cache ----------------
+  cst_e          cs   [NL];
+  logic [TW-1:0] ctag [NL];
+  logic [511:0]  cdat [NL];
+
+  // ---------------- TX queues (one writer per cycle: snoop or main) ----------------
+  chi_req_t qreq [2];  logic [1:0] nreq; logic wreq, rreq;
+  chi_rsp_t qrsp [4];  logic [2:0] nrsp; logic [1:0] wrsp, rrsp;
+  chi_dat_t qdat [4];  logic [2:0] ndat; logic [1:0] wdat, rdat;
+  logic     push_req, push_rsp, push_dat;
+  chi_req_t p_req;
+  chi_rsp_t p_rsp;
+  chi_dat_t p_dat;
+
+  assign txreq_valid = nreq != 0;  assign txreq_flit = qreq[rreq];
+  assign txrsp_valid = nrsp != 0;  assign txrsp_flit = qrsp[rrsp];
+  assign txdat_valid = ndat != 0;  assign txdat_flit = qdat[rdat];
+  wire room_req = nreq < 2'd2, room_rsp = nrsp < 3'd4, room_dat2 = ndat < 3'd3;
+
+  // ---------------- responses to our request (latched) ----------------
+  logic         rsp_got;
+  chi_rsp_t     rsp_q;
+  logic [1:0]   dat_n;
+  logic [255:0] dat_q [2];
+  logic [2:0]   dat_resp;
+  logic [1:0]   dat_err;
+
+  // ---------------- snoops ----------------
+  chi_snp_t   snq [2];
+  logic [1:0] nsnq;
+  logic       wsnq, rsnq;
+  typedef enum logic [1:0] { S_IDLE, S_DAT0, S_DAT1 } sst_e;
+  sst_e       sst;
+  logic [IB-1:0] s_idx;
+  logic [2:0]    s_resp;
+  logic [TAGW-1:0] s_txn;
+  wire  snp_busy = (nsnq != 0) || (sst != S_IDLE);
+
+  // ---------------- AXI burst ----------------
+  typedef enum logic [3:0] { M_IDLE, M_BEAT, M_WAIT, M_ACK, M_WBD0, M_WBD1, M_ROUT, M_B } mst_e;
+  typedef enum logic [2:0] { W_FILL, W_CU, W_EV, W_WB, W_NSRD, W_NSDBID, W_NSCOMP } wk_e;
+  mst_e st;
+  wk_e  wk;
+  logic           b_wr, last_rd;
+  logic [IDW-1:0] b_id;
+  logic [31:0]    b_addr;
+  logic [7:0]     b_len, b_i;
+  logic [2:0]     b_size;
+  logic [1:0]     b_burst;
+  logic [1:0]     b_worst;
+  logic [31:0]    r_data;
+  logic [1:0]     r_resp;
+  logic [TAGW-1:0] txn;
+  logic [IB-1:0]  wb_idx;
+  logic [2:0]     wb_resp;
+  logic [25:0]    wb_line;
+
+  function automatic logic [31:0] beat_addr(int unsigned i);
+    logic [31:0] nb = 32'd1 << b_size;
+    logic [31:0] tot = nb * (32'(b_len) + 1);
+    case (b_burst)
+      2'b00: return b_addr;
+      2'b10: return (b_addr & ~(tot - 1)) | ((b_addr + i * nb) & (tot - 1));
+      default: return (i == 0) ? b_addr : (b_addr & ~(nb - 1)) + i * nb;
+    endcase
+  endfunction
+
+  wire [31:0]   a    = beat_addr(b_i);
+  wire [IB-1:0] idx  = a[6 +: IB];
+  wire [TW-1:0] tg   = a[31:6+IB];
+  wire          hit  = cs[idx] != CS_I && ctag[idx] == tg;
+  wire          cach = cacheable(a);
+  wire          lastb = (b_i == b_len);
+
+  // main FSM may act this cycle (no snoop in progress)
+  wire go = !snp_busy;
+
+  // ---------------- AXI handshakes ----------------
+  wire pick_rd = s_arvalid && (!s_awvalid || !last_rd);
+  assign s_arready = (st == M_IDLE) && pick_rd;
+  assign s_awready = (st == M_IDLE) && !pick_rd && s_awvalid;
+  logic w_take;
+  assign s_wready = w_take;
+  assign s_rvalid = (st == M_ROUT);
+  assign s_rid    = b_id;
+  assign s_rdata  = r_data;
+  assign s_rresp  = r_resp;
+  assign s_rlast  = lastb;
+  assign s_bvalid = (st == M_B);
+  assign s_bid    = b_id;
+  assign s_bresp  = b_worst;
+
+  // ---------------- main FSM: what it pushes / takes this cycle ----------------
+  always_comb begin
+    push_req = 1'b0; p_req = '0;
+    w_take = 1'b0;
+    p_req.txnid = txn;
+    if (go) unique case (st)
+      M_BEAT: if (!b_wr || s_wvalid) begin
+        if (!cach) begin
+          push_req     = room_req;
+          p_req.opcode = b_wr ? REQ_WRITENOSNPPTL : REQ_READNOSNP;
+          p_req.addr   = a;
+          p_req.size   = b_size;
+        end else if (hit && b_wr && (cs[idx] == CS_UC || cs[idx] == CS_UD)) w_take = 1'b1;
+        else if (hit && b_wr) begin
+          push_req     = room_req;
+          p_req.opcode = REQ_CLEANUNIQUE;
+          p_req.addr   = {a[31:6], 6'd0};
+        end else if (!hit) begin
+          push_req     = room_req;
+          p_req.size   = 3'd6;
+          if (cs[idx] != CS_I) begin       // victim out first
+            p_req.opcode = (cs[idx] == CS_UD) ? REQ_WRITEBACKFULL : REQ_EVICT;
+            p_req.addr   = {ctag[idx], idx, 6'd0};
+          end else begin
+            p_req.opcode = b_wr ? REQ_READUNIQUE : REQ_READSHARED;
+            p_req.addr   = {a[31:6], 6'd0};
+          end
+        end
+      end
+      M_WAIT: if (wk == W_NSCOMP && rsp_got) w_take = 1'b1;
+      default: ;
+    endcase
+  end
+
+  // the snoop at the head of the queue
+  chi_snp_t      sn;
+  logic [IB-1:0] si;
+  logic          sh, sud, snp_pop;
+  assign sn  = snq[rsnq];
+  assign si  = sn.addr[6 +: IB];
+  assign sh  = cs[si] != CS_I && ctag[si] == sn.addr[31:6+IB];
+  assign sud = sh && cs[si] == CS_UD;
+  // taken this cycle: SnpResp pushed, or the SnpRespData sequence started
+  assign snp_pop = sst == S_IDLE && nsnq != 0 && room_rsp && room_dat2;
+
+  // snoop FSM / main FSM pushes on RSP and DAT (never both in one cycle)
+  always_comb begin
+    push_rsp = 1'b0; p_rsp = '0;
+    push_dat = 1'b0; p_dat = '0;
+    if (sst == S_IDLE && nsnq != 0) begin
+      if (!sud && snp_pop) begin
+        push_rsp = 1'b1;
+        p_rsp.txnid  = sn.txnid;
+        p_rsp.opcode = RSP_SNPRESP;
+        p_rsp.resp   = !sh ? RESP_I :
+                       (sn.opcode == SNP_UNIQUE) ? RESP_I :
+                       (sn.opcode == SNP_SHARED) ? RESP_SC :
+                       (cs[si] == CS_UC) ? RESP_UC : RESP_SC;
+      end
+    end else if (sst == S_DAT0 || sst == S_DAT1) begin
+      push_dat = 1'b1;
+      p_dat.txnid  = s_txn;
+      p_dat.opcode = DAT_SNPRESPDATA;
+      p_dat.resp   = s_resp;
+      p_dat.dataid = {sst == S_DAT1, 1'b0};
+      p_dat.be     = '1;
+      p_dat.data   = cdat[s_idx][256*(sst == S_DAT1) +: 256];
+    end else if (go) begin
+      if (st == M_ACK && room_rsp) begin
+        push_rsp = 1'b1;
+        p_rsp.txnid  = txn;
+        p_rsp.opcode = RSP_COMPACK;
+      end
+      if (st == M_WAIT && wk == W_NSDBID && rsp_got && room_dat2) begin
+        push_dat = 1'b1;
+        p_dat.txnid  = rsp_q.dbid;
+        p_dat.opcode = DAT_NONCOPYBACKWRDATA;
+        p_dat.dataid = {a[5], 1'b0};
+        p_dat.be[4*a[4:2] +: 4]     = s_wstrb;
+        p_dat.data[32*a[4:2] +: 32] = s_wdata;
+      end
+      if ((st == M_WBD0 || st == M_WBD1) && room_dat2) begin
+        push_dat = 1'b1;
+        p_dat.txnid  = rsp_q.dbid;
+        p_dat.opcode = DAT_COPYBACKWRDATA;
+        p_dat.resp   = wb_resp;
+        p_dat.dataid = {st == M_WBD1, 1'b0};
+        p_dat.be     = '1;
+        p_dat.data   = cdat[wb_idx][256*(st == M_WBD1) +: 256];
+      end
+    end
+  end
+
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      for (int i = 0; i < NL; i++) begin cs[i] <= CS_I; ctag[i] <= '0; cdat[i] <= '0; end
+      nreq <= '0; wreq <= '0; rreq <= '0;
+      nrsp <= '0; wrsp <= '0; rrsp <= '0;
+      ndat <= '0; wdat <= '0; rdat <= '0;
+      rsp_got <= 1'b0; rsp_q <= '0; dat_n <= '0; dat_q[0] <= '0; dat_q[1] <= '0;
+      dat_resp <= '0; dat_err <= '0;
+      nsnq <= '0; wsnq <= 1'b0; rsnq <= 1'b0; sst <= S_IDLE; s_idx <= '0; s_resp <= '0; s_txn <= '0;
+      st <= M_IDLE; wk <= W_FILL; b_wr <= 1'b0; last_rd <= 1'b0; b_id <= '0; b_addr <= '0;
+      b_len <= '0; b_i <= '0; b_size <= '0; b_burst <= '0; b_worst <= '0;
+      r_data <= '0; r_resp <= '0; txn <= '0; wb_idx <= '0; wb_resp <= '0; wb_line <= '0;
+    end else begin
+      // ---------------- TX queues ----------------
+      if (push_req) begin qreq[wreq] <= p_req; wreq <= ~wreq; end
+      if (txreq_valid && txreq_ready) rreq <= ~rreq;
+      nreq <= nreq + 2'(push_req) - 2'(txreq_valid && txreq_ready);
+      if (push_rsp) begin qrsp[wrsp] <= p_rsp; wrsp <= wrsp + 2'd1; end
+      if (txrsp_valid && txrsp_ready) rrsp <= rrsp + 2'd1;
+      nrsp <= nrsp + 3'(push_rsp) - 3'(txrsp_valid && txrsp_ready);
+      if (push_dat) begin qdat[wdat] <= p_dat; wdat <= wdat + 2'd1; end
+      if (txdat_valid && txdat_ready) rdat <= rdat + 2'd1;
+      ndat <= ndat + 3'(push_dat) - 3'(txdat_valid && txdat_ready);
+
+      // ---------------- RX ----------------
+      if (rxrsp_valid) begin rsp_got <= 1'b1; rsp_q <= rxrsp_flit; end
+      if (rxdat_valid) begin
+        dat_q[rxdat_flit.dataid[1]] <= rxdat_flit.data;
+        dat_resp <= rxdat_flit.resp;
+        dat_err  <= rxdat_flit.resperr;
+        dat_n    <= dat_n + 2'd1;
+      end
+      if (rxsnp_valid) begin snq[wsnq] <= rxsnp_flit; wsnq <= ~wsnq; end
+
+      // ---------------- snoop FSM ----------------
+      unique case (sst)
+        S_IDLE: if (snp_pop) begin
+          rsnq <= ~rsnq;
+          if (sud) begin
+            s_idx <= si; s_txn <= sn.txnid;
+            unique case (sn.opcode)
+              SNP_SHARED:      begin cs[si] <= CS_SC; s_resp <= RESP_SC_PD; end
+              SNP_CLEANSHARED: begin cs[si] <= CS_UC; s_resp <= RESP_UC_PD; end
+              default:         begin cs[si] <= CS_I;  s_resp <= RESP_I_PD;  end
+            endcase
+            sst <= S_DAT0;
+          end else if (sh)
+            unique case (sn.opcode)
+              SNP_SHARED:      cs[si] <= CS_SC;
+              SNP_CLEANSHARED: ;
+              default:         cs[si] <= CS_I;
+            endcase
+        end
+        S_DAT0: sst <= S_DAT1;              // push_dat is on (room checked at the pop)
+        S_DAT1: sst <= S_IDLE;
+        default: sst <= S_IDLE;
+      endcase
+      nsnq <= nsnq + 2'(rxsnp_valid) - 2'(snp_pop);
+
+      // ---------------- main FSM ----------------
+      unique case (st)
+        M_IDLE: begin
+          if (s_arvalid && s_arready) begin
+            b_wr <= 1'b0; b_id <= s_arid; b_addr <= s_araddr; b_len <= s_arlen;
+            b_size <= s_arsize; b_burst <= s_arburst; last_rd <= 1'b1;
+          end else if (s_awvalid && s_awready) begin
+            b_wr <= 1'b1; b_id <= s_awid; b_addr <= s_awaddr; b_len <= s_awlen;
+            b_size <= s_awsize; b_burst <= s_awburst; last_rd <= 1'b0;
+          end
+          if ((s_arvalid && s_arready) || (s_awvalid && s_awready)) begin
+            b_i <= '0; b_worst <= 2'b00;
+            st <= M_BEAT;
+          end
+        end
+
+        M_BEAT: if (go && (!b_wr || s_wvalid)) begin
+          if (push_req) begin
+            txn <= txn + 1'b1;
+            rsp_got <= 1'b0; dat_n <= '0;
+            if (!cach) wk <= b_wr ? W_NSDBID : W_NSRD;
+            else if (hit) wk <= W_CU;
+            else if (cs[idx] != CS_I) begin
+              wk <= (cs[idx] == CS_UD) ? W_WB : W_EV;
+              wb_idx <= idx;
+            end else wk <= W_FILL;
+            st <= M_WAIT;
+          end else if (w_take) begin        // write hit, unique
+            for (int l = 0; l < 4; l++)
+              if (s_wstrb[l]) cdat[idx][32*a[5:2] + 8*l +: 8] <= s_wdata[8*l +: 8];
+            cs[idx] <= CS_UD;
+            b_i <= b_i + 8'd1;
+            st <= lastb ? M_B : M_BEAT;
+          end else if (cach && hit && !b_wr) begin  // read hit
+            r_data <= cdat[idx][32*a[5:2] +: 32];
+            r_resp <= 2'b00;
+            st <= M_ROUT;
+          end
+        end
+
+        M_WAIT: if (go) unique case (wk)
+          W_FILL: if (dat_n == 2'd2) begin
+            cdat[idx] <= {dat_q[1], dat_q[0]};
+            ctag[idx] <= tg;
+            cs[idx]   <= (dat_resp == RESP_SC) ? CS_SC : (dat_resp == RESP_UD_PD) ? CS_UD : CS_UC;
+            st <= M_ACK;
+          end
+          W_CU: if (rsp_got) begin
+            // Comp UC: the line is ours; Comp I: a snoop took it first, miss
+            if (hit) cs[idx] <= (rsp_q.resp == RESP_UC) ? CS_UC : CS_I;
+            st <= M_ACK;
+          end
+          W_EV: if (rsp_got) begin
+            cs[wb_idx] <= CS_I;
+            st <= M_BEAT;
+          end
+          W_WB: if (rsp_got) begin          // CompDBIDResp: send the line (or I if snooped away)
+            wb_resp <= (cs[wb_idx] == CS_UD) ? RESP_UD_PD : (cs[wb_idx] == CS_SC) ? RESP_SC :
+                       (cs[wb_idx] == CS_UC) ? RESP_UC : RESP_I;
+            cs[wb_idx] <= CS_I;
+            st <= M_WBD0;
+          end
+          W_NSRD: if (dat_n != 0) begin
+            r_data <= dat_q[a[5]][32*a[4:2] +: 32];
+            r_resp <= dat_err;
+            st <= M_ROUT;
+          end
+          W_NSDBID: if (rsp_got && push_dat) begin
+            rsp_got <= 1'b0;
+            wk <= W_NSCOMP;
+          end
+          W_NSCOMP: if (rsp_got) begin      // w_take is on
+            if (rsp_q.resperr > b_worst) b_worst <= rsp_q.resperr;
+            b_i <= b_i + 8'd1;
+            st <= lastb ? M_B : M_BEAT;
+          end
+          default: ;
+        endcase
+
+        M_ACK: if (go && push_rsp) st <= M_BEAT;
+
+        M_WBD0: if (go && push_dat) st <= M_WBD1;
+        M_WBD1: if (go && push_dat) st <= M_BEAT;
+
+        M_ROUT: if (s_rready) begin
+          b_i <= b_i + 8'd1;
+          st <= lastb ? M_IDLE : M_BEAT;
+        end
+
+        M_B: if (s_bready) st <= M_IDLE;
+
+        default: st <= M_IDLE;
+      endcase
+    end
+  end
+endmodule

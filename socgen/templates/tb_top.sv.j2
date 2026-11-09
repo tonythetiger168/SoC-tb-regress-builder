@@ -6,6 +6,7 @@
 //   s_if[NS]  NoC slave ports: memory VIPs, {% if m.apb %}the APB subsystem (S_{{ m.apb.name|upper }}){% endif %}{% if rtl_slaves %}, RTL slaves{% endif %}
 
 {% if m.noc.model == 'behavioral' %}//   the NoC between them is the env's behavioural {{ m.name }}_noc component
+{% elif m.noc.model == 'mesh' %}//   the NoC between them is the generated {{ m.name }}_noc RTL (router mesh + network interfaces)
 {% else %}//   the NoC between them is {{ m.noc.rtl_module }} (ports: aclk, aresetn, m_if[NM], s_if[NS])
 {% endif %}// ============================================================================
 `timescale 1ns/1ps
@@ -23,8 +24,15 @@ module {{ m.name }}_tb_top;
     aresetn <= 1'b1;
   end
 
-  axi4_if m_if [NM] (.aclk({{ m.clock.name }}), .aresetn(aresetn));
-  axi4_if s_if [NS] (.aclk({{ m.clock.name }}), .aresetn(aresetn));
+{% set if_rst = 'vip_resetn' if m.chiplet.dies > 1 else 'aresetn' %}{% if m.chiplet.dies > 1 %}  // chiplet: the VIPs start once the UCIe die-to-die link is up (the NoC and the
+  // APB subsystem come out of reset with aresetn; link training takes some clocks)
+  logic d2d_up, d2d_error, vip_resetn = 1'b0;
+  logic [31:0] d2d_flits, d2d_replays;
+  always @(posedge {{ m.clock.name }}) if (aresetn && d2d_up) vip_resetn <= 1'b1;
+  always @(posedge {{ m.clock.name }}) if (aresetn && d2d_error) $error("die-to-die link error (gateway overflow or UCIe LINKERROR)");
+  final $display("D2D link: %0d flits corrupted by the PHY model, %0d UCIe replays", d2d_flits, d2d_replays);
+{% endif %}  axi4_if m_if [NM] (.aclk({{ m.clock.name }}), .aresetn({{ if_rst }}));
+  axi4_if s_if [NS] (.aclk({{ m.clock.name }}), .aresetn({{ if_rst }}));
 {% for s in vip_slots %}  apb_if  apb_{{ s.name }}_if (.pclk({{ m.clock.name }}), .presetn(aresetn));
 {% endfor %}
   for (genvar i = 0; i < NM; i++) begin : g_m
@@ -43,7 +51,8 @@ module {{ m.name }}_tb_top;
   end
 {% if m.noc.model == 'rtl' %}
   {{ m.noc.rtl_module }} u_noc (.aclk({{ m.clock.name }}), .aresetn(aresetn), .m_if(m_if), .s_if(s_if));
-{% endif %}{% if m.apb %}
+{% elif m.noc.model == 'mesh' %}
+{{ noc_hookup }}{% endif %}{% if m.apb %}
   // ---------------- APB subsystem on S_{{ m.apb.name|upper }} ----------------
 {% for s in ext_slots if s.kind == 'rtl_master' %}  logic [31:0] {{ s.name }}_paddr, {{ s.name }}_pwdata, {{ s.name }}_prdata;
   logic        {{ s.name }}_psel, {{ s.name }}_penable, {{ s.name }}_pwrite, {{ s.name }}_pready, {{ s.name }}_pslverr;
