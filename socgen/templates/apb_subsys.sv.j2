@@ -66,16 +66,22 @@ module {{ m.name }}_apb_subsys (
   end
 
 {% for s in m.apb.slots %}{% set i = loop.index0 %}  // ---------------- slot {{ s.slot }}: {{ s.name }} ----------------
-{% if s.kind == 'ip' %}{% for p in s.wrapper.pins %}{% if p.dir == 'inout' %}  tri1 [{{ p.width - 1 }}:0] {{ s.name }}_{{ p.name }};      // weak pull-up, nothing else drives it
+{% if s.kind == 'ip' %}{% for p in s.wrapper.pins %}{% if p.dir == 'inout' %}  tri1 [{{ p.width - 1 }}:0] {{ s.name }}_{{ p.name }};      // weak pull-up{% if not (s.dev and p.name in s.pins_vip.inout|map(attribute='pin')|list) %}, nothing else drives it{% else %}; the device model drives it too{% endif %}
 {% elif p.dir == 'output' %}  logic [{{ p.width - 1 }}:0] {{ s.name }}_{{ p.name }};
-{% endif %}{% endfor %}  {{ s.ip }}_apb {% if s.params %}#({% for k, v in s.params.items() %}.{{ k }}({{ v }}){{ ', ' if not loop.last }}{% endfor %}) {% endif %}u_{{ s.name }} (
+{% endif %}{% endfor %}{% if s.dev %}{% for d in s.dev.decl %}  {{ d }}
+{% endfor %}{% endif %}  {{ s.ip }}_apb {% if s.params %}#({% for k, v in s.params.items() %}.{{ k }}({{ v }}){{ ', ' if not loop.last }}{% endfor %}) {% endif %}u_{{ s.name }} (
     .PCLK(clk), .PRESETN(rst_n), .PSEL(s_psel[{{ i }}]), .PENABLE(penable), .PWRITE(pwrite),
     .PADDR(paddr[11:0]), .PWDATA(pwdata), .PSTRB(pstrb),
     .PRDATA(s_prdata[{{ i }}]), .PREADY(s_pready[{{ i }}]), .PSLVERR(s_pslverr[{{ i }}]){% if s.wrapper.has_irq %}, .irq(irq[{{ i }}]){% endif %}{% for p in s.wrapper.pins %},
-    .{{ p.name }}({% if p.dir == 'input' %}{{ s.pins.get(p.name, "'0") }}{% else %}{{ s.name }}_{{ p.name }}{% endif %}){% endfor %}
+    .{{ p.name }}({% if p.dir == 'input' %}{{ s.pin_expr.get(p.name, "'0") }}{% else %}{{ s.name }}_{{ p.name }}{% endif %}){% endfor %}
 
   );
-{% if not s.wrapper.has_irq %}  assign irq[{{ i }}] = 1'b0;
+{% if s.dev %}  // pin-level device model on {{ s.name }}'s pins (pins_vip)
+  {{ s.dev.model }} {% if s.dev.params %}#({% for k, v in s.dev.params.items() %}.{{ k }}({{ v }}){{ ', ' if not loop.last }}{% endfor %}) {% endif %}u_{{ s.name }}_dev (
+{% for k, v in s.dev.conns %}    .{{ k }}({{ v }}){{ ',' if not loop.last }}
+{% endfor %}  );
+{% for a in s.dev.assigns %}  {{ a }}
+{% endfor %}{% endif %}{% if not s.wrapper.has_irq %}  assign irq[{{ i }}] = 1'b0;
 {% endif %}{% elif s.kind == 'regs' %}{% set b = m.register_blocks[s.regs] %}  {{ m.name }}_{{ s.regs }}_regs u_{{ s.name }} (
     .PCLK(clk), .PRESETN(rst_n), .PSEL(s_psel[{{ i }}]), .PENABLE(penable), .PWRITE(pwrite),
     .PADDR(paddr[11:0]), .PWDATA(pwdata), .PSTRB(pstrb),
