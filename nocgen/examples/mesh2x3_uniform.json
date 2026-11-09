@@ -1,0 +1,9 @@
+{
+  "name": "tiny",
+  "mesh": {"rows": 2, "cols": 3},
+  "routing": "shortest",
+  "axi": {"addr_width": 32, "data_width": 64, "id_width": 4},
+  "masters": [{"name": "m0", "node": [0, 0]}, {"name": "m1", "node": "auto"}],
+  "slaves":  [{"name": "mem", "size": "0x100000", "latency": 4}, {"name": "rom", "size": "0x10000"}],
+  "disabled_links": [[[0, 0], [1, 0]]]
+}

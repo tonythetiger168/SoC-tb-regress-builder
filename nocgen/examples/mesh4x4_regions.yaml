@@ -1,0 +1,66 @@
+# Same SoC as mesh4x4.yaml, but the calls are described per data region
+# (stack, ring, frame buffer...) instead of per slave, so nocgen can also
+# decide which memory each region lives in. `home` is today's layout; with
+# the homes below the call mix per master/slave matches mesh4x4.yaml exactly.
+# 4x4 mesh, 6 AXI masters, 5 AXI slaves.
+# node: [x, y] pins an endpoint to a router; "auto" lets nocgen place it to
+# minimise traffic-weighted latency (the memory profile).
+name: soc4x4_regions
+mesh: {rows: 4, cols: 4}
+routing: xy            # xy (dimension-ordered) or shortest (any minimal path, honours disabled_links)
+timing:
+  router_cycles: 2     # per router traversed
+  link_cycles: 1       # per link between routers
+  ni_cycles: 1         # network-interface packetise/inject
+  slave_cycles: 2      # default slave access time
+axi: {addr_width: 40, data_width: 128, id_width: 4}
+
+masters:
+  - {name: cpu0, node: [0, 0]}
+  - {name: cpu1, node: [3, 0]}
+  - {name: gpu,  node: auto}
+  - {name: dma,  node: auto}
+  - {name: npu,  node: auto}
+  - {name: pcie, node: [0, 3]}
+
+slaves:
+  - {name: ddr0,  size: 0x4000_0000, latency: 20, node: [3, 3]}
+  - {name: ddr1,  size: 0x4000_0000, latency: 20, node: auto}
+  - {name: sram0, size: 0x10_0000,   latency: 2,  node: auto}
+  - {name: sram1, size: 0x10_0000,   latency: 2,  node: auto}
+  - {name: regs,  size: 0x1_0000,    latency: 1,  node: auto, base: 0xF0_0000_0000, kind: device}
+
+# Calls straight to a slave that holds no movable data (device registers).
+traffic:
+  cpu0: {regs: 5}
+  cpu1: {regs: 5}
+  pcie: {regs: 2}
+
+# Data the masters call. access = relative call count per master.
+#   home:     where it lives today (the "before" layout)
+#   allowed:  memories it may move to (default: any memory slave)
+#   readonly: may be copied next to each caller if there is spare room
+#   pin:      never move it
+#   split:    chunk size; lets part of a big buffer move to faster memory
+regions:
+  - {name: cpu0_stack,  size: 64K,   access: {cpu0: 25},          home: sram0}
+  - {name: cpu0_data,   size: 512K,  access: {cpu0: 15},          home: sram0}
+  - {name: cpu1_stack,  size: 64K,   access: {cpu1: 25},          home: sram1}
+  - {name: cpu1_data,   size: 512K,  access: {cpu1: 15},          home: sram1}
+  - {name: kernel_text, size: 256K,  access: {cpu0: 10, cpu1: 10}, home: ddr0, readonly: true}
+  - {name: os_heap,     size: 64M,   access: {cpu0: 10, cpu1: 10}, home: ddr1}
+  - {name: frame_buf,   size: 32M,   access: {gpu: 30, dma: 20},  home: ddr0, allowed: [ddr0, ddr1]}
+  - {name: textures,    size: 128M,  access: {gpu: 30, dma: 20},  home: ddr1, readonly: true, split: 32M}
+  - {name: gpu_cmdq,    size: 64K,   access: {gpu: 5},            home: sram1}
+  - {name: dma_desc0,   size: 128K,  access: {dma: 10},           home: sram0}
+  - {name: dma_desc1,   size: 128K,  access: {dma: 10},           home: sram1}
+  - {name: npu_weights, size: 256K,  access: {npu: 30},           home: sram0, readonly: true}
+  - {name: npu_act,     size: 256K,  access: {npu: 30},           home: sram1}
+  - {name: npu_model,   size: 32M,   access: {npu: 20},           home: ddr1, readonly: true}
+  - {name: pcie_rx,     size: 8M,    access: {pcie: 10},          home: ddr0}
+  - {name: pcie_tx,     size: 8M,    access: {pcie: 10},          home: ddr1}
+
+testbench:
+  num_txns: 200
+  latency_tolerance: 3.0
+  zero_load_slack: 8

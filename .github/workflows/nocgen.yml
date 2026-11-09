@@ -1,0 +1,26 @@
+name: nocgen
+on:
+  push:
+    paths: ['nocgen/**', '.github/workflows/nocgen.yml']
+  pull_request:
+    paths: ['nocgen/**', '.github/workflows/nocgen.yml']
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nocgen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest pyslang
+      - run: pytest -q tests
+      - run: git clone --depth 1 https://github.com/accellera-official/uvm-core.git /tmp/uvm-core
+      - name: Generate and elaborate every example testbench
+        run: |
+          for c in examples/*.yaml examples/*.json; do
+            n=$(basename "${c%.*}")
+            python3 nocgen.py "$c" -o "out/$n"
+            python3 scripts/lint_tb.py "out/$n/tb" /tmp/uvm-core/src
+          done

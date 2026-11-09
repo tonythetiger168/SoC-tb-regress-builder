@@ -1,0 +1,1287 @@
+{
+  "name": "soc4x4_regions",
+  "hole": 2149580800,
+  "mesh": {
+    "rows": 4,
+    "cols": 4
+  },
+  "routing": "xy",
+  "timing": {
+    "router_cycles": 2,
+    "link_cycles": 1,
+    "ni_cycles": 1
+  },
+  "stages": {
+    "before": {
+      "avg": 30.017,
+      "label": "Before: naive placement, data where the config puts it"
+    },
+    "placement": {
+      "avg": 25.966,
+      "label": "Endpoint placement only"
+    },
+    "after": {
+      "avg": 21.126,
+      "label": "Placement + data placement + read-only copies"
+    }
+  },
+  "floor": 10.487,
+  "after_network_cycles": 10.336,
+  "after_access_cycles": 10.79,
+  "placement_before": {
+    "cpu0": [
+      0,
+      0
+    ],
+    "cpu1": [
+      3,
+      0
+    ],
+    "pcie": [
+      0,
+      3
+    ],
+    "ddr0": [
+      3,
+      3
+    ],
+    "gpu": [
+      1,
+      0
+    ],
+    "dma": [
+      2,
+      0
+    ],
+    "npu": [
+      0,
+      1
+    ],
+    "ddr1": [
+      0,
+      0
+    ],
+    "sram0": [
+      1,
+      0
+    ],
+    "sram1": [
+      2,
+      0
+    ],
+    "regs": [
+      3,
+      0
+    ]
+  },
+  "placement_after": {
+    "cpu0": [
+      0,
+      0
+    ],
+    "cpu1": [
+      3,
+      0
+    ],
+    "pcie": [
+      0,
+      3
+    ],
+    "ddr0": [
+      3,
+      3
+    ],
+    "gpu": [
+      3,
+      3
+    ],
+    "dma": [
+      3,
+      2
+    ],
+    "npu": [
+      3,
+      1
+    ],
+    "ddr1": [
+      3,
+      0
+    ],
+    "sram0": [
+      3,
+      1
+    ],
+    "sram1": [
+      0,
+      0
+    ],
+    "regs": [
+      1,
+      0
+    ]
+  },
+  "weighted_avg_read_latency_before": 30.017,
+  "weighted_avg_read_latency_after": 21.126,
+  "address_map": [
+    {
+      "slave": "ddr0",
+      "base": 0,
+      "size": 1073741824,
+      "node": [
+        3,
+        3
+      ],
+      "access_cycles": 20,
+      "kind": "memory"
+    },
+    {
+      "slave": "ddr1",
+      "base": 1073741824,
+      "size": 1073741824,
+      "node": [
+        3,
+        0
+      ],
+      "access_cycles": 20,
+      "kind": "memory"
+    },
+    {
+      "slave": "sram0",
+      "base": 2147483648,
+      "size": 1048576,
+      "node": [
+        3,
+        1
+      ],
+      "access_cycles": 2,
+      "kind": "memory"
+    },
+    {
+      "slave": "sram1",
+      "base": 2148532224,
+      "size": 1048576,
+      "node": [
+        0,
+        0
+      ],
+      "access_cycles": 2,
+      "kind": "memory"
+    },
+    {
+      "slave": "regs",
+      "base": 1030792151040,
+      "size": 65536,
+      "node": [
+        1,
+        0
+      ],
+      "access_cycles": 1,
+      "kind": "device"
+    }
+  ],
+  "regions": [
+    {
+      "name": "cpu0_stack",
+      "group": "cpu0_stack",
+      "size": 65536,
+      "readonly": false,
+      "home_before": "sram0",
+      "copies": [
+        {
+          "slave": "sram1",
+          "base": 2149318656,
+          "node": [
+            0,
+            0
+          ]
+        }
+      ],
+      "callers": {
+        "cpu0": {
+          "copy": "sram1",
+          "base": 2149318656,
+          "min_read": 8,
+          "calls": 25.0
+        }
+      }
+    },
+    {
+      "name": "cpu0_data",
+      "group": "cpu0_data",
+      "size": 524288,
+      "readonly": false,
+      "home_before": "sram0",
+      "copies": [
+        {
+          "slave": "sram1",
+          "base": 2148532224,
+          "node": [
+            0,
+            0
+          ]
+        }
+      ],
+      "callers": {
+        "cpu0": {
+          "copy": "sram1",
+          "base": 2148532224,
+          "min_read": 8,
+          "calls": 15.0
+        }
+      }
+    },
+    {
+      "name": "cpu1_stack",
+      "group": "cpu1_stack",
+      "size": 65536,
+      "readonly": false,
+      "home_before": "sram1",
+      "copies": [
+        {
+          "slave": "sram0",
+          "base": 2148270080,
+          "node": [
+            3,
+            1
+          ]
+        }
+      ],
+      "callers": {
+        "cpu1": {
+          "copy": "sram0",
+          "base": 2148270080,
+          "min_read": 14,
+          "calls": 25.0
+        }
+      }
+    },
+    {
+      "name": "cpu1_data",
+      "group": "cpu1_data",
+      "size": 524288,
+      "readonly": false,
+      "home_before": "sram1",
+      "copies": [
+        {
+          "slave": "ddr1",
+          "base": 1174405120,
+          "node": [
+            3,
+            0
+          ]
+        }
+      ],
+      "callers": {
+        "cpu1": {
+          "copy": "ddr1",
+          "base": 1174405120,
+          "min_read": 26,
+          "calls": 15.0
+        }
+      }
+    },
+    {
+      "name": "kernel_text",
+      "group": "kernel_text",
+      "size": 262144,
+      "readonly": true,
+      "home_before": "ddr0",
+      "copies": [
+        {
+          "slave": "sram1",
+          "base": 2149056512,
+          "node": [
+            0,
+            0
+          ]
+        }
+      ],
+      "callers": {
+        "cpu0": {
+          "copy": "sram1",
+          "base": 2149056512,
+          "min_read": 8,
+          "calls": 10.0
+        },
+        "cpu1": {
+          "copy": "sram1",
+          "base": 2149056512,
+          "min_read": 26,
+          "calls": 10.0
+        }
+      }
+    },
+    {
+      "name": "os_heap",
+      "group": "os_heap",
+      "size": 67108864,
+      "readonly": false,
+      "home_before": "ddr1",
+      "copies": [
+        {
+          "slave": "ddr1",
+          "base": 1073741824,
+          "node": [
+            3,
+            0
+          ]
+        }
+      ],
+      "callers": {
+        "cpu0": {
+          "copy": "ddr1",
+          "base": 1073741824,
+          "min_read": 44,
+          "calls": 10.0
+        },
+        "cpu1": {
+          "copy": "ddr1",
+          "base": 1073741824,
+          "min_read": 26,
+          "calls": 10.0
+        }
+      }
+    },
+    {
+      "name": "frame_buf",
+      "group": "frame_buf",
+      "size": 33554432,
+      "readonly": false,
+      "home_before": "ddr0",
+      "copies": [
+        {
+          "slave": "ddr0",
+          "base": 0,
+          "node": [
+            3,
+            3
+          ]
+        }
+      ],
+      "callers": {
+        "gpu": {
+          "copy": "ddr0",
+          "base": 0,
+          "min_read": 26,
+          "calls": 30.0
+        },
+        "dma": {
+          "copy": "ddr0",
+          "base": 0,
+          "min_read": 32,
+          "calls": 20.0
+        }
+      }
+    },
+    {
+      "name": "textures_0",
+      "group": "textures",
+      "size": 33554432,
+      "readonly": true,
+      "home_before": "ddr1",
+      "copies": [
+        {
+          "slave": "ddr0",
+          "base": 33554432,
+          "node": [
+            3,
+            3
+          ]
+        }
+      ],
+      "callers": {
+        "gpu": {
+          "copy": "ddr0",
+          "base": 33554432,
+          "min_read": 26,
+          "calls": 7.5
+        },
+        "dma": {
+          "copy": "ddr0",
+          "base": 33554432,
+          "min_read": 32,
+          "calls": 5.0
+        }
+      }
+    },
+    {
+      "name": "textures_1",
+      "group": "textures",
+      "size": 33554432,
+      "readonly": true,
+      "home_before": "ddr1",
+      "copies": [
+        {
+          "slave": "ddr0",
+          "base": 67108864,
+          "node": [
+            3,
+            3
+          ]
+        }
+      ],
+      "callers": {
+        "gpu": {
+          "copy": "ddr0",
+          "base": 67108864,
+          "min_read": 26,
+          "calls": 7.5
+        },
+        "dma": {
+          "copy": "ddr0",
+          "base": 67108864,
+          "min_read": 32,
+          "calls": 5.0
+        }
+      }
+    },
+    {
+      "name": "textures_2",
+      "group": "textures",
+      "size": 33554432,
+      "readonly": true,
+      "home_before": "ddr1",
+      "copies": [
+        {
+          "slave": "ddr0",
+          "base": 100663296,
+          "node": [
+            3,
+            3
+          ]
+        }
+      ],
+      "callers": {
+        "gpu": {
+          "copy": "ddr0",
+          "base": 100663296,
+          "min_read": 26,
+          "calls": 7.5
+        },
+        "dma": {
+          "copy": "ddr0",
+          "base": 100663296,
+          "min_read": 32,
+          "calls": 5.0
+        }
+      }
+    },
+    {
+      "name": "textures_3",
+      "group": "textures",
+      "size": 33554432,
+      "readonly": true,
+      "home_before": "ddr1",
+      "copies": [
+        {
+          "slave": "ddr0",
+          "base": 134217728,
+          "node": [
+            3,
+            3
+          ]
+        }
+      ],
+      "callers": {
+        "gpu": {
+          "copy": "ddr0",
+          "base": 134217728,
+          "min_read": 26,
+          "calls": 7.5
+        },
+        "dma": {
+          "copy": "ddr0",
+          "base": 134217728,
+          "min_read": 32,
+          "calls": 5.0
+        }
+      }
+    },
+    {
+      "name": "gpu_cmdq",
+      "group": "gpu_cmdq",
+      "size": 65536,
+      "readonly": false,
+      "home_before": "sram1",
+      "copies": [
+        {
+          "slave": "sram0",
+          "base": 2148335616,
+          "node": [
+            3,
+            1
+          ]
+        }
+      ],
+      "callers": {
+        "gpu": {
+          "copy": "sram0",
+          "base": 2148335616,
+          "min_read": 20,
+          "calls": 5.0
+        }
+      }
+    },
+    {
+      "name": "dma_desc0",
+      "group": "dma_desc0",
+      "size": 131072,
+      "readonly": false,
+      "home_before": "sram0",
+      "copies": [
+        {
+          "slave": "sram0",
+          "base": 2148007936,
+          "node": [
+            3,
+            1
+          ]
+        }
+      ],
+      "callers": {
+        "dma": {
+          "copy": "sram0",
+          "base": 2148007936,
+          "min_read": 14,
+          "calls": 10.0
+        }
+      }
+    },
+    {
+      "name": "dma_desc1",
+      "group": "dma_desc1",
+      "size": 131072,
+      "readonly": false,
+      "home_before": "sram1",
+      "copies": [
+        {
+          "slave": "sram0",
+          "base": 2148139008,
+          "node": [
+            3,
+            1
+          ]
+        }
+      ],
+      "callers": {
+        "dma": {
+          "copy": "sram0",
+          "base": 2148139008,
+          "min_read": 14,
+          "calls": 10.0
+        }
+      }
+    },
+    {
+      "name": "npu_weights",
+      "group": "npu_weights",
+      "size": 262144,
+      "readonly": true,
+      "home_before": "sram0",
+      "copies": [
+        {
+          "slave": "sram0",
+          "base": 2147745792,
+          "node": [
+            3,
+            1
+          ]
+        }
+      ],
+      "callers": {
+        "npu": {
+          "copy": "sram0",
+          "base": 2147745792,
+          "min_read": 8,
+          "calls": 30.0
+        }
+      }
+    },
+    {
+      "name": "npu_act",
+      "group": "npu_act",
+      "size": 262144,
+      "readonly": false,
+      "home_before": "sram1",
+      "copies": [
+        {
+          "slave": "sram0",
+          "base": 2147483648,
+          "node": [
+            3,
+            1
+          ]
+        }
+      ],
+      "callers": {
+        "npu": {
+          "copy": "sram0",
+          "base": 2147483648,
+          "min_read": 8,
+          "calls": 30.0
+        }
+      }
+    },
+    {
+      "name": "npu_model",
+      "group": "npu_model",
+      "size": 33554432,
+      "readonly": true,
+      "home_before": "ddr1",
+      "copies": [
+        {
+          "slave": "ddr1",
+          "base": 1140850688,
+          "node": [
+            3,
+            0
+          ]
+        }
+      ],
+      "callers": {
+        "npu": {
+          "copy": "ddr1",
+          "base": 1140850688,
+          "min_read": 32,
+          "calls": 20.0
+        }
+      }
+    },
+    {
+      "name": "pcie_rx",
+      "group": "pcie_rx",
+      "size": 8388608,
+      "readonly": false,
+      "home_before": "ddr0",
+      "copies": [
+        {
+          "slave": "ddr0",
+          "base": 167772160,
+          "node": [
+            3,
+            3
+          ]
+        }
+      ],
+      "callers": {
+        "pcie": {
+          "copy": "ddr0",
+          "base": 167772160,
+          "min_read": 44,
+          "calls": 10.0
+        }
+      }
+    },
+    {
+      "name": "pcie_tx",
+      "group": "pcie_tx",
+      "size": 8388608,
+      "readonly": false,
+      "home_before": "ddr1",
+      "copies": [
+        {
+          "slave": "ddr0",
+          "base": 176160768,
+          "node": [
+            3,
+            3
+          ]
+        }
+      ],
+      "callers": {
+        "pcie": {
+          "copy": "ddr0",
+          "base": 176160768,
+          "min_read": 44,
+          "calls": 10.0
+        }
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "master": "cpu0",
+      "slave": "ddr0",
+      "m_idx": 0,
+      "s_idx": 0,
+      "hops_req": 6,
+      "hops_rsp": 6,
+      "req": 21,
+      "rsp": 21,
+      "slave_cycles": 20,
+      "min_read": 62,
+      "weight": 0.0
+    },
+    {
+      "master": "cpu0",
+      "slave": "ddr1",
+      "m_idx": 0,
+      "s_idx": 1,
+      "hops_req": 3,
+      "hops_rsp": 3,
+      "req": 12,
+      "rsp": 12,
+      "slave_cycles": 20,
+      "min_read": 44,
+      "weight": 10.0
+    },
+    {
+      "master": "cpu0",
+      "slave": "sram0",
+      "m_idx": 0,
+      "s_idx": 2,
+      "hops_req": 4,
+      "hops_rsp": 4,
+      "req": 15,
+      "rsp": 15,
+      "slave_cycles": 2,
+      "min_read": 32,
+      "weight": 0.0
+    },
+    {
+      "master": "cpu0",
+      "slave": "sram1",
+      "m_idx": 0,
+      "s_idx": 3,
+      "hops_req": 0,
+      "hops_rsp": 0,
+      "req": 3,
+      "rsp": 3,
+      "slave_cycles": 2,
+      "min_read": 8,
+      "weight": 50.0
+    },
+    {
+      "master": "cpu0",
+      "slave": "regs",
+      "m_idx": 0,
+      "s_idx": 4,
+      "hops_req": 1,
+      "hops_rsp": 1,
+      "req": 6,
+      "rsp": 6,
+      "slave_cycles": 1,
+      "min_read": 13,
+      "weight": 5.0
+    },
+    {
+      "master": "cpu1",
+      "slave": "ddr0",
+      "m_idx": 1,
+      "s_idx": 0,
+      "hops_req": 3,
+      "hops_rsp": 3,
+      "req": 12,
+      "rsp": 12,
+      "slave_cycles": 20,
+      "min_read": 44,
+      "weight": 0.0
+    },
+    {
+      "master": "cpu1",
+      "slave": "ddr1",
+      "m_idx": 1,
+      "s_idx": 1,
+      "hops_req": 0,
+      "hops_rsp": 0,
+      "req": 3,
+      "rsp": 3,
+      "slave_cycles": 20,
+      "min_read": 26,
+      "weight": 25.0
+    },
+    {
+      "master": "cpu1",
+      "slave": "sram0",
+      "m_idx": 1,
+      "s_idx": 2,
+      "hops_req": 1,
+      "hops_rsp": 1,
+      "req": 6,
+      "rsp": 6,
+      "slave_cycles": 2,
+      "min_read": 14,
+      "weight": 25.0
+    },
+    {
+      "master": "cpu1",
+      "slave": "sram1",
+      "m_idx": 1,
+      "s_idx": 3,
+      "hops_req": 3,
+      "hops_rsp": 3,
+      "req": 12,
+      "rsp": 12,
+      "slave_cycles": 2,
+      "min_read": 26,
+      "weight": 10.0
+    },
+    {
+      "master": "cpu1",
+      "slave": "regs",
+      "m_idx": 1,
+      "s_idx": 4,
+      "hops_req": 2,
+      "hops_rsp": 2,
+      "req": 9,
+      "rsp": 9,
+      "slave_cycles": 1,
+      "min_read": 19,
+      "weight": 5.0
+    },
+    {
+      "master": "gpu",
+      "slave": "ddr0",
+      "m_idx": 2,
+      "s_idx": 0,
+      "hops_req": 0,
+      "hops_rsp": 0,
+      "req": 3,
+      "rsp": 3,
+      "slave_cycles": 20,
+      "min_read": 26,
+      "weight": 60.0
+    },
+    {
+      "master": "gpu",
+      "slave": "ddr1",
+      "m_idx": 2,
+      "s_idx": 1,
+      "hops_req": 3,
+      "hops_rsp": 3,
+      "req": 12,
+      "rsp": 12,
+      "slave_cycles": 20,
+      "min_read": 44,
+      "weight": 0.0
+    },
+    {
+      "master": "gpu",
+      "slave": "sram0",
+      "m_idx": 2,
+      "s_idx": 2,
+      "hops_req": 2,
+      "hops_rsp": 2,
+      "req": 9,
+      "rsp": 9,
+      "slave_cycles": 2,
+      "min_read": 20,
+      "weight": 5.0
+    },
+    {
+      "master": "gpu",
+      "slave": "sram1",
+      "m_idx": 2,
+      "s_idx": 3,
+      "hops_req": 6,
+      "hops_rsp": 6,
+      "req": 21,
+      "rsp": 21,
+      "slave_cycles": 2,
+      "min_read": 44,
+      "weight": 0.0
+    },
+    {
+      "master": "gpu",
+      "slave": "regs",
+      "m_idx": 2,
+      "s_idx": 4,
+      "hops_req": 5,
+      "hops_rsp": 5,
+      "req": 18,
+      "rsp": 18,
+      "slave_cycles": 1,
+      "min_read": 37,
+      "weight": 0.0
+    },
+    {
+      "master": "dma",
+      "slave": "ddr0",
+      "m_idx": 3,
+      "s_idx": 0,
+      "hops_req": 1,
+      "hops_rsp": 1,
+      "req": 6,
+      "rsp": 6,
+      "slave_cycles": 20,
+      "min_read": 32,
+      "weight": 40.0
+    },
+    {
+      "master": "dma",
+      "slave": "ddr1",
+      "m_idx": 3,
+      "s_idx": 1,
+      "hops_req": 2,
+      "hops_rsp": 2,
+      "req": 9,
+      "rsp": 9,
+      "slave_cycles": 20,
+      "min_read": 38,
+      "weight": 0.0
+    },
+    {
+      "master": "dma",
+      "slave": "sram0",
+      "m_idx": 3,
+      "s_idx": 2,
+      "hops_req": 1,
+      "hops_rsp": 1,
+      "req": 6,
+      "rsp": 6,
+      "slave_cycles": 2,
+      "min_read": 14,
+      "weight": 20.0
+    },
+    {
+      "master": "dma",
+      "slave": "sram1",
+      "m_idx": 3,
+      "s_idx": 3,
+      "hops_req": 5,
+      "hops_rsp": 5,
+      "req": 18,
+      "rsp": 18,
+      "slave_cycles": 2,
+      "min_read": 38,
+      "weight": 0.0
+    },
+    {
+      "master": "dma",
+      "slave": "regs",
+      "m_idx": 3,
+      "s_idx": 4,
+      "hops_req": 4,
+      "hops_rsp": 4,
+      "req": 15,
+      "rsp": 15,
+      "slave_cycles": 1,
+      "min_read": 31,
+      "weight": 0.0
+    },
+    {
+      "master": "npu",
+      "slave": "ddr0",
+      "m_idx": 4,
+      "s_idx": 0,
+      "hops_req": 2,
+      "hops_rsp": 2,
+      "req": 9,
+      "rsp": 9,
+      "slave_cycles": 20,
+      "min_read": 38,
+      "weight": 0.0
+    },
+    {
+      "master": "npu",
+      "slave": "ddr1",
+      "m_idx": 4,
+      "s_idx": 1,
+      "hops_req": 1,
+      "hops_rsp": 1,
+      "req": 6,
+      "rsp": 6,
+      "slave_cycles": 20,
+      "min_read": 32,
+      "weight": 20.0
+    },
+    {
+      "master": "npu",
+      "slave": "sram0",
+      "m_idx": 4,
+      "s_idx": 2,
+      "hops_req": 0,
+      "hops_rsp": 0,
+      "req": 3,
+      "rsp": 3,
+      "slave_cycles": 2,
+      "min_read": 8,
+      "weight": 60.0
+    },
+    {
+      "master": "npu",
+      "slave": "sram1",
+      "m_idx": 4,
+      "s_idx": 3,
+      "hops_req": 4,
+      "hops_rsp": 4,
+      "req": 15,
+      "rsp": 15,
+      "slave_cycles": 2,
+      "min_read": 32,
+      "weight": 0.0
+    },
+    {
+      "master": "npu",
+      "slave": "regs",
+      "m_idx": 4,
+      "s_idx": 4,
+      "hops_req": 3,
+      "hops_rsp": 3,
+      "req": 12,
+      "rsp": 12,
+      "slave_cycles": 1,
+      "min_read": 25,
+      "weight": 0.0
+    },
+    {
+      "master": "pcie",
+      "slave": "ddr0",
+      "m_idx": 5,
+      "s_idx": 0,
+      "hops_req": 3,
+      "hops_rsp": 3,
+      "req": 12,
+      "rsp": 12,
+      "slave_cycles": 20,
+      "min_read": 44,
+      "weight": 20.0
+    },
+    {
+      "master": "pcie",
+      "slave": "ddr1",
+      "m_idx": 5,
+      "s_idx": 1,
+      "hops_req": 6,
+      "hops_rsp": 6,
+      "req": 21,
+      "rsp": 21,
+      "slave_cycles": 20,
+      "min_read": 62,
+      "weight": 0.0
+    },
+    {
+      "master": "pcie",
+      "slave": "sram0",
+      "m_idx": 5,
+      "s_idx": 2,
+      "hops_req": 5,
+      "hops_rsp": 5,
+      "req": 18,
+      "rsp": 18,
+      "slave_cycles": 2,
+      "min_read": 38,
+      "weight": 0.0
+    },
+    {
+      "master": "pcie",
+      "slave": "sram1",
+      "m_idx": 5,
+      "s_idx": 3,
+      "hops_req": 3,
+      "hops_rsp": 3,
+      "req": 12,
+      "rsp": 12,
+      "slave_cycles": 2,
+      "min_read": 26,
+      "weight": 0.0
+    },
+    {
+      "master": "pcie",
+      "slave": "regs",
+      "m_idx": 5,
+      "s_idx": 4,
+      "hops_req": 4,
+      "hops_rsp": 4,
+      "req": 15,
+      "rsp": 15,
+      "slave_cycles": 1,
+      "min_read": 31,
+      "weight": 2.0
+    }
+  ],
+  "ranking": {
+    "cpu0": [
+      {
+        "slave": "sram1",
+        "min_read": 8,
+        "base": 2148532224,
+        "size": 1048576
+      },
+      {
+        "slave": "regs",
+        "min_read": 13,
+        "base": 1030792151040,
+        "size": 65536
+      },
+      {
+        "slave": "sram0",
+        "min_read": 32,
+        "base": 2147483648,
+        "size": 1048576
+      },
+      {
+        "slave": "ddr1",
+        "min_read": 44,
+        "base": 1073741824,
+        "size": 1073741824
+      },
+      {
+        "slave": "ddr0",
+        "min_read": 62,
+        "base": 0,
+        "size": 1073741824
+      }
+    ],
+    "cpu1": [
+      {
+        "slave": "sram0",
+        "min_read": 14,
+        "base": 2147483648,
+        "size": 1048576
+      },
+      {
+        "slave": "regs",
+        "min_read": 19,
+        "base": 1030792151040,
+        "size": 65536
+      },
+      {
+        "slave": "ddr1",
+        "min_read": 26,
+        "base": 1073741824,
+        "size": 1073741824
+      },
+      {
+        "slave": "sram1",
+        "min_read": 26,
+        "base": 2148532224,
+        "size": 1048576
+      },
+      {
+        "slave": "ddr0",
+        "min_read": 44,
+        "base": 0,
+        "size": 1073741824
+      }
+    ],
+    "gpu": [
+      {
+        "slave": "sram0",
+        "min_read": 20,
+        "base": 2147483648,
+        "size": 1048576
+      },
+      {
+        "slave": "ddr0",
+        "min_read": 26,
+        "base": 0,
+        "size": 1073741824
+      },
+      {
+        "slave": "regs",
+        "min_read": 37,
+        "base": 1030792151040,
+        "size": 65536
+      },
+      {
+        "slave": "ddr1",
+        "min_read": 44,
+        "base": 1073741824,
+        "size": 1073741824
+      },
+      {
+        "slave": "sram1",
+        "min_read": 44,
+        "base": 2148532224,
+        "size": 1048576
+      }
+    ],
+    "dma": [
+      {
+        "slave": "sram0",
+        "min_read": 14,
+        "base": 2147483648,
+        "size": 1048576
+      },
+      {
+        "slave": "regs",
+        "min_read": 31,
+        "base": 1030792151040,
+        "size": 65536
+      },
+      {
+        "slave": "ddr0",
+        "min_read": 32,
+        "base": 0,
+        "size": 1073741824
+      },
+      {
+        "slave": "ddr1",
+        "min_read": 38,
+        "base": 1073741824,
+        "size": 1073741824
+      },
+      {
+        "slave": "sram1",
+        "min_read": 38,
+        "base": 2148532224,
+        "size": 1048576
+      }
+    ],
+    "npu": [
+      {
+        "slave": "sram0",
+        "min_read": 8,
+        "base": 2147483648,
+        "size": 1048576
+      },
+      {
+        "slave": "regs",
+        "min_read": 25,
+        "base": 1030792151040,
+        "size": 65536
+      },
+      {
+        "slave": "ddr1",
+        "min_read": 32,
+        "base": 1073741824,
+        "size": 1073741824
+      },
+      {
+        "slave": "sram1",
+        "min_read": 32,
+        "base": 2148532224,
+        "size": 1048576
+      },
+      {
+        "slave": "ddr0",
+        "min_read": 38,
+        "base": 0,
+        "size": 1073741824
+      }
+    ],
+    "pcie": [
+      {
+        "slave": "sram1",
+        "min_read": 26,
+        "base": 2148532224,
+        "size": 1048576
+      },
+      {
+        "slave": "regs",
+        "min_read": 31,
+        "base": 1030792151040,
+        "size": 65536
+      },
+      {
+        "slave": "sram0",
+        "min_read": 38,
+        "base": 2147483648,
+        "size": 1048576
+      },
+      {
+        "slave": "ddr0",
+        "min_read": 44,
+        "base": 0,
+        "size": 1073741824
+      },
+      {
+        "slave": "ddr1",
+        "min_read": 62,
+        "base": 1073741824,
+        "size": 1073741824
+      }
+    ]
+  }
+}
