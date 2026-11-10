@@ -46,7 +46,7 @@ NoC: crossbar 1x1, XY routing, one way = 2*1 + (hops+1)*2 + hops*0 cycles, clock
 | 26 | 0x1001A000 | iommu_jpeg_regs | register_blocks.iommu | 0x494F0100 |
 | 27 | 0x1001B000 | iommu_npu_regs | register_blocks.iommu | 0x494F0100 |
 
-open-ip-portfolio commit `2dc8097fbee4d7e719d2b557a51f2b8f5cc513f4`.
+open-ip-portfolio commit `831acbea4a9f0970e6019fc6989de2325f35c528`.
 
 ## Placement
 

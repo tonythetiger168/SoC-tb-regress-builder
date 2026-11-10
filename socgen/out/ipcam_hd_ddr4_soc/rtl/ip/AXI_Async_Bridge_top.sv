@@ -1,64 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // ============================================================================
-// axi_async_bridge: AXI4 clock-domain crossing (s_* on s_clk, m_* on m_clk)
+// AXI_Async_Bridge_top: AXI4 clock-domain crossing
 // ----------------------------------------------------------------------------
-// One gray-pointer asynchronous FIFO per channel (AW, W, AR towards the
-// manager side, B and R back). Two-flop synchronizers; DEPTH a power of two.
-// The ports carry what the SoC testbench's axi4_if uses (no QoS / user).
+//  - Subordinate port s_* on s_clk, manager port m_* on m_clk; the two clocks
+//    are unrelated (any ratio).
+//  - One axi_async_fifo per channel: AW, W and AR from s to m, B and R from
+//    m to s, each DEPTH entries (a power of two, at least 4). Channels are
+//    independent, so the bridge keeps AXI ordering per channel and adds no
+//    ordering of its own. Latency: two to three clocks of the receiving side
+//    after a beat is written.
+//  - 32-bit data, IDW-bit IDs; the AXI4 signals the SoC fabric uses (no
+//    QoS, region, cache, prot, lock or user). A pure pipe: no response is
+//    generated or changed.
+//  - RESP_ERR (s_clk) pulses for one clock after a B or R beat with SLVERR or
+//    DECERR is handed to the s side (an error interrupt for the APB wrapper).
+//  - Reset both sides together (s_rst_n and m_rst_n).
 // ============================================================================
-module axi_async_fifo #(
-  parameter int W     = 8,
-  parameter int DEPTH = 8
-)(
-  input  logic         w_clk,
-  input  logic         w_rst_n,
-  input  logic         w_valid,
-  output logic         w_ready,
-  input  logic [W-1:0] w_data,
-  input  logic         r_clk,
-  input  logic         r_rst_n,
-  output logic         r_valid,
-  input  logic         r_ready,
-  output logic [W-1:0] r_data
-);
-  localparam int AB = $clog2(DEPTH);
-  logic [W-1:0] mem [DEPTH];
-  logic [AB:0]  wb, wg, rb, rg;                 // binary / gray pointers
-  logic [AB:0]  wg_r1, wg_r2, rg_w1, rg_w2;     // synchronized gray
-  function automatic logic [AB:0] b2g(input logic [AB:0] b);
-    b2g = b ^ (b >> 1);
-  endfunction
-
-  assign w_ready = wg != {~rg_w2[AB:AB-1], rg_w2[AB-2:0]};
-  assign r_valid = rg != wg_r2;
-  assign r_data  = mem[rb[AB-1:0]];
-
-  always_ff @(posedge w_clk or negedge w_rst_n) begin
-    if (!w_rst_n) begin
-      wb <= '0; wg <= '0; rg_w1 <= '0; rg_w2 <= '0;
-    end else begin
-      rg_w1 <= rg; rg_w2 <= rg_w1;
-      if (w_valid && w_ready) begin
-        mem[wb[AB-1:0]] <= w_data;
-        wb <= wb + 1'b1;
-        wg <= b2g(wb + 1'b1);
-      end
-    end
-  end
-  always_ff @(posedge r_clk or negedge r_rst_n) begin
-    if (!r_rst_n) begin
-      rb <= '0; rg <= '0; wg_r1 <= '0; wg_r2 <= '0;
-    end else begin
-      wg_r1 <= wg; wg_r2 <= wg_r1;
-      if (r_valid && r_ready) begin
-        rb <= rb + 1'b1;
-        rg <= b2g(rb + 1'b1);
-      end
-    end
-  end
-endmodule
-
-module axi_async_bridge #(
+module AXI_Async_Bridge_top #(
   parameter int IDW   = 8,
   parameter int DEPTH = 8
 )(
@@ -123,7 +81,9 @@ module axi_async_bridge #(
   input  logic [1:0]     m_rresp,
   input  logic           m_rlast,
   input  logic           m_rvalid,
-  output logic           m_rready
+  output logic           m_rready,
+  // s_clk: a B or R beat with SLVERR / DECERR went out on the s side (one-clock pulse)
+  output logic           resp_err
 );
   localparam int AW_W = IDW + 32 + 8 + 3 + 2;
   localparam int W_W  = 32 + 4 + 1;
@@ -155,4 +115,9 @@ module axi_async_bridge #(
     .w_data({m_rid, m_rdata, m_rresp, m_rlast}),
     .r_clk(s_clk), .r_rst_n(s_rst_n), .r_valid(s_rvalid), .r_ready(s_rready),
     .r_data({s_rid, s_rdata, s_rresp, s_rlast}));
+
+  always_ff @(posedge s_clk or negedge s_rst_n) begin
+    if (!s_rst_n) resp_err <= 1'b0;
+    else          resp_err <= (s_bvalid && s_bready && s_bresp[1]) || (s_rvalid && s_rready && s_rresp[1]);
+  end
 endmodule

@@ -38,11 +38,12 @@ socgen/out/ipcam_hd_ddr4_soc/rtl/ip/UART_top.sv
 socgen/out/ipcam_hd_ddr4_soc/rtl/ip/UART_apb.sv
 socgen/out/ipcam_hd_ddr4_soc/rtl/ip/eMMC_top.sv
 socgen/out/ipcam_hd_ddr4_soc/rtl/ip/eMMC_apb.sv
+socgen/out/ipcam_hd_ddr4_soc/rtl/ip/axi_async_fifo.sv
+socgen/out/ipcam_hd_ddr4_soc/rtl/ip/AXI_Async_Bridge_top.sv
 socgen/out/ipcam_hd_ddr4_soc/rtl/ip/ddr4_jedec_ctrl.sv
 socgen/out/ipcam_hd_ddr4_soc/rtl/ip/DDR4_JEDEC_AXI_top.sv
 socgen/out/ipcam_hd_ddr4_soc/rtl/ip/ddr4_phy_beh.sv
 socgen/out/ipcam_hd_ddr4_soc/rtl/ip/ddr4_dev_model.sv
-vip/dram/axi_async_bridge.sv
 vip/dram/soc_ddr4_chan.sv
 tb/ipcam_soc/devices/csi2_tx_model.sv
 socgen/out/ipcam_hd_ddr4_soc/rtl/vip/sccb_model.sv

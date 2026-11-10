@@ -3,9 +3,10 @@
 // soc_ddr4_chan: one DDR4 channel behind a NoC slave port (socgen
 // memories[].model: ddr4)
 // ----------------------------------------------------------------------------
-//   s_* (aclk) -> axi_async_bridge -> DDR4_JEDEC_AXI_top (ck) -> ddr4_phy_beh
+//   s_* (aclk) -> AXI_Async_Bridge_top -> DDR4_JEDEC_AXI_top (ck) -> ddr4_phy_beh
 //   -> NDEV x16 devices
-// The channel runs on its own CK (TCK_PS, default 628 ps ~ DDR4-3200) so the
+// The CDC (AXI_Async_Bridge) and the controller are open-ip-portfolio IPs,
+// copied into the generated SoC by socgen. The channel runs on its own CK (TCK_PS, default 628 ps ~ DDR4-3200) so the
 // DRAM timing is real nanoseconds whatever the NoC clock is.
 // Devices: Micron's DDR4 model when the build defines MICRON_DDR4 (see
 // vip/micron/README.md: the files are fetched at build time, never committed),
@@ -98,7 +99,7 @@ module soc_ddr4_chan #(
   logic awvalid, awready, wlast, wvalid, wready, bvalid, bready;
   logic arvalid, arready, rlast, rvalid, rready;
 
-  axi_async_bridge #(.IDW(IDW)) u_cdc (
+  AXI_Async_Bridge_top #(.IDW(IDW)) u_cdc (
     .s_clk(aclk), .s_rst_n(aresetn),
     .s_awid, .s_awaddr, .s_awlen, .s_awsize, .s_awburst, .s_awvalid, .s_awready,
     .s_wdata, .s_wstrb, .s_wlast, .s_wvalid, .s_wready,
@@ -112,7 +113,8 @@ module soc_ddr4_chan #(
     .m_bid(bid), .m_bresp(bresp), .m_bvalid(bvalid), .m_bready(bready),
     .m_arid(arid), .m_araddr(araddr), .m_arlen(arlen), .m_arsize(arsize), .m_arburst(arburst),
     .m_arvalid(arvalid), .m_arready(arready),
-    .m_rid(rid), .m_rdata(rdata), .m_rresp(rresp), .m_rlast(rlast), .m_rvalid(rvalid), .m_rready(rready)
+    .m_rid(rid), .m_rdata(rdata), .m_rresp(rresp), .m_rlast(rlast), .m_rvalid(rvalid), .m_rready(rready),
+    .resp_err()
   );
 
   // ---------------- controller ----------------

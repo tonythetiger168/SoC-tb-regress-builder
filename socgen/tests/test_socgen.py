@@ -369,5 +369,6 @@ class DramModel(unittest.TestCase):
         self.assertIn("dram_ready = 1'b1;", top)
         self.assertIn("bit dram_ready = 1'b0;", pkg)
         self.assertRegex(env, r"NAXI_S = %d;" % (len(m.targets) - nch - sum(1 for t in m.targets if t.kind not in ("channel", "memory", "vip"))))
-        for f in ("rtl/ip/ddr4_jedec_ctrl.sv", "rtl/ip/ddr4_dev_model.sv", "vip/dram/soc_ddr4_chan.sv"):
+        for f in ("rtl/ip/ddr4_jedec_ctrl.sv", "rtl/ip/ddr4_dev_model.sv", "rtl/ip/AXI_Async_Bridge_top.sv",
+                  "rtl/ip/axi_async_fifo.sv", "vip/dram/soc_ddr4_chan.sv"):
             self.assertIn(f, fl)

@@ -30,7 +30,8 @@ AXI_SIGS = ["awid", "awaddr", "awlen", "awsize", "awburst", "awprot", "awvalid",
             "wdata", "wstrb", "wlast", "wvalid", "wready", "bid", "bresp", "bvalid", "bready",
             "arid", "araddr", "arlen", "arsize", "arburst", "arprot", "arvalid", "arready",
             "rid", "rdata", "rresp", "rlast", "rvalid", "rready"]
-DDR4_IP_FILES = ["rtl/ddr4_jedec_ctrl.sv", "rtl/DDR4_JEDEC_AXI_top.sv", "tb/ddr4_phy_beh.sv", "tb/ddr4_dev_model.sv"]
+DDR4_IP_FILES = ["rtl/axi_async_fifo.sv", "rtl/AXI_Async_Bridge_top.sv", "rtl/ddr4_jedec_ctrl.sv",
+                 "rtl/DDR4_JEDEC_AXI_top.sv", "tb/ddr4_phy_beh.sv", "tb/ddr4_dev_model.sv"]
 AXI_SLAVE_OUT = {"awready", "wready", "bid", "bresp", "bvalid", "arready", "rid", "rdata", "rresp", "rlast", "rvalid"}
 # repo files every generated bench compiles (from PR #1's VIPs and bridge)
 VIP_ROOT = os.environ.get("OPEN_VIP_ROOT", os.path.join(ROOT, "..", "open-vip-portfolio"))
@@ -227,15 +228,15 @@ def generate(m, out, ip_root, spec_path, write_repo_files=True, vip_root=None):
         rtl_files.append(f"rtl/{m.name}_apb_subsys.sv")
     dram_files = []
     if dram_chans:
-        # open-ip-portfolio DDR4_JEDEC_AXI controller, its behavioural PHY and
-        # device model; the channel wrapper and CDC are this repo's
+        # open-ip-portfolio AXI_Async_Bridge (CDC) and DDR4_JEDEC_AXI controller,
+        # its behavioural PHY and device model; the channel wrapper is this repo's
         for src in DDR4_IP_FILES:
             sp = os.path.join(ip_root, src)
             if not os.path.exists(sp):
-                raise SpecError(f"memories[].model ddr4: {sp} not found (open-ip-portfolio with DDR4_JEDEC_AXI)")
+                raise SpecError(f"memories[].model ddr4: {sp} not found (open-ip-portfolio with DDR4_JEDEC_AXI and AXI_Async_Bridge)")
             shutil.copy(sp, os.path.join(out, "rtl", "ip", os.path.basename(src)))
             ip_files.append(f"rtl/ip/{os.path.basename(src)}")
-        dram_files = ["vip/dram/axi_async_bridge.sv", "vip/dram/soc_ddr4_chan.sv"]
+        dram_files = ["vip/dram/soc_ddr4_chan.sv"]
     render("ral_pkg.sv.j2", f"tb/{m.name}_ral_pkg.sv")
     render("env_pkg.sv.j2", f"tb/{m.name}_env_pkg.sv")
     render("test_pkg.sv.j2", f"tb/{m.name}_test_pkg.sv")
