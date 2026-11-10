@@ -401,6 +401,14 @@ class Chi(unittest.TestCase):
         self.assertEqual(m.masters[0].ideal[t["ddr0"]], 82)      # die 0 cpu -> die 1 ddr
         self.assertEqual(m.masters[3].ideal[t["ddr0"]], 77)      # die 1 npu via the die-0 home
 
+    def test_home_slots(self):
+        m = spec.elaborate(raw("chi_mesh_soc.yaml"))
+        self.assertEqual(m.chi.slots, 4)                          # default
+        r = raw("chi_mesh_soc.yaml")
+        r["chi"]["home_slots"] = 1
+        self.assertEqual(spec.elaborate(r).chi.slots, 1)
+        self.bad(lambda r: r["chi"].update(home_slots=17), "1 to 16")
+
     def test_three_homes(self):
         self.bad(lambda r: r["chi"].update(home=[[0, 0], [1, 0], [1, 1]]), "1, 2 or 4 homes")
 

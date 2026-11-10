@@ -78,6 +78,7 @@ package noc_cfg_pkg;
   localparam int HN_EP = NM + NS + NGW;           // the first HN-F endpoint
   localparam int HN_G = 12;                     // homes interleave on 2**HN_G bytes
   localparam int HN_K = 1;                      // log2(NHN)
+  localparam int HN_SLOTS = 4;                  // transactions in flight per home
   localparam bit CHI_DMT = 1'b1;             // memory data straight to the requester
   localparam bit CHI_DCT = 1'b1;             // the owner forwards the line to the requester
   localparam int NRN = 2;                   // RN-F ports (protocol chi masters)
@@ -146,11 +147,15 @@ package noc_cfg_pkg;
   // RX, TgtID on TX; requests go to the address's home); 256-bit data (a
   // 64-byte line is two DAT flits, DataID 0 and 2); L-Credits replaced by
   // valid / ready on the RN-F's TX channels, and the RN-F always accepts on RX.
+  // ReadNoSnp / WriteNoSnpPtl carry nm1: 32-bit words - 1, all in one 32-byte
+  // half line (where CHI would use Size and byte enables; it keeps a
+  // peripheral's registers that were not asked for untouched).
   typedef struct packed {
     logic [TAGW-1:0] txnid;
     logic [5:0]      opcode;
     logic [31:0]     addr;
     logic [2:0]      size;
+    logic [2:0]      nm1;
   } chi_req_t;
   typedef struct packed {
     logic [EPB-1:0]  nid;                 // SrcID (the home)

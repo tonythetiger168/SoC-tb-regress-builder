@@ -222,6 +222,7 @@ the coherent memory.
 | `coherent` | | memories (or slaves of kind `memory`) the homes keep coherent |
 | `cache_lines` | 64 | lines of each RN-F cache (64-byte, direct-mapped, power of two 4..1024); also sizes each snoop filter |
 | `home_granule` | 4096 | the homes interleave the address space on this granule (xor-folded); at least 4 KB so an AXI burst never spans two homes |
+| `home_slots` | 4 | transactions each home runs at once (1 to 16). Requests are taken in order; one whose snoop-filter set is already in a slot waits, so a line is never in two transactions. 1 is a serial home |
 | `dmt` | true | Direct Memory Transfer: memory sends a ReadShared / ReadUnique line straight to the requester |
 | `dct` | true | Direct Cache Transfer: a unique owner forwards the line to the requester (SnpSharedFwd / SnpUniqueFwd) |
 
@@ -232,8 +233,10 @@ the coherent memory.
   always accepts on RX). In the bench the AXI4 VIP is the CPU and
   `noc_chi_rnf` its cache: MESI (I / SC / UC / UD), ReadShared, ReadUnique,
   CleanUnique, WriteBackFull, Evict, CompAck (to the CompData's HomeNID);
-  ReadNoSnp / WriteNoSnpPtl (one beat each) for addresses outside the
-  coherent memory; it answers forwarded snoops with CompData to the requester.
+  ReadNoSnp / WriteNoSnpPtl for addresses outside the coherent memory (an
+  INCR burst of 32-bit beats as one request per 32-byte half line, carrying
+  just the words asked for; other bursts one beat each);
+  it answers forwarded snoops with CompData to the requester.
 - HN-F (`noc_hnf`): exact inclusive snoop filter for its address slice (a copy
   of every RN-F's tags), one transaction at a time; SnpShared / SnpUnique /
   SnpCleanShared, and the Fwd snoops with `dct`; dirty data written back or
