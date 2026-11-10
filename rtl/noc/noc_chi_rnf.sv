@@ -6,7 +6,10 @@
 // ----------------------------------------------------------------------------
 //  * Cache: NL 64-byte lines, direct-mapped, MESI as CHI states I / SC / UC /
 //    UD. Addresses in coherent memory (noc_cfg_pkg::cacheable) are cached;
-//    everything else is one ReadNoSnp / WriteNoSnpPtl per beat.
+//    everything else goes as ReadNoSnp / WriteNoSnpPtl: an INCR burst of
+//    32-bit beats as one request per 32-byte half line it touches (nm1 + 1
+//    words: only the beats asked for, so no peripheral register is read or
+//    written that the burst does not address), any other burst one per beat.
 //  * One AXI burst at a time (reads and writes alternate), beat by beat:
 //      read hit            data from the line
 //      write hit, UC / UD  bytes written, line UD
@@ -133,8 +136,8 @@ module noc_chi_rnf
   wire  snp_busy = (nsnq != 0) || (sst != S_IDLE);
 
   // ---------------- AXI burst ----------------
-  typedef enum logic [3:0] { M_IDLE, M_BEAT, M_WAIT, M_ACK, M_WBD0, M_WBD1, M_ROUT, M_B } mst_e;
-  typedef enum logic [2:0] { W_FILL, W_CU, W_EV, W_WB, W_NSRD, W_NSDBID, W_NSCOMP } wk_e;
+  typedef enum logic [3:0] { M_IDLE, M_BEAT, M_WAIT, M_ACK, M_WBD0, M_WBD1, M_ROUT, M_B, M_NSR } mst_e;
+  typedef enum logic [3:0] { W_FILL, W_CU, W_EV, W_WB, W_NSRD, W_NSDBID, W_NSGATH, W_NSDATA, W_NSCOMP } wk_e;
   mst_e st;
   wk_e  wk;
   logic           b_wr, last_rd;
@@ -148,6 +151,12 @@ module noc_chi_rnf
   logic [1:0]     r_resp;
   logic [TAGW-1:0] txn;
   logic [IB-1:0]  wb_idx;
+  // NoSnp of several words: words in the request, words gathered / served,
+  // its half line, the write data, and whether it ends the burst
+  logic [3:0]     ns_n, ns_k;
+  logic           ns_half, ns_rd, ns_last;
+  logic [255:0]   ns_wd;
+  logic [31:0]    ns_be;
   logic [2:0]     wb_resp;
   logic [25:0]    wb_line;
 
@@ -167,6 +176,12 @@ module noc_chi_rnf
   wire          hit  = cs[idx] != CS_I && ctag[idx] == tg;
   wire          cach = cacheable(a);
   wire          lastb = (b_i == b_len);
+  // NoSnp: words this request carries (the rest of an INCR 32-bit burst in
+  // this half line; one for any other burst)
+  wire [8:0]    b_rem  = {1'b0, b_len} - {1'b0, b_i} + 9'd1;
+  wire [3:0]    w_room = 4'd8 - {1'b0, a[4:2]};
+  wire [3:0]    ns_nc  = (b_burst != 2'b01 || b_size != 3'd2) ? 4'd1 :
+                         (b_rem < 9'(w_room)) ? 4'(b_rem) : w_room;
 
   // main FSM may act this cycle (no snoop in progress)
   wire go = !snp_busy;
@@ -198,6 +213,7 @@ module noc_chi_rnf
           p_req.opcode = b_wr ? REQ_WRITENOSNPPTL : REQ_READNOSNP;
           p_req.addr   = a;
           p_req.size   = b_size;
+          p_req.nm1    = 3'(ns_nc - 4'd1);
         end else if (hit && b_wr && (cs[idx] == CS_UC || cs[idx] == CS_UD)) w_take = 1'b1;
         else if (hit && b_wr) begin
           push_req     = room_req;
@@ -215,7 +231,7 @@ module noc_chi_rnf
           end
         end
       end
-      M_WAIT: if (wk == W_NSCOMP && rsp_got) w_take = 1'b1;
+      M_WAIT: if (wk == W_NSGATH && s_wvalid) w_take = 1'b1;
       default: ;
     endcase
   end
@@ -272,14 +288,14 @@ module noc_chi_rnf
         p_rsp.txnid  = txn - 1'b1;          // the request's TxnID (txn moved on at its push)
         p_rsp.opcode = RSP_COMPACK;
       end
-      if (st == M_WAIT && wk == W_NSDBID && rsp_got && room_dat2) begin
+      if (st == M_WAIT && wk == W_NSDATA && room_dat2) begin
         push_dat = 1'b1;
         p_dat.nid    = rsp_q.nid;
         p_dat.txnid  = rsp_q.dbid;
         p_dat.opcode = DAT_NONCOPYBACKWRDATA;
-        p_dat.dataid = {a[5], 1'b0};
-        p_dat.be[4*a[4:2] +: 4]     = s_wstrb;
-        p_dat.data[32*a[4:2] +: 32] = s_wdata;
+        p_dat.dataid = {ns_half, 1'b0};
+        p_dat.be     = ns_be;
+        p_dat.data   = ns_wd;
       end
       if ((st == M_WBD0 || st == M_WBD1) && room_dat2) begin
         push_dat = 1'b1;
@@ -308,6 +324,7 @@ module noc_chi_rnf
       st <= M_IDLE; wk <= W_FILL; b_wr <= 1'b0; last_rd <= 1'b0; b_id <= '0; b_addr <= '0;
       b_len <= '0; b_i <= '0; b_size <= '0; b_burst <= '0; b_worst <= '0;
       r_data <= '0; r_resp <= '0; txn <= '0; wb_idx <= '0; wb_resp <= '0; wb_line <= '0;
+      ns_n <= '0; ns_k <= '0; ns_half <= 1'b0; ns_rd <= 1'b0; ns_last <= 1'b0; ns_wd <= '0; ns_be <= '0;
     end else begin
       // ---------------- TX queues ----------------
       if (push_req) begin qreq[wreq] <= p_req; wreq <= ~wreq; end
@@ -387,7 +404,10 @@ module noc_chi_rnf
           if (push_req) begin
             txn <= txn + 1'b1;
             rsp_got <= 1'b0; dat_n <= '0;
-            if (!cach) wk <= b_wr ? W_NSDBID : W_NSRD;
+            if (!cach) begin
+              wk <= b_wr ? W_NSDBID : W_NSRD;
+              ns_n <= ns_nc; ns_k <= '0; ns_half <= a[5]; ns_be <= '0; ns_last <= 1'b0;
+            end
             else if (hit) wk <= W_CU;
             else if (cs[idx] != CS_I) begin
               wk <= (cs[idx] == CS_UD) ? W_WB : W_EV;
@@ -429,19 +449,30 @@ module noc_chi_rnf
             cs[wb_idx] <= CS_I;
             st <= M_WBD0;
           end
-          W_NSRD: if (dat_n != 0) begin
+          W_NSRD: if (dat_n != 0) begin     // the first word; M_NSR serves the rest
             r_data <= dat_q[a[5]][32*a[4:2] +: 32];
             r_resp <= dat_err;
+            ns_k <= 4'd1; ns_rd <= 1'b1;
             st <= M_ROUT;
           end
-          W_NSDBID: if (rsp_got && push_dat) begin
+          W_NSDBID: if (rsp_got) begin      // DBIDResp: gather the words
             rsp_got <= 1'b0;
-            wk <= W_NSCOMP;
+            wk <= W_NSGATH;
           end
-          W_NSCOMP: if (rsp_got) begin      // w_take is on
+          W_NSGATH: if (s_wvalid) begin     // w_take is on
+            for (int l = 0; l < 4; l++) begin
+              ns_wd[32*a[4:2] + 8*l +: 8] <= s_wdata[8*l +: 8];
+              ns_be[4*a[4:2] + l]         <= s_wstrb[l];
+            end
+            ns_k <= ns_k + 4'd1;
+            if (lastb) ns_last <= 1'b1;
+            else b_i <= b_i + 8'd1;
+            if (ns_k + 4'd1 == ns_n) wk <= W_NSDATA;
+          end
+          W_NSDATA: if (push_dat) wk <= W_NSCOMP;
+          W_NSCOMP: if (rsp_got) begin
             if (rsp_q.resperr > b_worst) b_worst <= rsp_q.resperr;
-            b_i <= b_i + 8'd1;
-            st <= lastb ? M_B : M_BEAT;
+            st <= ns_last ? M_B : M_BEAT;
           end
           default: ;
         endcase
@@ -453,7 +484,18 @@ module noc_chi_rnf
 
         M_ROUT: if (s_rready) begin
           b_i <= b_i + 8'd1;
-          st <= lastb ? M_IDLE : M_BEAT;
+          if (!lastb && ns_rd && ns_k != ns_n) st <= M_NSR;
+          else begin
+            ns_rd <= 1'b0;
+            st <= lastb ? M_IDLE : M_BEAT;
+          end
+        end
+
+        M_NSR: begin                        // the next word of a NoSnp read
+          r_data <= dat_q[a[5]][32*a[4:2] +: 32];
+          r_resp <= dat_err;
+          ns_k <= ns_k + 4'd1;
+          st <= M_ROUT;
         end
 
         M_B: if (s_bready) st <= M_IDLE;

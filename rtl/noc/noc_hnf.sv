@@ -22,7 +22,7 @@
 //    the line to an earlier snoop -- it then asks again with ReadUnique),
 //    Evict, WriteBackFull (CompDBIDResp, CopyBackWrData; the data goes to
 //    memory only if the requester still owns the line), and ReadNoSnp /
-//    WriteNoSnpPtl (one beat of up to 4 bytes) for addresses outside the
+//    WriteNoSnpPtl (up to eight 32-bit words of one half line) outside the
 //    coherent memory.
 //  * RN-I chunks (OP_RD / OP_WR from noc_ni_mst, up to 32 bytes, at most two
 //    lines): reads snoop the unique holder SnpCleanShared, writes snoop
@@ -229,12 +229,16 @@ module noc_hnf
       end
       H_FWD: begin
         if (ni_chunk[k]) np = cur[k];       // the chunk as the master NI sent it
-        else begin                          // NoSnp: one beat
+        else begin                          // NoSnp: nm1 + 1 words of one half line
           np.op   = is_rns[k] ? OP_RD : OP_WR;
           np.addr = cur[k].addr;
           np.size = cur[k].size;
-          np.data[0] = lbuf[k][cur[k].addr[5]][32*cur[k].addr[4:2] +: 32];
-          np.strb[0] = wd_be[k][4*cur[k].addr[4:2] +: 4];
+          np.nm1  = cur[k].nm1;
+          for (int i = 0; i < 8; i++)
+            if (i <= int'(cur[k].nm1) && int'(cur[k].addr[4:2]) + i < 8) begin
+              np.data[i] = lbuf[k][cur[k].addr[5]][32*(int'(cur[k].addr[4:2]) + i) +: 32];
+              np.strb[i] = wd_be[k][4*(int'(cur[k].addr[4:2]) + i) +: 4];
+            end
         end
         np.dst_ep = decode_tgt(cur[k].addr);
         np.src_ep = EPB'(SELF);
@@ -265,9 +269,14 @@ module noc_hnf
           np.dataid = {cur[k].addr[5], 1'b0};
           np.cresp  = RESP_UC;
           np.hnid   = EPB'(SELF);
-          np.resp   = nderr[k] ? RESPERR_NDERR : fwd_rsp[k].rresp[0] == 2'b11 ? RESPERR_NDERR :
-                      fwd_rsp[k].rresp[0] == 2'b10 ? RESPERR_DERR : RESPERR_OK;
-          if (!nderr[k]) np.data[cur[k].addr[4:2]] = fwd_rsp[k].data[0];
+          np.resp   = nderr[k] ? RESPERR_NDERR : RESPERR_OK;
+          if (!nderr[k])
+            for (int i = 0; i < 8; i++)
+              if (i <= int'(cur[k].nm1) && int'(cur[k].addr[4:2]) + i < 8) begin
+                np.data[int'(cur[k].addr[4:2]) + i] = fwd_rsp[k].data[i];
+                if (fwd_rsp[k].rresp[i] == 2'b11) np.resp = RESPERR_NDERR;
+                else if (fwd_rsp[k].rresp[i] == 2'b10 && np.resp != RESPERR_NDERR) np.resp = RESPERR_DERR;
+              end
         end else begin                      // Comp: CleanUnique, Evict, WriteNoSnpPtl
           np.op    = OP_CRSP;
           np.copc  = {2'b0, RSP_COMP};

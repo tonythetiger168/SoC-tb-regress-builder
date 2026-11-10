@@ -233,8 +233,10 @@ the coherent memory.
   always accepts on RX). In the bench the AXI4 VIP is the CPU and
   `noc_chi_rnf` its cache: MESI (I / SC / UC / UD), ReadShared, ReadUnique,
   CleanUnique, WriteBackFull, Evict, CompAck (to the CompData's HomeNID);
-  ReadNoSnp / WriteNoSnpPtl (one beat each) for addresses outside the
-  coherent memory; it answers forwarded snoops with CompData to the requester.
+  ReadNoSnp / WriteNoSnpPtl for addresses outside the coherent memory (an
+  INCR burst of 32-bit beats as one request per 32-byte half line, carrying
+  just the words asked for; other bursts one beat each);
+  it answers forwarded snoops with CompData to the requester.
 - HN-F (`noc_hnf`): exact inclusive snoop filter for its address slice (a copy
   of every RN-F's tags), one transaction at a time; SnpShared / SnpUnique /
   SnpCleanShared, and the Fwd snoops with `dct`; dirty data written back or

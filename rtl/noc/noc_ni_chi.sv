@@ -78,6 +78,7 @@ module noc_ni_chi
       tp.copc   = txreq_flit.opcode;
       tp.addr   = txreq_flit.addr;
       tp.size   = txreq_flit.size;
+      tp.nm1    = txreq_flit.nm1;
     end
   end
 
