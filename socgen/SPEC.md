@@ -77,9 +77,11 @@ one APB slot in the first `apb_bridge` slave, after its listed peripherals.
 | `channels` | power of two; channel `c` is NoC slave port `S_<NAME><c>` |
 | `interleave.granule` | power of two, at least 4 KB, so a burst never spans channels |
 | `interleave.hash` | `none`: `ch = a[g+n-1:g]`; `xor`: `ch = a[g+n-1:g] ^ a[g+2n-1:g+n]` |
-| `access_cycles` | zero-load access time, used by the ideal-latency table and the behavioural NoC |
-| `timing` | preset name handed to the memory VIP (`lpddr5-6400`) |
+| `access_cycles` | zero-load access time, used by the ideal-latency table and the behavioural NoC. With a DRAM `model` it is only the ideal-latency figure (the NoC adds nothing; the DRAM takes its own time) and defaults to a closed-bank read: ACT + tRCD + CL + BL8 + clock crossings |
+| `timing` | preset name: informational for `model: vip` (`lpddr5-6400`), the speed bin for `model: ddr4` (`ddr4-3200`, `ddr4-2666`) |
 | `placement` | `rows: [..]` and `fill: block` (consecutive channels share a router) or `fill: round_robin`; or `nodes: [[x, y], ...]` one per channel |
+| `model` | `vip` (default): the AXI slave VIP answers after `access_cycles`. `ddr4`: each channel is `vip/dram/soc_ddr4_chan`, which contains open-ip-portfolio's `AXI_Async_Bridge` clock crossing and `DDR4_JEDEC_AXI` controller, a behavioural PHY and x16 DDR4 devices on their own CK. The devices are Micron's DDR4 model when `scripts/fetch_micron_models.sh` found it, `ddr4_dev_model` otherwise; see `vip/micron/README.md`. The scoreboard still checks the data. Device-model violations are UVM errors. Tests start once every channel has finished init |
+| `model_params` | `model: ddr4` only. Overrides `soc_ddr4_chan` parameters: `NDEV` (x16 devices per channel), `TCK_PS`, `CL`, `CWL`, `T_*` in nCK. The defaults come from `timing`: `ddr4-3200` (the default) or `ddr4-2666` |
 
 `<prefix>_dram_channel(a)` and `<prefix>_dram_local(a)` (the channel-local
 address with the channel bits removed) are generated for each memory.
