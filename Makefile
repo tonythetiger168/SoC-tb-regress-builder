@@ -4,6 +4,7 @@
 #   make run TEST=soc_smoke_test SEED=1
 #   make regress [LIST=regress/testlist.txt JOBS=4]
 #   make vip_build / make vip_run TEST=vip_axi4_loopback_test
+#   make build TB=axil / make run TB=axil TEST=axil_loopback_test   (AXI4-Lite VIP)
 #   make build TB=<soc> for a socgen-generated bench (socgen/out/<soc>/socgen.mk)
 # SIM=verilator (default) | vcs | xrun | questa
 SIM      ?= verilator
@@ -14,6 +15,7 @@ UVM_HOME ?= $(CURDIR)/uvm-core/src
 BUILD    := build/$(SIM)/$(TB)
 TOP_soc  := soc_tb_top
 TOP_vip  := vip_tb_top
+TOP_axil := axil_tb
 -include $(wildcard socgen/out/*/socgen.mk)
 TOP_ipcam_ip := ipcam_ip_tb_top
 TOP_ipcam_soc_media    := ipcam_soc_tb_top

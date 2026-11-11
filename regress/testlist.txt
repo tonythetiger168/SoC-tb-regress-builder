@@ -1,8 +1,9 @@
 # Regression test list: <tb> <test> <seeds> [plusargs...]
-#   tb     soc (AMBA SoC testbench) | vip (VIP loopback self-tests)
+#   tb     soc (AMBA SoC testbench) | vip, axil (VIP loopback self-tests)
 #   seeds  number of random seeds to run (seed values 1..N)
 vip vip_axi4_loopback_test   3
 vip vip_apb_loopback_test    3
+axil axil_loopback_test      3
 soc soc_smoke_test           1
 soc soc_sram_test            5
 soc soc_ddr_test             5

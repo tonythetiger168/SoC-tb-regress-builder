@@ -1,9 +1,9 @@
 name: socgen
 on:
   push:
-    paths: ["socgen/**", "vip/**", "rtl/soc/axi2apb_bridge.sv", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
+    paths: ["socgen/**", "vip/**", "tb/vip_selftest/**", "sim/**", "rtl/soc/axi2apb_bridge.sv", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
   pull_request:
-    paths: ["socgen/**", "vip/**", "rtl/soc/axi2apb_bridge.sv", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
+    paths: ["socgen/**", "vip/**", "tb/vip_selftest/**", "sim/**", "rtl/soc/axi2apb_bridge.sv", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
   workflow_dispatch:
 jobs:
   socgen:
@@ -42,6 +42,8 @@ jobs:
           echo "/opt/verilator/bin" >> "$GITHUB_PATH"
       - name: mini_soc regression
         run: python3 regress/regress.py --list regress/mini_soc_testlist.txt --jobs "$(nproc)"
+      - name: VIP self-tests
+        run: python3 regress/regress.py --list regress/vip_testlist.txt --jobs "$(nproc)" --out regress_out/vip
       - name: Summary
         if: always()
         run: cat regress_out/summary.md >> "$GITHUB_STEP_SUMMARY" || true
