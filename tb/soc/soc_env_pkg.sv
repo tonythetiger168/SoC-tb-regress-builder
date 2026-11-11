@@ -162,7 +162,7 @@ package soc_env_pkg;
     endfunction
 
     // ---------------------------------------------------------------- utils
-    function void check(bit ok, string what);
+    function void chk(bit ok, string what);
       n_checks++;
       if (!ok) begin
         n_errors++;
@@ -228,17 +228,17 @@ package soc_env_pkg;
               if (t.strb[i][b]) sram[a[9:0] + b] = t.data[i][8*b +: 8];
             if (t.burst == AXI4_INCR) a += 4;
           end
-        check(t.resp[0] == exp, $sformatf("%s: BRESP %s, expected %s", tag, t.resp[0].name(), exp.name()));
+        chk(t.resp[0] == exp, $sformatf("%s: BRESP %s, expected %s", tag, t.resp[0].name(), exp.name()));
       end else begin
         for (int unsigned i = 0; i < t.beats(); i++) begin
           axi4_resp_e exp = (exp_start != AXI4_OKAY) ? exp_start :
                             sram_in_range(a) ? AXI4_OKAY : AXI4_SLVERR;
-          check(t.resp[i] == exp, $sformatf("%s: beat %0d RRESP %s, expected %s", tag, i,
+          chk(t.resp[i] == exp, $sformatf("%s: beat %0d RRESP %s, expected %s", tag, i,
                 t.resp[i].name(), exp.name()));
           if (exp_start == AXI4_OKAY && exp == AXI4_OKAY)
             for (int b = 0; b < 4; b++)
               if (sram.exists(a[9:0] + b))
-                check(t.data[i][8*b +: 8] == sram[a[9:0] + b],
+                chk(t.data[i][8*b +: 8] == sram[a[9:0] + b],
                       $sformatf("%s: beat %0d byte %0d = %02h, expected %02h (addr %08h)", tag, i, b,
                                 t.data[i][8*b +: 8], sram[a[9:0] + b], a + b));
           if (exp_start == AXI4_OKAY && t.burst == AXI4_INCR) a += 4;
@@ -252,7 +252,7 @@ package soc_env_pkg;
       bit err = (t.addr >= cfg.ddr_err_lo && t.addr <= cfg.ddr_err_hi);
       axi4_resp_e exp = err ? AXI4_SLVERR : AXI4_OKAY;
       if (t.write) begin
-        check(t.resp[0] == exp, $sformatf("%s: BRESP %s, expected %s", tag, t.resp[0].name(), exp.name()));
+        chk(t.resp[0] == exp, $sformatf("%s: BRESP %s, expected %s", tag, t.resp[0].name(), exp.name()));
         if (!err)
           for (int unsigned i = 0; i < t.beats(); i++) begin
             bit [31:0] base = t.beat_addr(i) & ~32'h3;
@@ -263,12 +263,12 @@ package soc_env_pkg;
         for (int unsigned i = 0; i < t.beats(); i++) begin
           bit [31:0] base = t.beat_addr(i) & ~32'h3;
           bit [3:0]  ln   = t.lanes(i);
-          check(t.resp[i] == exp, $sformatf("%s: beat %0d RRESP %s, expected %s", tag, i,
+          chk(t.resp[i] == exp, $sformatf("%s: beat %0d RRESP %s, expected %s", tag, i,
                 t.resp[i].name(), exp.name()));
           if (!err)
             for (int b = 0; b < 4; b++)
               if (ln[b])
-                check(t.data[i][8*b +: 8] == ddr_byte(base + b),
+                chk(t.data[i][8*b +: 8] == ddr_byte(base + b),
                       $sformatf("%s: beat %0d byte %0d = %02h, expected %02h (addr %08h)", tag, i, b,
                                 t.data[i][8*b +: 8], ddr_byte(base + b), base + b));
         end
@@ -284,14 +284,14 @@ package soc_env_pkg;
         string tag = $sformatf("DDR port: master{%s} ext{%s}", m.convert2string(), e.convert2string());
         bit ok = (e.addr == m.addr) && (e.len == m.len) && (e.size == m.size) &&
                  (e.burst == m.burst) && (e.id == {3'b0, m.port[0], m.id[3:0]});
-        check(ok, {tag, ": request attributes or ID differ"});
+        chk(ok, {tag, ": request attributes or ID differ"});
         for (int unsigned i = 0; i < m.beats() && i < e.beats(); i++) begin
-          if (wr) check(e.data[i] == m.data[i] && e.strb[i] == m.strb[i],
+          if (wr) chk(e.data[i] == m.data[i] && e.strb[i] == m.strb[i],
                         $sformatf("%s: write beat %0d data/strb differ", tag, i));
-          else    check(e.data[i] == m.data[i] && e.resp[i] == m.resp[i],
+          else    chk(e.data[i] == m.data[i] && e.resp[i] == m.resp[i],
                         $sformatf("%s: read beat %0d data/resp differ", tag, i));
         end
-        if (wr) check(e.resp[0] == m.resp[0], {tag, ": BRESP differs"});
+        if (wr) chk(e.resp[0] == m.resp[0], {tag, ": BRESP differs"});
       end
     endfunction
 
@@ -335,7 +335,7 @@ package soc_env_pkg;
       string tag = {"APB ", t.convert2string()};
       bit any_err = 0;
       if (apb_q.size() < t.beats()) begin
-        check(0, $sformatf("%s: %0d beats but only %0d APB transfers seen", tag, t.beats(), apb_q.size()));
+        chk(0, $sformatf("%s: %0d beats but only %0d APB transfers seen", tag, t.beats(), apb_q.size()));
         apb_q.delete();
         return;
       end
@@ -344,44 +344,44 @@ package soc_env_pkg;
         bit [31:0] ba = t.beat_addr(i);
         bit exp_err, known;
         bit [31:0] exp_rd;
-        check(p.addr == ba && p.write == t.write,
+        chk(p.addr == ba && p.write == t.write,
               $sformatf("%s: beat %0d -> APB %s, expected %s addr %08h", tag, i, p.convert2string(),
                         t.write ? "WR" : "RD", ba));
         if (t.write)
-          check(p.data == t.data[i] && p.strb == t.strb[i],
+          chk(p.data == t.data[i] && p.strb == t.strb[i],
                 $sformatf("%s: beat %0d APB PWDATA/PSTRB %08h/%04b, AXI %08h/%04b", tag, i,
                           p.data, p.strb, t.data[i], t.strb[i]));
         else begin
-          check(t.data[i] == p.data, $sformatf("%s: beat %0d RDATA %08h, PRDATA %08h", tag, i, t.data[i], p.data));
-          check(t.resp[i] == (p.slverr ? AXI4_SLVERR : AXI4_OKAY),
+          chk(t.data[i] == p.data, $sformatf("%s: beat %0d RDATA %08h, PRDATA %08h", tag, i, t.data[i], p.data));
+          chk(t.resp[i] == (p.slverr ? AXI4_SLVERR : AXI4_OKAY),
                 $sformatf("%s: beat %0d RRESP %s with PSLVERR=%0b", tag, i, t.resp[i].name(), p.slverr));
         end
         any_err |= p.slverr;
         predict_apb_xfer(ba, t.write, t.strb[i], t.data[i], exp_err, known, exp_rd);
         if (known) begin
-          check(p.slverr == exp_err, $sformatf("%s: beat %0d PSLVERR=%0b, expected %0b", tag, i, p.slverr, exp_err));
+          chk(p.slverr == exp_err, $sformatf("%s: beat %0d PSLVERR=%0b, expected %0b", tag, i, p.slverr, exp_err));
           if (!t.write && !exp_err)
-            check(p.data == exp_rd, $sformatf("%s: beat %0d PRDATA %08h, expected %08h", tag, i, p.data, exp_rd));
+            chk(p.data == exp_rd, $sformatf("%s: beat %0d PRDATA %08h, expected %08h", tag, i, p.data, exp_rd));
         end
       end
       if (t.write)
-        check(t.resp[0] == (any_err ? AXI4_SLVERR : AXI4_OKAY),
+        chk(t.resp[0] == (any_err ? AXI4_SLVERR : AXI4_OKAY),
               $sformatf("%s: BRESP %s, a beat had PSLVERR=%0b", tag, t.resp[0].name(), any_err));
     endfunction
 
     // ---------------------------------------------------------------- DECERR
     function void predict_dec(axi4_item t);
       foreach (t.resp[i])
-        check(t.resp[i] == AXI4_DECERR, $sformatf("DEC %s: resp[%0d] %s, expected DECERR",
+        chk(t.resp[i] == AXI4_DECERR, $sformatf("DEC %s: resp[%0d] %s, expected DECERR",
               t.convert2string(), i, t.resp[i].name()));
     endfunction
 
     // ---------------------------------------------------------------- end
     function void check_phase(uvm_phase phase);
-      if (apb_q.size()) check(0, $sformatf("%0d APB transfers with no AXI burst", apb_q.size()));
+      if (apb_q.size()) chk(0, $sformatf("%0d APB transfers with no AXI burst", apb_q.size()));
       for (int d = 0; d < 2; d++) begin
         if (mst_ddr_q[d].size() || ext_ddr_q[d].size())
-          check(0, $sformatf("unmatched DDR %s bursts: master %0d, external port %0d",
+          chk(0, $sformatf("unmatched DDR %s bursts: master %0d, external port %0d",
                 d ? "write" : "read", mst_ddr_q[d].size(), ext_ddr_q[d].size()));
       end
       if (n_checks == 0) `uvm_error("SOC_SB", "no checks were made")

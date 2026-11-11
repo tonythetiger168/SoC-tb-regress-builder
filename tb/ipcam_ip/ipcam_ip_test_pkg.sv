@@ -141,7 +141,7 @@ package ipcam_ip_test_pkg;
       apb_api::read(env.apb.sqr, a, d, e);
       if (e) fail($sformatf("APB read %08h: PSLVERR", a));
     endtask
-    function void check(string what, longint got, longint exp);
+    function void chk(string what, longint got, longint exp);
       n_checks++;
       if (got != exp) fail($sformatf("%s: got %0h expected %0h", what, got, exp));
     endfunction
@@ -226,7 +226,7 @@ package ipcam_ip_test_pkg;
     task run_jpeg();
       bit [31:0] v, nbytes;
       bit [31:0] B = SLOT_JPEG;
-      rd(B + 'hF8, v); check("JPE_ID", v, 32'h4A50_4501);
+      rd(B + 'hF8, v); chk("JPE_ID", v, 32'h4A50_4501);
       wr(B + 'h10, 0);                                 // FMT NV12
       wr(B + 'h14, {2'b0, 14'(h), 2'b0, 14'(w)});
       wr(B + 'h18, y_base);
@@ -238,16 +238,16 @@ package ipcam_ip_test_pkg;
       wr(B + 'h0C, 32'h3);
       wr(B + 'h00, 32'h1);                             // start
       wait_irq(1, "JPEG", 2_000_000);
-      rd(B + 'h04, v);  check("JPE_STATUS (idle, no error)", v & 32'hF1, 0);
-      rd(B + 'h08, v);  check("JPE_IRQ_STATUS done", v & 32'h3, 32'h1);
+      rd(B + 'h04, v);  chk("JPE_STATUS (idle, no error)", v & 32'hF1, 0);
+      rd(B + 'h08, v);  chk("JPE_IRQ_STATUS done", v & 32'h3, 32'h1);
       wr(B + 'h08, 32'h3);
       rd(B + 'h30, nbytes);
       rd(B + 'h34, v);
       `uvm_info("IPCAM_IP", $sformatf("JPEG: %0d bytes, %0d cycles", nbytes, v), UVM_LOW)
       n_checks++;
       if (nbytes < 100) fail($sformatf("JPEG output only %0d bytes", nbytes));
-      check("JPEG SOI", {env.mem.read_byte(jpg_out), env.mem.read_byte(jpg_out + 1)}, 16'hFFD8);
-      check("JPEG EOI", {env.mem.read_byte(jpg_out + nbytes - 2), env.mem.read_byte(jpg_out + nbytes - 1)}, 16'hFFD9);
+      chk("JPEG SOI", {env.mem.read_byte(jpg_out), env.mem.read_byte(jpg_out + 1)}, 16'hFFD8);
+      chk("JPEG EOI", {env.mem.read_byte(jpg_out + nbytes - 2), env.mem.read_byte(jpg_out + nbytes - 1)}, 16'hFFD9);
       dump("jpg_out", jpg_out, nbytes);
       compare_ref("jpg_ref", jpg_out, nbytes);
     endtask
@@ -277,15 +277,15 @@ package ipcam_ip_test_pkg;
       wr(B + 'h0C, 32'h7);
       wr(B + 'h00, 32'h1);
       wait_irq(0, "VENC", 4_000_000);
-      rd(B + 'h04, v);  check("HVE_STATUS (idle, no error)", v & 32'hF1, 0);
-      rd(B + 'h08, v);  check("HVE_IRQ_STATUS done", v & 32'h3, 32'h1);
+      rd(B + 'h04, v);  chk("HVE_STATUS (idle, no error)", v & 32'hF1, 0);
+      rd(B + 'h08, v);  chk("HVE_IRQ_STATUS done", v & 32'h3, 32'h1);
       wr(B + 'h08, 32'h7);
       rd(B + 'h48, nbytes);
       rd(B + 'h50, v);
       `uvm_info("IPCAM_IP", $sformatf("VENC: %0d bytes, %0d cycles", nbytes, v), UVM_LOW)
       n_checks++;
       if (nbytes < 32) fail($sformatf("HEVC output only %0d bytes", nbytes));
-      check("HEVC start code", {env.mem.read_byte(hve_out), env.mem.read_byte(hve_out + 1),
+      chk("HEVC start code", {env.mem.read_byte(hve_out), env.mem.read_byte(hve_out + 1),
                                 env.mem.read_byte(hve_out + 2), env.mem.read_byte(hve_out + 3)}, 32'h0000_0001);
       dump("hevc_out", hve_out, nbytes);
       compare_ref("hevc_ref", hve_out, nbytes);
@@ -299,7 +299,7 @@ package ipcam_ip_test_pkg;
       int nl, rounds;
       if (!$value$plusargs("npu_lines=%d", nl)) nl = 16;
       if (!$value$plusargs("npu_rounds=%d", rounds)) rounds = 3;
-      rd(B + 'h000, v); check("NPU ID", v, 32'h584E_0200);
+      rd(B + 'h000, v); chk("NPU ID", v, 32'h584E_0200);
       wr(B + 'h014, 32'h8000_0007);
       for (int r = 0; r < rounds; r++) begin
         bit [31:0] s = src + r * nl * 64, d = dst + r * nl * 64;
@@ -321,10 +321,10 @@ package ipcam_ip_test_pkg;
           if (v[31]) got.push_back(v[7:0]);
           else if (sig.irq[2] !== 1'b1) break;
         end
-        check($sformatf("NPU round %0d completions", r), got.size(), 2);
+        chk($sformatf("NPU round %0d completions", r), got.size(), 2);
         if (got.size() == 2) begin
-          check("NPU completion id LD", got[0], 2 * r + 1);
-          check("NPU completion id ST", got[1], 2 * r + 2);
+          chk("NPU completion id LD", got[0], 2 * r + 1);
+          chk("NPU completion id ST", got[1], 2 * r + 2);
         end
         for (int i = 0; i < nl * 64; i += 4) begin
           bit [31:0] a = env.mem.peek32(s + i), b = env.mem.peek32(d + i);
@@ -332,8 +332,8 @@ package ipcam_ip_test_pkg;
           if (a !== b) begin fail($sformatf("NPU round %0d: dst %08h = %08h, src %08h = %08h", r, d + i, b, s + i, a)); break; end
         end
       end
-      rd(B + 'h010, v); check("NPU IRQ_STATUS errors", v & 32'h8000_0006, 0);
-      check("NPU line bridge bus errors", sig.npu_bus_err, 0);
+      rd(B + 'h010, v); chk("NPU IRQ_STATUS errors", v & 32'h8000_0006, 0);
+      chk("NPU line bridge bus errors", sig.npu_bus_err, 0);
     endtask
 
     function void report_phase(uvm_phase phase);

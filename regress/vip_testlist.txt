@@ -1,0 +1,4 @@
+# VIP loopback self-tests only: <tb> <test> <seeds> [plusargs...]
+vip vip_axi4_loopback_test   3
+vip vip_apb_loopback_test    3
+axil axil_loopback_test      3

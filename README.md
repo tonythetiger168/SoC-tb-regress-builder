@@ -1,7 +1,7 @@
 # SoC-tb-regress-builder
 
 A SystemVerilog/UVM testbench for a small AMBA SoC, with reusable **AXI4**,
-**APB4** and **memory** VIPs, a self-checking scoreboard of the whole SoC, and
+**AXI4-Lite**, **APB4** and **memory** VIPs, a self-checking scoreboard of the whole SoC, and
 a seed-sweeping regression runner. It runs on the open-source flow (Verilator
 5.052 + Accellera uvm-core 2020.3.1, the same versions as
 [open-vip-portfolio](https://github.com/tonythetiger168/open-vip-portfolio)),
@@ -36,6 +36,7 @@ the SRAM, GPIO and UART are reused unchanged from
 |---|---|
 | `vip/axi4` | `axi4_if`; `axi4_agent` in master role (driver + sequencer) or slave role (reactive memory responder); monitor (W-before-AW, several outstanding bursts, per-ID ordering); coverage; `axi4_sva` (VALID/READY handshake and payload stability, reset, WRAP length, 4 KB crossing); random burst sequence (FIXED/INCR/WRAP, narrow, unaligned, partial strobes) and directed `axi4_api` helpers |
 | `vip/apb`  | `apb_if`; `apb_agent` as requester (master), completer (slave, with random wait states and a PSLVERR window) or passive monitor; coverage; `apb_sva` (SETUP->ACCESS, stability while waiting, PSTRB on reads, X checks) |
+| `vip/axi4lite` | `axil_if`; `axil_agent` as master (AW/W in either order with skew, random BREADY/RREADY) or slave (memory responder with wait states and SLVERR/DECERR windows); monitor; coverage; `axil_sva`; `axil_scoreboard`; random sequence and directed `axil_api` helpers. Self-test: `make build TB=axil && make run TB=axil TEST=axil_loopback_test` |
 | `vip/mem`  | `mem_model`: sparse byte memory shared by the AXI4/APB responders, with bus-word access, backdoor peek/poke/fill/load/dump, and a deterministic init pattern for unwritten bytes so models can predict them |
 
 All randomization uses `$urandom`, so nothing depends on a constraint solver.
