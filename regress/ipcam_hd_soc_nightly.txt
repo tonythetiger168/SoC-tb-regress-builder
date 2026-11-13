@@ -4,3 +4,4 @@ ipcam_hd_soc ipcam_hd_soc_ral_test 2
 ipcam_hd_soc ipcam_hd_soc_path_latency_test 1
 ipcam_hd_soc ipcam_hd_soc_traffic_test 10 +SOC_ITEMS=400
 ipcam_hd_soc ipcam_hd_soc_traffic_test 5 +SOC_ITEMS=400 +SOC_TIMING=2
+ipcam_hd_soc ipcam_hd_soc_cov_test 2

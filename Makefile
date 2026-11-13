@@ -3,6 +3,7 @@
 #   make build                       compile the SoC testbench (Verilator by default)
 #   make run TEST=soc_smoke_test SEED=1
 #   make regress [LIST=regress/testlist.txt JOBS=4]
+#   make cov [TB=soc LIST=...]       coverage regression, scored against waivers
 #   make vip_build / make vip_run TEST=vip_axi4_loopback_test
 #   make build TB=<soc> for a socgen-generated bench (socgen/out/<soc>/socgen.mk)
 # SIM=verilator (default) | vcs | xrun | questa
@@ -23,7 +24,7 @@ FLIST    := $(or $(FLIST_$(TB)),sim/$(TB).f)
 JOBS     ?= $(shell nproc)
 PLUSARGS ?=
 
-.PHONY: build run regress vip_build vip_run uvm clean
+.PHONY: build run regress cov vip_build vip_run uvm clean
 
 uvm: $(UVM_HOME)/uvm_pkg.sv
 $(UVM_HOME)/uvm_pkg.sv:
@@ -60,6 +61,10 @@ run:
 
 regress:
 	python3 regress/regress.py --sim $(SIM) --jobs $(JOBS) $(if $(LIST),--list $(LIST),)
+
+# coverage regression (Verilator): merged, annotated, scored against waivers
+cov:
+	scripts/cov/run_cov.sh $(TB) $(or $(LIST),regress/testlist.txt)
 
 vip_build:
 	$(MAKE) build TB=vip

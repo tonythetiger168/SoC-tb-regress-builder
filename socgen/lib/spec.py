@@ -68,7 +68,7 @@ def bits(spec_bits, what):
 
 ACCESS = {"RO", "RW", "W1C", "WO"}
 QOS_CLASSES = {"rt", "nrt", "be"}
-TESTS = ("smoke", "ral", "path_latency", "traffic", "scenario")
+TESTS = ("smoke", "ral", "path_latency", "traffic", "scenario", "cov")
 PATTERNS = ("random", "linear", "block2d")
 
 

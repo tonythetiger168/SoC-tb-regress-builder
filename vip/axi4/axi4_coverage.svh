@@ -10,6 +10,7 @@ class axi4_coverage extends uvm_subscriber #(axi4_item);
   axi4_resp_e  cv_resp;
   bit          cv_partial_strb;
   bit          cv_unaligned;
+  int unsigned cv_burst_len;   // burst * 4 + length class (0 single, 1 short, 2 mid, 3 long)
   int unsigned n_sampled;
 
   covergroup cg;
@@ -25,7 +26,14 @@ class axi4_coverage extends uvm_subscriber #(axi4_item);
     cp_unal:  coverpoint cv_unaligned { bins aligned = {0}; bins unaligned = {1}; }
     x_dir_burst: cross cp_dir, cp_burst;
     x_dir_resp:  cross cp_dir, cp_resp;
-    x_burst_len: cross cp_burst, cp_len;
+    // burst type x length class. Only the AXI4-legal pairs are bins: FIXED is
+    // at most 16 beats, WRAP is 2, 4, 8 or 16 beats (AXI4 A3.4.1). Written as
+    // one coverpoint because Verilator has no cross-bin selection.
+    cp_burst_len: coverpoint cv_burst_len {
+      bins fixed_single = {0}; bins fixed_short = {1}; bins fixed_mid = {2};
+      bins incr_single  = {4}; bins incr_short  = {5}; bins incr_mid  = {6}; bins incr_long = {7};
+      bins wrap_short   = {9}; bins wrap_mid    = {10};
+    }
   endgroup
 
   function new(string name, uvm_component parent);
@@ -37,6 +45,7 @@ class axi4_coverage extends uvm_subscriber #(axi4_item);
     cv_write = t.write;
     cv_burst = t.burst;
     cv_len   = t.len;
+    cv_burst_len = 4 * int'(t.burst) + ((t.len == 0) ? 0 : (t.len <= 3) ? 1 : (t.len <= 15) ? 2 : 3);
     cv_size  = t.size;
     cv_resp  = t.worst_resp();
     cv_unaligned = (t.addr & ((32'd1 << t.size) - 1)) != 0;
