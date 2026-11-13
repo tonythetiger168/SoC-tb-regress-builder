@@ -13,6 +13,7 @@ rtl/soc/soc_axi_ic.sv
 rtl/soc/axi2apb_bridge.sv
 rtl/soc/apb_decoder.sv
 rtl/soc/amba_soc_top.sv
+tb/soc/soc_ctl_if.sv
 vip/axi4/axi4_if.sv
 vip/apb/apb_if.sv
 vip/axi4/axi4_sva.sv

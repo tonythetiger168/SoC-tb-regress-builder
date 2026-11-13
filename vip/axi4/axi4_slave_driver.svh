@@ -52,6 +52,7 @@ class axi4_slave_driver extends uvm_component;
 
   task aw_thread();
     forever begin
+      if (cfg.ready_after_valid) while (vif.slv_cb.awvalid !== 1'b1) @(vif.slv_cb);
       repeat (axi4_cfg::rand_delay(cfg.max_aready_delay)) @(vif.slv_cb);
       vif.slv_cb.awready <= 1'b1;
       do @(vif.slv_cb); while (!(vif.slv_cb.awvalid === 1'b1 && vif.awready === 1'b1));
@@ -110,6 +111,7 @@ class axi4_slave_driver extends uvm_component;
   task ar_thread();
     forever begin
       axi4_item t;
+      if (cfg.ready_after_valid) while (vif.slv_cb.arvalid !== 1'b1) @(vif.slv_cb);
       repeat (axi4_cfg::rand_delay(cfg.max_aready_delay)) @(vif.slv_cb);
       vif.slv_cb.arready <= 1'b1;
       do @(vif.slv_cb); while (!(vif.slv_cb.arvalid === 1'b1 && vif.arready === 1'b1));

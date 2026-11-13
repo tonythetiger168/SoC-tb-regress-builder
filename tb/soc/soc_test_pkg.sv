@@ -9,6 +9,9 @@
 //   soc_decerr_test       unmapped addresses
 //   soc_concurrent_test   both masters at once over all targets
 //   soc_stress_test       concurrent traffic with heavy back-pressure
+//   soc_cov_test          directed coverage closure: AxPROT/IDs, address-bit
+//                         toggles, 256-beat bursts, DDR DECERR, long APB
+//                         bursts, GPIO pins/IRQ, UART loopback, mid-test reset
 // Plusargs: +SOC_ITEMS=<n> scales random traffic, +SOC_TIMING=<0|1|2>
 // overrides the timing profile.
 // ============================================================================
@@ -250,6 +253,161 @@ package soc_test_pkg;
       timing  = 2;
       n_items = 80;
     endfunction
+  endclass
+  // ==========================================================================
+  // soc_cov_test -- directed traffic that closes code/toggle coverage of the
+  // SoC glue (interconnect, AXI-to-APB bridge, APB decoder, top-level pins).
+  // Every burst still goes through the scoreboard.
+  class soc_cov_test extends soc_base_test;
+    `uvm_component_utils(soc_cov_test)
+    virtual soc_ctl_if ctl;
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+    function void configure();
+      timing = 1;
+      cfg.ddr_cfg.ready_after_valid = 1;   // DDR port: VALID waits for READY
+    endfunction
+    function void connect_phase(uvm_phase phase);
+      if (!uvm_config_db#(virtual soc_ctl_if)::get(this, "", "ctl_vif", ctl))
+        `uvm_fatal("NOVIF", "ctl_vif not set")
+    endfunction
+
+    task burst(int m, bit wr, bit [31:0] a, int unsigned beats, bit [2:0] prot = 0, bit [7:0] id = 0,
+               int unsigned w_gap = 0);
+      axi4_item t = axi4_api::make(wr, a, beats, 2, AXI4_INCR, id);
+      t.prot = prot;
+      t.w_gap = w_gap;
+      axi4_api::run(sqr(m), t);
+    endtask
+
+    // write then read back a word, prot and ID varying
+    task wr_rd(int m, bit [31:0] a, bit [2:0] prot, bit [7:0] id);
+      burst(m, 1, a, 1, prot, id);
+      burst(m, 0, a, 1, prot, id);
+    endtask
+
+    task main();
+      bit [31:0] d;
+      // AxPROT values and IDs to every target, on both masters
+      for (int m = 0; m < 2; m++)
+        for (int p = 0; p < 8; p++) begin
+          wr_rd(m, SRAM_BASE + 32'h100 + 4 * p + 32'h40 * m, p, 8'(p * 2 + m));
+          wr_rd(m, DDR_BASE  + 32'h300 + 4 * p + 32'h40 * m, p, 8'(15 - p));
+          wr_rd(m, APBX_BASE + 32'h300 + 4 * p + 32'h40 * m, p, 8'(p));
+          wr_rd(m, 32'h4000_0000 + 4 * p, p, 8'(p));              // DECERR
+        end
+      // high address bits back to zero on both masters: DDR top, unmapped 0x4/0xF..
+      for (int m = 0; m < 2; m++) begin
+        wr_rd(m, DDR_BASE + 32'h0FFF_0000 + 32'h100 * m, 0, 0);
+        wr_rd(m, DDR_BASE + 32'h100 * m + 32'h400, 0, 0);
+        wr_rd(m, 32'h7FFF_F000, 0, 0);
+        wr_rd(m, SRAM_BASE + 32'h200 + 4 * m, 0, 0);
+        wr_rd(m, 32'hFFFF_F000, 0, 0);
+        wr_rd(m, SRAM_BASE + 32'h208 + 4 * m, 0, 0);
+      end
+      // AxLEN up to 255 on both masters (DDR), then short again
+      for (int m = 0; m < 2; m++) begin
+        burst(m, 1, DDR_BASE + 32'h4000 + 32'h1000 * m, 256);
+        burst(m, 0, DDR_BASE + 32'h4000 + 32'h1000 * m, 256);
+        burst(m, 1, DDR_BASE + 32'h4000 + 32'h1000 * m, 129);
+        burst(m, 0, DDR_BASE + 32'h4000 + 32'h1000 * m, 129);
+        burst(m, 0, DDR_BASE + 32'h4000 + 32'h1000 * m, 1);
+      end
+      // DDR DECERR window (RESP[0] = 1), then OKAY again
+      for (int m = 0; m < 2; m++) begin
+        burst(m, 1, cfg.ddr_dec_lo + 32'h40 * m, 4);
+        burst(m, 0, cfg.ddr_dec_lo + 32'h40 * m, 4);
+        wr_rd(m, DDR_BASE + 32'h800 + 4 * m, 0, 0);
+      end
+      // APB bursts of up to 256 beats into the external slot, then short ones
+      for (int m = 0; m < 2; m++) begin
+        burst(m, 1, APBX_BASE + 32'h400 * m, 256);
+        burst(m, 0, APBX_BASE + 32'h400 * m, 256);
+        burst(m, 1, APBX_BASE + 32'h400 * m + 32'h40, 8, 0, 0, 8);   // bridge waits for WVALID
+        burst(m, 0, APBX_BASE + 32'h400 * m + 32'h40, 2);
+      end
+      // peripheral SCRATCH with all bits set and clear (read-data bits)
+      for (int s = 0; s < 2; s++) begin
+        bit [31:0] b = s ? UART_BASE : GPIO_BASE;
+        wr32(s, b + REG_SCRATCH, 32'hFFFF_FFFF);
+        rd32_expect(s, b + REG_SCRATCH, 32'hFFFF_FFFF);
+        wr32(s, b + REG_SCRATCH, 32'h0);
+        rd32_expect(s, b + REG_SCRATCH, 32'h0);
+      end
+      gpio_pins();
+      uart_loopback();
+      mid_test_reset();
+    endtask
+
+    // GPIO: drive every pin both ways, input-change interrupt on irq[1]
+    task gpio_pins();
+      bit [31:0] d;
+      wr32(0, GPIO_BASE + 12'h008, 32'h1);              // IRQ_ENABLE
+      wr32(0, GPIO_BASE + 12'h014, 32'hFF);             // OE: all pins driven
+      wr32(0, GPIO_BASE + 12'h018, 32'h55);
+      rd32(0, GPIO_BASE + 12'h01C, d);
+      if (d[7:0] != 8'h55) `uvm_error("TEST", $sformatf("GPIO IN %02h, expected 55", d[7:0]))
+      wr32(0, GPIO_BASE + 12'h018, 32'hAA);
+      rd32(0, GPIO_BASE + 12'h01C, d);
+      if (d[7:0] != 8'hAA) `uvm_error("TEST", $sformatf("GPIO IN %02h, expected AA", d[7:0]))
+      wr32(0, GPIO_BASE + 12'h018, 32'h00);
+      rd32(0, GPIO_BASE + 12'h004, d);                  // IRQ_STATUS set by the pins
+      if (d[0] != 1'b1) `uvm_error("TEST", "GPIO IRQ_STATUS not set")
+      wr32(0, GPIO_BASE + 12'h004, 32'h1);              // W1C, inputs now all 0
+      rd32(0, GPIO_BASE + 12'h004, d);
+      if (d[0] != 1'b0) `uvm_error("TEST", "GPIO IRQ_STATUS not cleared")
+      wr32(0, GPIO_BASE + 12'h014, 32'h00);
+      wr32(0, GPIO_BASE + 12'h008, 32'h0);
+    endtask
+
+    // UART: send bytes over the txd->rxd loopback, with TX-full and RX-overrun
+    task uart_loopback();
+      bit [31:0] d;
+      wr32(1, UART_BASE + 12'h008, 32'h1F);             // all interrupts enabled
+      wr32(1, UART_BASE + 12'h014, 32'h55);
+      wait_rx();
+      rd32(1, UART_BASE + 12'h018, d);
+      if (d[7:0] != 8'h55) `uvm_error("TEST", $sformatf("UART RX %02h, expected 55", d[7:0]))
+      wr32(1, UART_BASE + 12'h014, 32'hAA);
+      wr32(1, UART_BASE + 12'h014, 32'h33);             // while full: TX-overflow interrupt
+      wait_rx();
+      repeat (400) @(posedge ctl.clk);   // second byte overruns RXDATA
+      rd32(1, UART_BASE + 12'h018, d);
+      rd32(1, UART_BASE + 12'h004, d);
+      if (d[4:0] == 0) `uvm_error("TEST", "UART IRQ_STATUS empty after traffic")
+      wr32(1, UART_BASE + 12'h004, 32'h1F);
+      rd32(1, UART_BASE + 12'h00C, d);                  // FLAGS
+      wr32(1, UART_BASE + 12'h008, 32'h0);
+    endtask
+
+    task wait_rx();
+      bit [31:0] d;
+      for (int i = 0; i < 100; i++) begin
+        rd32(1, UART_BASE + 12'h00C, d);
+        if (d[1]) return;
+        repeat (20) @(posedge ctl.clk);
+      end
+      `uvm_error("TEST", "UART loopback byte never arrived")
+    endtask
+
+    // reset in the middle of the run: SCRATCH registers go back to 0, the
+    // memories keep their contents, traffic works again afterwards
+    task mid_test_reset();
+      bit [31:0] d;
+      wr32(0, GPIO_BASE + REG_SCRATCH, 32'h1234_5678);
+      wr32(0, SRAM_BASE + 32'h400, 32'h0, AXI4_SLVERR);   // SRAM error IRQ (sticky until reset)
+      ctl.rst_req = 1'b1;
+      wait (ctl.rstn === 1'b0);
+      env.sb.note_reset();
+      wait (ctl.rstn === 1'b1);
+      ctl.rst_req = 1'b0;
+      repeat (2) @(posedge ctl.clk);
+      rd32_expect(0, GPIO_BASE + REG_SCRATCH, 32'h0);
+      rd32(1, SRAM_BASE + 32'h200, d);         // SRAM keeps its contents (scoreboard)
+      wr_rd(0, DDR_BASE + 32'h900, 3, 5);
+      wr_rd(1, APBX_BASE + 32'h900, 5, 3);
+    endtask
   endclass
 endpackage
 `endif
