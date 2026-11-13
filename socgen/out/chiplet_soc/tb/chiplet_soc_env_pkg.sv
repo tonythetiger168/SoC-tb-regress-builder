@@ -182,7 +182,7 @@ package chiplet_soc_env_pkg;
         end
         return;
       end
-      if (S_KIND[si] == "rtl") begin      // RTL slave: no reference model here
+      if (S_KIND[si] == "rtl" || S_KIND[si] == "periph") begin   // RTL slave: no reference model here
         n_checks++;
         return;
       end
@@ -259,7 +259,7 @@ package chiplet_soc_env_pkg;
       if (cfg.zero_load_check && si != S_DEF) begin
         // a CHI master's cache hit is not bounded below by the NoC
         int lo = (M_PROTO[t.port] == "chi") ? 0 :
-                 REQ_LAT[t.port][si] + RSP_LAT[t.port][si] + (S_KIND[si] == "apb_bridge" ? 0 : S_ACCESS[si]);
+                 REQ_LAT[t.port][si] + RSP_LAT[t.port][si] + ((S_KIND[si] == "apb_bridge" || S_KIND[si] == "periph") ? 0 : S_ACCESS[si]);
         int hi = IDEAL_LAT[t.port][si] + cfg.zero_load_slack + (t.write ? 2 : 1) * int'(t.len);
 
         if (cyc < lo)

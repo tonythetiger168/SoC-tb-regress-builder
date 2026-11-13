@@ -3,3 +3,4 @@ tv8k_soc tv8k_soc_smoke_test 1
 tv8k_soc tv8k_soc_ral_test 1
 tv8k_soc tv8k_soc_path_latency_test 1
 tv8k_soc tv8k_soc_traffic_test 3
+tv8k_soc tv8k_soc_cov_test 1

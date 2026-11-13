@@ -613,6 +613,7 @@ module mini_mesh_soc_tb_top;
     .ext_pslverr(apb_ext_if.pslverr),
     .irq(apb_irq)
   );
+
   apb_sva #(.NAME("apb_ext")) u_apb_ext_sva (apb_ext_if);
   initial uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top.env.apb_ext.*", "vif", apb_ext_if);
 

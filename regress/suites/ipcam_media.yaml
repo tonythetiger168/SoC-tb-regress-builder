@@ -1,0 +1,16 @@
+# Subsystem suite of the IPCAM SoC: the real media IPs behind their AXI bridges
+# (c1p HEVC + JPEG encoders, xuanji NPU), each checked bit-exact against the
+# c1p reference streams in regress/vectors/ipcam. The RTL comes from private
+# repos via scripts/fetch_ext_ip.sh; without ext/ the suite is reported as not
+# run (the SoC-level ipcam suite falls back to traffic models instead).
+name: ipcam_media
+level: subsystem
+soc: ipcam
+subsystem: media
+description: c1p HEVC/JPEG encoders and xuanji NPU on AXI, bit-exact vs reference, alone and concurrent on slow memory.
+filelist: sim/ipcam_ip.f
+top: ipcam_ip_tb_top
+list: {default: regress/lists/ipcam_media.txt, nightly: regress/lists/ipcam_media_nightly.txt}
+requires: [ext/c1p-codec/c1p/rtl, ext/xuanji-core/rtl]
+cov_include: ["*rtl/ipcam/*", "*ext/*"]
+timeout: 1800

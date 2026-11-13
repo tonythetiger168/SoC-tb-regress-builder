@@ -21,10 +21,14 @@ class axi4_cfg extends uvm_object;
   // ---- master knobs (upper bounds of random delays, in clocks) ----
   int unsigned  max_b_delay = 0;     // BREADY low before the response
   int unsigned  max_r_gap   = 0;     // RREADY low between beats
+  int unsigned  max_outstanding = 1; // bursts in flight: > 1 issues the next address while
+                                     // earlier responses are pending (B/R matched by ID, in order)
 
   // ---- slave (memory responder) knobs ----
   mem_vip_pkg::mem_model mem;        // storage; created by the agent if null
   int unsigned  max_aready_delay = 0; // AWREADY/ARREADY low cycles
+  bit           ready_after_valid = 0; // raise READY only after VALID (then the delay): slave
+                                       // AWREADY/ARREADY/WREADY, master BREADY/RREADY
   int unsigned  max_wready_delay = 0; // WREADY low cycles per beat
   int unsigned  max_b_latency    = 0; // cycles from WLAST to BVALID
   int unsigned  max_r_latency    = 0; // cycles from AR to first RVALID

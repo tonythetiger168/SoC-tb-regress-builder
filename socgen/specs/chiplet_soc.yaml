@@ -67,3 +67,4 @@ regress:
       - {test: traffic,      seeds: 2}
       - {test: traffic,      seeds: 1, plusargs: "+SOC_TIMING=2"}
       - {test: traffic,      seeds: 1, plusargs: "+D2D_ERR_EVERY=7"}
+      - {test: cov,          seeds: 1}

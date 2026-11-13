@@ -7,6 +7,7 @@
 #   make regress LIST=regress/testlist.txt     (legacy single test list)
 #   make suites                      list the suites
 #   make covmerge DIRS="out1 out2" OUT=cumulative
+#   make cov [TB=soc LIST=...]       coverage regression, scored against waivers
 #   make vip_build / make vip_run TEST=vip_axi4_loopback_test
 #   make build TB=<soc> for a socgen-generated bench (socgen/out/<soc>/socgen.mk)
 # SIM=verilator (default) | vcs | xrun | questa
@@ -24,6 +25,9 @@ TOP_tv8k_vdec := tv8k_noc_tb_top
 TOP_tv8k_npu := tv8k_noc_tb_top
 TOP_tv8k_cpu := tv8k_noc_tb_top
 -include $(wildcard socgen/out/*/socgen.mk)
+TOP_ipcam_ip := ipcam_ip_tb_top
+TOP_ipcam_soc_media    := ipcam_soc_tb_top
+TOP_ipcam_hd_soc_media := ipcam_hd_soc_tb_top
 TOP      := $(TOP_$(TB))
 FLIST    := $(or $(FLIST_$(TB)),sim/$(TB).f)
 # TB=tv8k_noc needs the xuanji-core router (scripts/fetch_private_ip.sh puts it
@@ -37,7 +41,7 @@ endif
 JOBS     ?= $(shell nproc)
 PLUSARGS ?=
 
-.PHONY: build run regress suites covmerge vip_build vip_run uvm clean
+.PHONY: build run regress cov suites covmerge vip_build vip_run uvm clean
 SUITE   ?=
 LEVEL   ?=
 SOC     ?=
@@ -100,6 +104,10 @@ suites:
 
 covmerge:
 	python3 regress/covmerge.py $(DIRS) -o $(OUT)
+
+# coverage regression (Verilator): merged, annotated, scored against waivers
+cov:
+	scripts/cov/run_cov.sh $(TB) $(or $(LIST),regress/testlist.txt)
 
 vip_build:
 	$(MAKE) build TB=vip

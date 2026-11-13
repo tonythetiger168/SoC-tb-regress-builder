@@ -73,3 +73,4 @@ regress:
       - {test: traffic,      seeds: 1}
       - {test: coherence,    seeds: 2}
       - {test: coherence,    seeds: 1, plusargs: "+D2D_ERR_EVERY=7"}
+      - {test: cov,          seeds: 1}

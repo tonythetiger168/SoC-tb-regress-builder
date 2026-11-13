@@ -1,0 +1,34 @@
+# Coverage waivers for the AMBA SoC bench (amba_soc_top, scope rtl/soc/).
+# Format: <metric> <regex on "metric hierarchy comment [file:line]"> # reason
+# Every waiver must match at least one unhit point (score_cov.py fails otherwise).
+
+# --- AxSIZE[2]: the data bus is 32 bits, so AxSIZE is at most 2 (4 bytes); a
+#     size of 4..7 would be an AXI protocol violation on this bus.
+toggle (m|s)_a[rw]size\[\d\]\[2\] # 32-bit data bus: AxSIZE <= 2, bit 2 is always 0
+toggle dut ddr_a[rw]size\[2\] # 32-bit data bus: AxSIZE <= 2, bit 2 is always 0
+toggle u_bridge (a[rw]size|size_q)\[2\] # 32-bit data bus: AxSIZE <= 2, bit 2 is always 0
+
+# --- APB window is 0x1000_0000..0x1000_FFFF: the bridge only ever sees addresses
+#     with bits [31:16] = 0x1000; bit 28 does go 1->0, on reset.
+toggle (u_bridge|u_apb_dec|dut) (apbx_)?(paddr|addr_q|start_q)\[(1[6-9]|2[0-7]|29|3[01])\] # APB window 0x1000_xxxx: PADDR[31:16] is constant 0x1000
+
+# --- The AXI-to-APB bridge answers only OKAY or SLVERR (PSLVERR); RESP[0]
+#     (EXOKAY/DECERR) is never produced by design.
+toggle u_bridge [br]resp\[0\] # bridge answers OKAY/SLVERR only, RESP[0] tied 0
+toggle (dut|u_ic) s_[br]resp\[1\]\[0\] # slave 1 is the APB bridge: OKAY/SLVERR only
+
+# --- The interconnect sends ID 0 to the SRAM (it keeps the master ID itself and
+#     the SRAM is served one burst at a time), so SRAM-side IDs are tied to 0.
+toggle (dut|u_ic) s_a[rw]id\[0\] # SRAM port ID tied to 0 by the interconnect (soc_axi_ic.sv)
+toggle dut sram_[br]id # SRAM BID/RID echo the tied-0 ID and are not used by the interconnect
+
+# --- Unreachable defaults of 2-bit / 3-bit state machines (all encodings used
+#     or held in an enum; Verilator is 2-state so no X state either).
+line u_ic case rtl/soc/soc_axi_ic.sv:(128|216)$ # default of a fully decoded 4-state FSM
+line u_bridge case rtl/soc/axi2apb_bridge.sv:148$ # default of the 6-state bridge FSM (st_t, values 6/7 unreachable)
+
+# --- WLAST mismatch message: inside amba_soc_top the interconnect ends the W
+#     phase on WLAST, so a master that sends a wrong WLAST stalls the
+#     interconnect before the bridge can see a mismatch (simulation-only
+#     $display, under translate_off).
+branch u_bridge if rtl/soc/axi2apb_bridge.sv:178$ # WLAST-mismatch $display: unreachable behind soc_axi_ic, sim-only

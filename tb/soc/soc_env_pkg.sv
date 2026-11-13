@@ -51,6 +51,7 @@ package soc_env_pkg;
     mem_model ddr_mem, apbx_mem;
     // error windows of the external models (absolute addresses)
     bit [31:0] ddr_err_lo  = 32'h8FFF_F000, ddr_err_hi  = 32'h8FFF_FFFF;
+    bit [31:0] ddr_dec_lo  = 32'h8FFF_E000, ddr_dec_hi  = 32'h8FFF_EFFF;   // DECERR window
     bit [31:0] apbx_err_lo = 32'h1000_2F00, apbx_err_hi = 32'h1000_2FFF;
 
     function new(string name = "soc_env_cfg");
@@ -79,6 +80,7 @@ package soc_env_pkg;
     function void apply_error_windows();
       ddr_cfg.err_ranges.delete();
       ddr_cfg.add_err_range(ddr_err_lo, ddr_err_hi, AXI4_SLVERR);
+      ddr_cfg.add_err_range(ddr_dec_lo, ddr_dec_hi, AXI4_DECERR);
       apbx_cfg.err_lo = apbx_err_lo;
       apbx_cfg.err_hi = apbx_err_hi;
     endfunction
@@ -108,8 +110,8 @@ package soc_env_pkg;
   //        write beats stop updating memory once one falls outside the SRAM
   //        (BRESP SLVERR), read beats outside it answer SLVERR. Bytes never
   //        written read as unknown and are not compared.
-  //  DDR   shadow memory (unwritten bytes = mem_model init pattern), SLVERR in
-  //        the DDR model's error window. In addition, each burst must appear
+  //  DDR   shadow memory (unwritten bytes = mem_model init pattern), SLVERR /
+  //        DECERR in the DDR model's two error windows. In addition, each burst must appear
   //        unchanged on the external port with ID {master, id}.
   //  APB   each beat must appear as one APB transfer on the internal bus (same
   //        address, direction, data, strobes); RRESP/BRESP follow PSLVERR, read
@@ -186,6 +188,12 @@ package soc_env_pkg;
       for (int b = 0; b < 4; b++) ddr[(a & ~32'h3) + b] = d[8*b +: 8];
     endfunction
 
+    // a mid-test reset clears the peripheral SCRATCH registers; SRAM contents,
+    // the DDR model and the external APB model keep their data
+    function void note_reset();
+      scratch = '{default: 0};
+    endfunction
+
     // ---------------------------------------------------------------- inputs
     virtual function void write_mst(axi4_item t);
       soc_region_e r = soc_region(t.addr);
@@ -249,8 +257,10 @@ package soc_env_pkg;
     // ---------------------------------------------------------------- DDR
     function void predict_ddr(axi4_item t);
       string tag = {"DDR ", t.convert2string()};
-      bit err = (t.addr >= cfg.ddr_err_lo && t.addr <= cfg.ddr_err_hi);
-      axi4_resp_e exp = err ? AXI4_SLVERR : AXI4_OKAY;
+      bit slv = (t.addr >= cfg.ddr_err_lo && t.addr <= cfg.ddr_err_hi);
+      bit dec = (t.addr >= cfg.ddr_dec_lo && t.addr <= cfg.ddr_dec_hi);
+      bit err = slv || dec;
+      axi4_resp_e exp = dec ? AXI4_DECERR : slv ? AXI4_SLVERR : AXI4_OKAY;
       if (t.write) begin
         check(t.resp[0] == exp, $sformatf("%s: BRESP %s, expected %s", tag, t.resp[0].name(), exp.name()));
         if (!err)
