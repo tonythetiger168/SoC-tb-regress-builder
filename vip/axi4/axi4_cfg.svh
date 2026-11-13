@@ -25,7 +25,8 @@ class axi4_cfg extends uvm_object;
   // ---- slave (memory responder) knobs ----
   mem_vip_pkg::mem_model mem;        // storage; created by the agent if null
   int unsigned  max_aready_delay = 0; // AWREADY/ARREADY low cycles
-  bit           ready_after_valid = 0; // slave: raise AWREADY/ARREADY only after VALID (then the delay)
+  bit           ready_after_valid = 0; // raise READY only after VALID (then the delay): slave
+                                       // AWREADY/ARREADY/WREADY, master BREADY/RREADY
   int unsigned  max_wready_delay = 0; // WREADY low cycles per beat
   int unsigned  max_b_latency    = 0; // cycles from WLAST to BVALID
   int unsigned  max_r_latency    = 0; // cycles from AR to first RVALID

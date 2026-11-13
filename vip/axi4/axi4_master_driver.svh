@@ -85,6 +85,7 @@ class axi4_master_driver extends uvm_driver #(axi4_item);
         vif.mst_cb.wlast  <= 1'b0;
       end
     join
+    if (cfg.ready_after_valid) do @(vif.mst_cb); while (vif.mst_cb.bvalid !== 1'b1);
     repeat (axi4_cfg::rand_delay(cfg.max_b_delay)) @(vif.mst_cb);
     vif.mst_cb.bready <= 1'b1;
     do @(vif.mst_cb); while (!(vif.mst_cb.bvalid === 1'b1 && vif.bready === 1'b1));
@@ -111,6 +112,10 @@ class axi4_master_driver extends uvm_driver #(axi4_item);
     t.resp = new[t.beats()];
     for (int unsigned i = 0; i < t.beats(); i++) begin
       int unsigned gap = axi4_cfg::rand_delay(cfg.max_r_gap > t.r_gap ? cfg.max_r_gap : t.r_gap);
+      if (cfg.ready_after_valid) begin
+        vif.mst_cb.rready <= 1'b0;
+        do @(vif.mst_cb); while (vif.mst_cb.rvalid !== 1'b1);
+      end
       if (gap) begin
         vif.mst_cb.rready <= 1'b0;
         repeat (gap) @(vif.mst_cb);

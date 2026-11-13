@@ -74,3 +74,4 @@ regress:
       - {test: traffic,      seeds: 1, plusargs: "+SOC_TIMING=2"}
       - {test: scenario,     seeds: 1, plusargs: "+SCENARIO=display_only"}
       - {test: scenario,     seeds: 1, plusargs: "+SCENARIO=blit"}
+      - {test: cov,          seeds: 1}

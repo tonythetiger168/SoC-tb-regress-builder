@@ -2,15 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 """Score a merged Verilator coverage file against a scope and a waiver list.
 
-  score_cov.py merged.dat --scope 'rtl/soc/' [--scope ...] [--exclude FILE] [--json OUT]
+  score_cov.py merged.dat --scope 'rtl/soc/' [--scope ...] [--exclude FILE]
+               [--exclude-opt FILE] [--json OUT]
 
 Metrics: line, branch, toggle (code coverage of files whose path matches a
 --scope regex), user (SVA cover properties, any file) and covergroup
 (functional coverage bins, any file). A point is named
-"<metric> <hierarchy> <comment>", e.g.
-"toggle soc_tb_top.dut.u_bridge paddr[16]:0->1". An exclude file holds
+"<metric> <hierarchy> <comment> [<file>[:<line>]]", e.g.
+"toggle soc_tb_top.dut.u_bridge paddr[16]:0->1 rtl/soc/axi2apb_bridge.sv"
+(Verilator may merge instances of one module into a "u_*" hierarchy). An exclude file holds
 "<metric> <regex> # reason" lines; a matching point is waived. Exit status 1
-if any point in scope is neither hit nor waived, or a waiver matches nothing.
+if any point in scope is neither hit nor waived, or a waiver of an --exclude
+file matches nothing (--exclude-opt files, e.g. socgen's generated
+<soc>_cov_waivers.txt, may hold waivers that match nothing).
 """
 import argparse, json, re, sys
 from collections import defaultdict
@@ -31,19 +35,20 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("dat")
     ap.add_argument("--scope", action="append", default=[], help="regex on the source path (code metrics)")
-    ap.add_argument("--exclude", default=None)
+    ap.add_argument("--exclude", action="append", default=[])
+    ap.add_argument("--exclude-opt", action="append", default=[])
     ap.add_argument("--json", default=None)
     a = ap.parse_args()
 
     waivers = []
-    if a.exclude:
-        for ln in open(a.exclude):
+    for path, required in [(f, True) for f in a.exclude] + [(f, False) for f in a.exclude_opt]:
+        for ln in open(path):
             ln = ln.strip()
             if not ln or ln.startswith("#"):
                 continue
             rule, _, why = ln.partition(" # ")
             metric, rx = rule.split(None, 1)
-            waivers.append([metric, re.compile(rx.strip()), why.strip(), 0])
+            waivers.append([metric, re.compile(rx.strip()), why.strip(), 0 if required else -1])
 
     # merge points with the same name (Verilator keeps one per source location)
     hits = {}
@@ -58,6 +63,8 @@ def main():
         name = f"{t} {kv.get('h', '')} {kv.get('o', kv.get('bin', ''))}"
         if t == "line" or t == "branch":
             name += f" {f}:{kv.get('l', '')}"
+        elif t == "toggle":
+            name += f" {f}"
         if t == "covergroup":
             name = f"covergroup {f}:{kv.get('l', '')} {kv.get('h', '')}"
         hits[name] = hits.get(name, 0) + cnt
@@ -71,12 +78,12 @@ def main():
             continue
         w = next((w for w in waivers if w[0] == metric and w[1].search(name)), None)
         if w:
-            w[3] += 1
+            w[3] = max(w[3], 0) + 1
             waived[metric] += 1
         else:
             holes.append(name)
 
-    unused = [f"{w[0]} {w[1].pattern}" for w in waivers if w[3] == 0]
+    unused = [f"{w[0]} {w[1].pattern}" for w in waivers if w[3] == 0]   # -1: optional, unused
     rep = {}
     for m in CODE + ("user", "covergroup"):
         if tot[m]:

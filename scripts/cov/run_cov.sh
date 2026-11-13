@@ -5,15 +5,21 @@
 # Builds with line/branch, toggle, user (SVA cover) coverage and assertions,
 # runs every "<tb> <test> <seeds> [plusargs]" line of the test list, merges the
 # runs into build/cov/<tb>/merged.dat, writes an annotated source tree and
-# scores the result with score_cov.py against scripts/cov/exclude/<tb>.txt.
-# Scope of code coverage: COV_SCOPE (regex on source paths, default rtl/<tb>/).
+# scores the result with score_cov.py against scripts/cov/exclude/<tb>.txt and,
+# for a socgen bench, the generated <out>/doc/<tb>_cov_waivers.txt.
+# Scope of code coverage: COV_SCOPE (regex on source paths); default rtl/<tb>/,
+# or socgen/out/<tb>/rtl/<tb>_* for a socgen bench (sim/<tb>.f absent).
+# FLIST, TOP and UVM_HOME can be overridden the same way.
 set -u
 TB=${1:-soc}; LIST=${2:-regress/testlist.txt}
 ROOT=$(cd "$(dirname "$0")/../.." && pwd); cd "$ROOT"
 TOP=${TOP:-${TB}_tb_top}            # soc -> soc_tb_top
-FLIST=${FLIST:-sim/$TB.f}
+if [ -f "sim/$TB.f" ] || [ ! -f "socgen/out/$TB/sim/files.f" ]; then
+  FLIST=${FLIST:-sim/$TB.f}; SCOPE=${COV_SCOPE:-^rtl/$TB/}
+else                                # socgen bench
+  FLIST=${FLIST:-socgen/out/$TB/sim/files.f}; SCOPE=${COV_SCOPE:-socgen/out/$TB/rtl/${TB}_}
+fi
 UVM_HOME=${UVM_HOME:-$ROOT/uvm-core/src}
-SCOPE=${COV_SCOPE:-^rtl/$TB/}
 D=build/cov/$TB
 rm -rf "$D"; mkdir -p "$D"
 [ -f "$UVM_HOME/uvm_pkg.sv" ] || make -s uvm
@@ -36,6 +42,8 @@ done < <(grep -v '^#' "$LIST")
 verilator_coverage --write "$D/merged.dat" "$D"/cov_*.dat > /dev/null && rm -f "$D"/cov_*.dat
 verilator_coverage --annotate "$D/annotated" --annotate-min 1 "$D/merged.dat" > /dev/null
 EXC=scripts/cov/exclude/$TB.txt
+GEN=$(dirname "$FLIST")/../doc/${TB}_cov_waivers.txt      # socgen benches: generated waivers
 python3 scripts/cov/score_cov.py "$D/merged.dat" --scope "$SCOPE" \
-  $( [ -f "$EXC" ] && echo --exclude "$EXC" ) --json "$D/score.json" || fail=1
+  $( [ -f "$EXC" ] && echo --exclude "$EXC" ) $( [ -f "$GEN" ] && echo --exclude-opt "$GEN" ) \
+  --json "$D/score.json" || fail=1
 exit $fail

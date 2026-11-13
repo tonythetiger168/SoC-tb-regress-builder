@@ -4,3 +4,4 @@ phone_soc phone_soc_ral_test 2
 phone_soc phone_soc_path_latency_test 1
 phone_soc phone_soc_traffic_test 10 +SOC_ITEMS=400
 phone_soc phone_soc_traffic_test 5 +SOC_ITEMS=400 +SOC_TIMING=2
+phone_soc phone_soc_cov_test 2

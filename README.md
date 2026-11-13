@@ -133,6 +133,22 @@ simulation-only WLAST-mismatch message, which the interconnect makes
 unreachable. The vendored peripherals in `rtl/ip/` (AXI4 SRAM, GPIO, UART) are
 closed at 100% by their own benches in open-ip-portfolio.
 
+The socgen benches have a generated `<soc>_cov_test` in their test lists and
+a generated waiver list, `socgen/out/<soc>/doc/<soc>_cov_waivers.txt`, which
+`run_cov.sh` reads next to `scripts/cov/exclude/<soc>.txt`:
+
+```sh
+make cov TB=mini_soc LIST=regress/mini_soc_testlist.txt
+```
+
+The score covers the generated SoC glue (`<soc>_apb_subsys`, the register
+files, the AXI-to-APB bridge), the SVA covers on every NoC port and the AXI4
+and APB covergroups. The IPs' own logic and their external pins are measured
+by their benches in open-ip-portfolio, so their pins are waived here. On
+Verilator 5.052 all five metrics reach 100% for `mini_soc`, `phone_soc` and
+`ipcam_soc` (IPCAM measured on the traffic-model build, since the private
+codec and CPU repos are fetched at build time).
+
 ## Notes for Verilator users
 
 A clocking-block drive issued by a process that woke up from something other
