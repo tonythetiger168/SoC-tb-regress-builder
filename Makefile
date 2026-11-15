@@ -23,6 +23,11 @@ TOP      := $(TOP_$(TB))
 FLIST    := $(or $(FLIST_$(TB)),sim/$(TB).f)
 JOBS     ?= $(shell nproc)
 PLUSARGS ?=
+# Micron vendor models (scripts/fetch_micron_models.sh): added only to benches
+# with a DDR4 channel (memories[].model: ddr4, so the file list has
+# soc_ddr4_chan.sv) and only when present; the open models otherwise
+MICRON_F ?= $(wildcard ext/micron/micron.f)
+MICRON_USE = $(if $(MICRON_F),$(if $(shell grep -l soc_ddr4_chan.sv $(FLIST) 2>/dev/null),$(MICRON_F)))
 
 .PHONY: build run regress cov vip_build vip_run uvm clean
 
@@ -36,7 +41,7 @@ build: uvm
 	mkdir -p $(BUILD)
 	verilator --binary --timing -j $(JOBS) -Wno-fatal -Wno-lint -Wno-style \
 	  --timescale 1ns/1ps --top-module $(TOP) -Mdir $(BUILD)/obj +define+UVM_NO_DPI \
-	  +incdir+$(UVM_HOME) $(UVM_HOME)/uvm_pkg.sv -f $(FLIST) > $(BUILD)/build.log 2>&1 \
+	  +incdir+$(UVM_HOME) $(UVM_HOME)/uvm_pkg.sv $(if $(MICRON_USE),-f $(MICRON_USE)) -f $(FLIST) > $(BUILD)/build.log 2>&1 \
 	  || (grep -E '^%Error' $(BUILD)/build.log | head -20; exit 1)
 RUN_CMD = $(EXE) +UVM_TESTNAME=$(TEST) +verilator+seed+$(SEED) $(PLUSARGS)
 else ifeq ($(SIM),vcs)

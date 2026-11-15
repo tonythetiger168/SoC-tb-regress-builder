@@ -8,7 +8,8 @@
 # scores the result with score_cov.py against scripts/cov/exclude/<tb>.txt and,
 # for a socgen bench, the generated <out>/doc/<tb>_cov_waivers.txt.
 # Scope of code coverage: COV_SCOPE (regex on source paths); default rtl/<tb>/,
-# or socgen/out/<tb>/rtl/<tb>_* for a socgen bench (sim/<tb>.f absent).
+# or socgen/out/<tb>/rtl/<tb>_* for a socgen bench (sim/<tb>.f absent), plus
+# vip/dram/soc_ddr4_chan.sv when the bench has DDR4 channels.
 # FLIST, TOP and UVM_HOME can be overridden the same way.
 set -u
 TB=${1:-soc}; LIST=${2:-regress/testlist.txt}
@@ -18,6 +19,10 @@ if [ -f "sim/$TB.f" ] || [ ! -f "socgen/out/$TB/sim/files.f" ]; then
   FLIST=${FLIST:-sim/$TB.f}; SCOPE=${COV_SCOPE:-^rtl/$TB/}
 else                                # socgen bench
   FLIST=${FLIST:-socgen/out/$TB/sim/files.f}; SCOPE=${COV_SCOPE:-socgen/out/$TB/rtl/${TB}_}
+  # DDR4 channels (memories[].model: ddr4): their glue is scored too
+  if [ -z "${COV_SCOPE:-}" ] && grep -q 'vip/dram/soc_ddr4_chan.sv' "$FLIST"; then
+    SCOPE="$SCOPE|vip/dram/soc_ddr4_chan\.sv"
+  fi
 fi
 UVM_HOME=${UVM_HOME:-$ROOT/uvm-core/src}
 D=build/cov/$TB
