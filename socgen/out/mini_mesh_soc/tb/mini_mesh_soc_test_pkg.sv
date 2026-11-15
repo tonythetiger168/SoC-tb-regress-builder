@@ -370,6 +370,7 @@ package mini_mesh_soc_test_pkg;
           run_item(vm[i], 1, S_BASE[si] + (32'd1 << bit_), 1, 2, AXI4_INCR);
         run_item(vm[i], 1, S_BASE[si] + target_size(si) - 32'h4, 1, 2, AXI4_INCR);
       end
+      `uvm_info("COV_PHASE", "decerr walk", UVM_LOW)
       // every master: each address bit at a decode miss (DECERR in the master NI)
       foreach (vm[i])
         for (int bit_ = 2; bit_ < 32; bit_++)
@@ -377,6 +378,7 @@ package mini_mesh_soc_test_pkg;
             for (int k = 0; k < 4; k++) run_item(vm[i], 0, 32'd1 << bit_, 1, 2, AXI4_INCR);   // every slot
             for (int k = 0; k < 4; k++) run_item(vm[i], 1, 32'd1 << bit_, 1, 2, AXI4_INCR);
           end
+      `uvm_info("COV_PHASE", "burst shapes", UVM_LOW)
       // every master: the burst shapes on a memory in +0x800 of its 4 KB block
       // (no other phase uses it), WRAP bursts that split at the wrap point at
       // odd words, narrow reads at odd addresses, multi-chunk partially strobed
@@ -403,6 +405,7 @@ package mini_mesh_soc_test_pkg;
           for (int k = 0; k < 4; k++) run_item(mi, 1, a, 1, 2, AXI4_INCR);
         end
       end
+      `uvm_info("COV_PHASE", "apb vip bursts", UVM_LOW)
       // APB VIP completers: multi-beat bursts with random data, so every word
       // of the peripheral port's read chunk carries data
       for (int i = 0; i < NAPB_VIP; i++)
@@ -526,11 +529,25 @@ package mini_mesh_soc_test_pkg;
     // and the routers and the slave NI's response path back-pressure.
     // Reads may go anywhere in the master's slice; writes only to its own
     // PATH_ADDR (one writer per address, so the scoreboard sees no races).
+    // On meshes over 2x2: a slave port with the same kind and protocol as an
+    // earlier one on the same router (e.g. 4 LPDDR channels on one edge
+    // router). The stress phases aim at router outputs and slave NI queues,
+    // which such a twin repeats, so they skip it to keep the run time down.
+    function bit twin_port(int si);
+      if (noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y <= 4 || S_KIND[si] == "apb_bridge") return 0;
+      for (int x = 0; x < si; x++)
+        if (S_KIND[x] == S_KIND[si] && S_PROTO[x] == S_PROTO[si] &&
+            noc_cfg_pkg::EP_X[NM + x] == noc_cfg_pkg::EP_X[NM + si] &&
+            noc_cfg_pkg::EP_Y[NM + x] == noc_cfg_pkg::EP_Y[NM + si]) return 1;
+      return 0;
+    endfunction
+
     task pipe_stress();
       int ms[$];
       int unsigned acc[$];
       for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) ms.push_back(mi);
       foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 16;
+      `uvm_info("COV_PHASE", "hot spots", UVM_LOW)
       // passes 0-2 with zero-latency slaves (no access time either), 3-5 with
       // heavy back-pressure:
       // reads, writes, then both at once (the slave NI's read and write
@@ -548,6 +565,7 @@ package mini_mesh_soc_test_pkg;
         for (int si = 0; si < NS; si++) begin
           logic [31:0] apb = NAPB_VIP ? apb_vip_base(0) + 32'h200 : empty_slot();
           if (S_KIND[si] == "apb_bridge" && pass < 6) continue;
+          if (twin_port(si)) continue;
           // one fork level only: Verilator 5.052 binds a nested fork's view of
           // the outer fork's locals to the last iteration
           for (int i = 0; i < ms.size(); i++)
@@ -567,6 +585,7 @@ package mini_mesh_soc_test_pkg;
           wait fork;
         end
       end
+      `uvm_info("COV_PHASE", "storm", UVM_LOW)
       // storm: every master at once to every port, single beats, zero latency,
       // so flits from several inputs meet at one router output and queue up
       env.cfg.set_timing(0);
@@ -584,6 +603,7 @@ package mini_mesh_soc_test_pkg;
           end
         wait fork;
       end
+      `uvm_info("COV_PHASE", "streams", UVM_LOW)
       // streams: every master keeps 16 single beats in flight for a long
       // while, each thread walking over all ports (thread 0 / 1 on the APB
       // port), so all links carry traffic at once and the router input
@@ -611,6 +631,7 @@ package mini_mesh_soc_test_pkg;
           end
         wait fork;
       end
+      `uvm_info("COV_PHASE", "link fill", UVM_LOW)
       // link fill: every full AXI4 master at once sends one port a 64-beat
       // read (8 request flits in 8 cycles) and 8 single-beat writes (one
       // flit per W beat), and 8 single reads to the next port, so two
@@ -619,15 +640,7 @@ package mini_mesh_soc_test_pkg;
       begin
         logic [31:0] apb = NAPB_VIP ? apb_vip_base(0) + 32'h200 : empty_slot();
         for (int si = 0; si < NS; si++) begin
-          // on meshes over 2x2, one slave port per router (the phase targets
-          // router outputs; e.g. 4 LPDDR channels on one edge router are one)
-          bit seen = 0;
-          if (noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y > 4)
-            for (int x = 0; x < si; x++)
-              if (S_KIND[x] != "apb_bridge" && S_KIND[si] != "apb_bridge" &&
-                  noc_cfg_pkg::EP_X[NM + x] == noc_cfg_pkg::EP_X[NM + si] &&
-                  noc_cfg_pkg::EP_Y[NM + x] == noc_cfg_pkg::EP_Y[NM + si]) seen = 1;
-          if (seen) continue;
+          if (twin_port(si)) continue;
           for (int i = 0; i < ms.size(); i++) begin
             automatic int mi = ms[i], s = si, ii = i, t = (si + 1) % NS;
             if (M_PROTO[mi] != "axi4") continue;
@@ -648,6 +661,7 @@ package mini_mesh_soc_test_pkg;
           wait fork;
         end
       end
+      `uvm_info("COV_PHASE", "apb two-chunk writes", UVM_LOW)
       // APB port: two-chunk writes from every master at once (MAXB bursts x 2
       // chunks each), so the slave NI's write queue holds more than 16 chunks
       if (NAPB_VIP) begin
@@ -661,6 +675,7 @@ package mini_mesh_soc_test_pkg;
           end
         wait fork;
       end
+      `uvm_info("COV_PHASE", "router fill", UVM_LOW)
       // router fill: masters split in two groups, each group hammering the
       // slave ports on one router (single reads and writes, zero latency), so
       // the response flits of one router's slaves leave it back to back and
@@ -690,6 +705,7 @@ package mini_mesh_soc_test_pkg;
             end
             wait fork;
           end
+      `uvm_info("COV_PHASE", "random link fill", UVM_LOW)
       // random link fill: random target pairs, burst mixes and start skews,
       // so the flit trains of different masters line up at some router
       for (int round = 0; round < 800; round++) begin
