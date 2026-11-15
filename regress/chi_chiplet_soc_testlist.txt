@@ -5,3 +5,4 @@ chi_chiplet_soc chi_chiplet_soc_path_latency_test 1
 chi_chiplet_soc chi_chiplet_soc_traffic_test 1
 chi_chiplet_soc chi_chiplet_soc_coherence_test 2
 chi_chiplet_soc chi_chiplet_soc_coherence_test 1 +D2D_ERR_EVERY=7
+chi_chiplet_soc chi_chiplet_soc_cov_test 1

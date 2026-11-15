@@ -1,0 +1,6 @@
+# ipcam_hd_soc media nightly
+ipcam_soc_media_test 2 +vec=t2_64x48 +w=64 +h=48 +qp=30 +level=30 +SOC_ITEMS=400
+ipcam_soc_media_test 2 +vec=bars_96x64 +w=96 +h=64 +qp=34 +level=30 +SOC_ITEMS=400
+ipcam_soc_media_test 1 +vec=mb_176x144 +w=176 +h=144 +qp=26 +level=30 +SOC_ITEMS=800 +npu_rounds=4 +npu_lines=64
+ipcam_soc_media_test 1 +vec=mb_176x144 +w=176 +h=144 +qp=26 +level=30 +SOC_ITEMS=400 +SOC_TIMING=2
+ipcam_soc_media_test 1 +vec=bars_96x64 +w=96 +h=64 +qp=34 +level=30 +MEDIA_ONLY

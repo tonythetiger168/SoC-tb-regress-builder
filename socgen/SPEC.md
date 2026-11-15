@@ -103,7 +103,8 @@ address with the channel bits removed) are generated for each memory.
 
 | Key | Meaning |
 |---|---|
-| `name`, `kind` | `memory` (VIP memory responder), `apb_bridge`, `vip` (generic AXI slave VIP) |
+| `name`, `kind` | `memory` (VIP memory responder), `apb_bridge`, `vip` (generic AXI slave VIP), `rtl` (an `rtl` block module), `periph` (the AXI port of an APB peripheral) |
+| `periph`, `prefix` | `periph` only: the `ip` peripheral (by name) whose AXI4 subordinate pins serve this port, and their prefix (default `s_`). The APB subsystem exports the pins as `<periph>_axi_<sig>` and tb_top wires them to the NoC port; narrower IDs are zero-extended. Example: QSPI_XIP's XIP window. The scoreboard has no reference model for it (the media test checks the data), and the NoC model adds no `access_cycles` (the IP takes its own time); `access_cycles` is then only the zero-load latency bound |
 | `base`, `size`, `node`, `access_cycles` | as above |
 | `slot_size` | `apb_bridge` only: slot window (default 4 KB) |
 | `peripherals` | `apb_bridge` only, see below |
@@ -138,7 +139,7 @@ pins inside the APB subsystem, e.g. open-vip-portfolio's `sdc_model` on SD's
 | `vip` | | open-vip-portfolio VIP: socgen cuts `module <model>` out of `vips/<vip>/tb/top_tb.sv` (or `vips/<vip>.zip`) into `out/rtl/vip/<model>.sv`; root from `--vip-root` / `OPEN_VIP_ROOT`, default `../open-vip-portfolio` |
 | `files` | | instead of `vip`: SV files that define the model (repo-relative or absolute) |
 | `params` | | model parameter overrides |
-| `inout` | `[]` | the IP's inout pins the model shares (see below): `pin`, a slice `pin[n]` / `pin[msb:lsb]`, or `{pin: "dat[0]", port: dat0}` when the model's port prefix differs (eMMC `emd_model` on bit 0 of eMMC's `dat[7:0]`); bits outside the slice keep the pull-up |
+| `inout` | `[]` | the IP's inout pins the model shares (see below): `pin`, a slice `pin[n]` / `pin[msb:lsb]`, or `{pin: "dat[0]", port: dat0}` when the model's port prefix differs (eMMC `emd_model` on bit 0 of eMMC's `dat[7:0]`); `out` / `oe` name the drive and enable outputs when they are not `<port>_s` / `<port>_s_oe` (`{pin: io, out: fl_io, oe: fl_oe}` for `snor_model`); bits outside the slice keep the pull-up |
 | `map` | | model port -> IP pin name or SV expression. Model inputs default to the IP pin of the same name; outputs mapped to an IP input pin drive it (not with `pins` on that pin) |
 | `clock`, `reset` | `clk`, `rst_n` | model ports tied to the subsystem clock and active-low reset |
 
@@ -159,9 +160,16 @@ the model pulls `p` low, and `p_m_lo` gets `~p`. Otherwise `p` keeps its pull-up
 
 `ral_master` (master whose sequencer runs the RAL frontdoor, default the
 first master), and `lists.<listname>[]` of `test`, `seeds`, `plusargs`.
-Tests: `smoke`, `ral`, `path_latency`, `traffic`, `scenario`, and `coherence`
-(needs `chi`; in the default list when `chi` is set). Each list is written to
-`regress/<soc>_<listname>.txt` in the format `regress/regress.py` reads.
+Tests: `smoke`, `ral`, `path_latency`, `traffic`, `scenario`, `cov`, and
+`coherence` (needs `chi`; in the default list when `chi` is set). Each list
+is written to `regress/<soc>_<listname>.txt` in the format `regress/regress.py`
+reads. `cov` is the coverage-closure test: every master drives every burst
+shape (FIXED, WRAP, narrow, unaligned, partial strobes, 64-beat) to one
+target in turn, every RTL slave sees an address-bit walk and 256-beat bursts,
+the APB port sees 256-beat and racing bursts, the RAL runs a bit-bash plus a
+read of every register, and the NoC and slave VIPs raise READY only after
+VALID so the handshake-wait covers fire. Run it with `make cov` (see the
+README).
 
 ## `report.latency`
 
@@ -185,6 +193,7 @@ Tests: `smoke`, `ral`, `path_latency`, `traffic`, `scenario`, and `coherence`
 | `sim/files.f`, `socgen.mk` | file list; `make build TB=<soc>` works from the repo root |
 | `regress/<soc>_<list>.txt` | regression lists |
 | `doc/<soc>.md`, `doc/<soc>_memmap.h`, `doc/<soc>_paths.csv` | address map, mesh placement, ideal latency per path, C header |
+| `doc/<soc>_cov_waivers.txt` | coverage points that the SoC cannot reach by construction (constant APB-window address bits, unused ID bits, OKAY/SLVERR-only bridge responses, register bits a field map never drives, IP pins left to the IP's own bench), one regex per line with its reason; `scripts/cov/run_cov.sh` reads it |
 
 ## `chiplet` (optional, `noc.model: mesh`)
 

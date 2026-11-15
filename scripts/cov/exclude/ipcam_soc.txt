@@ -1,0 +1,13 @@
+# Coverage waivers for the ipcam_soc bench beyond the ones socgen generates
+# (socgen/out/ipcam_soc/doc/ipcam_soc_cov_waivers.txt). Format: see score_cov.py.
+
+# --- spi_nor port = QSPI_XIP's AXI subordinate (RTL). It raises AWREADY/WREADY in
+#     the cycle VALID arrives when idle and ARREADY unless its command port is
+#     running; the NoC sends one burst per direction at a time, so VALID never
+#     waits for READY on this port.
+user g_s\[3\]\.u_sva\.c_(aw|w|ar)_wait # QSPI_XIP accepts AW/W/AR at once when idle; the NoC never overlaps bursts per direction
+
+# --- QSPI_XIP's AXI responses are IP function: reads always answer OKAY and
+#     writes always SLVERR (XIP window is read-only), so RESP bits stay fixed.
+toggle u_apb qspi_xip_(axi|s)_rresp\[ # QSPI_XIP reads answer OKAY only (IP function, closed in open-ip)
+toggle u_apb qspi_xip_(axi|s)_bresp\[ # QSPI_XIP writes answer SLVERR only (read-only XIP window)

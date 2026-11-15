@@ -7,6 +7,7 @@
 //    until the transfer completes
 //  * PENABLE only with PSEL; PSTRB is 0 for reads; no X on PSEL/PENABLE, and
 //    no X on PREADY (and PSLVERR when PREADY) during ACCESS
+//  * cover properties show each antecedent occurred
 // ============================================================================
 `ifndef APB_SVA_SV
 `define APB_SVA_SV
@@ -36,5 +37,12 @@ module apb_sva #(parameter string NAME = "apb") (apb_if vif);
   resp_known: assert property (@(posedge clk) disable iff (!rst_n)
                 access |-> !$isunknown(vif.pready) && (!vif.pready || !$isunknown(vif.pslverr)))
     else `uvm_error({NAME, "_SVA"}, "PREADY/PSLVERR X/Z during ACCESS");
+
+  // ---- coverage: every assertion's antecedent occurs (no vacuous pass) ----
+  c_setup: cover property (@(posedge clk) disable iff (!rst_n) setup);
+  c_wait:  cover property (@(posedge clk) disable iff (!rst_n) access && !vif.pready);
+  c_read:  cover property (@(posedge clk) disable iff (!rst_n) access && vif.pready && !vif.pwrite);
+  c_write: cover property (@(posedge clk) disable iff (!rst_n) access && vif.pready && vif.pwrite);
+  c_error: cover property (@(posedge clk) disable iff (!rst_n) access && vif.pready && vif.pslverr);
 endmodule
 `endif

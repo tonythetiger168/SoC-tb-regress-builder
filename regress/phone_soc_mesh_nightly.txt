@@ -4,3 +4,4 @@ phone_soc_mesh phone_soc_mesh_ral_test 2
 phone_soc_mesh phone_soc_mesh_path_latency_test 1
 phone_soc_mesh phone_soc_mesh_traffic_test 10 +SOC_ITEMS=400
 phone_soc_mesh phone_soc_mesh_traffic_test 5 +SOC_ITEMS=400 +SOC_TIMING=2
+phone_soc_mesh phone_soc_mesh_cov_test 2

@@ -5,3 +5,4 @@ chiplet_soc chiplet_soc_path_latency_test 1
 chiplet_soc chiplet_soc_traffic_test 2
 chiplet_soc chiplet_soc_traffic_test 1 +SOC_TIMING=2
 chiplet_soc chiplet_soc_traffic_test 1 +D2D_ERR_EVERY=7
+chiplet_soc chiplet_soc_cov_test 1

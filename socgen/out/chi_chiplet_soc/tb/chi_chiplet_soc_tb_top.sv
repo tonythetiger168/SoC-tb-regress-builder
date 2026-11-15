@@ -378,6 +378,7 @@ module chi_chiplet_soc_tb_top;
     .irq(apb_irq)
   );
 
+
   initial begin
     if ($test$plusargs("VCD")) begin
       $dumpfile("chi_chiplet_soc.vcd");

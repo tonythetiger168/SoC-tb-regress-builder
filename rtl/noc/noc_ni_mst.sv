@@ -82,29 +82,36 @@ module noc_ni_mst
 
   // AXI4 A3.4.1 beat address
   function automatic logic [31:0] beat_addr(burst_t b, int unsigned i);
-    logic [31:0] nb, aligned, wsize, wbase;
+    logic [31:0] nb, aligned, wsize, wbase, r;
+    // one return at the end: Verilator 5.052 loses the line coverage of
+    // case arms that return directly
     nb = 32'd1 << b.size;
     aligned = b.addr & ~(nb - 1);
     case (b.burst)
-      2'b00: return b.addr;
+      2'b00: r = b.addr;
       2'b10: begin
         wsize = nb * (32'(b.len) + 1);
         wbase = b.addr & ~(wsize - 1);
-        return wbase + ((aligned - wbase + i * nb) & (wsize - 1));
+        r = wbase + ((aligned - wbase + i * nb) & (wsize - 1));
       end
-      default: return (i == 0) ? b.addr : aligned + i * nb;
+      default: r = (i == 0) ? b.addr : aligned + i * nb;
     endcase
+    return r;
   endfunction
 
   // beats in the chunk that starts at beat i (1..8/R)
+  // (a done flag, no break: Verilator 5.052 drops the branch coverage of a
+  // break inside the unrolled loop)
   function automatic int unsigned chunk_beats(burst_t b, int unsigned i);
     int unsigned n = 1;
     logic [31:0] nb = 32'd1 << b.size;
+    logic done = 1'b0;
     for (int unsigned k = 1; k < CW / R; k++) begin
-      if (i + k > int'(b.len)) break;
-      if (b.burst != 2'b00 &&
-          beat_addr(b, i + k) != (beat_addr(b, i + k - 1) & ~(nb - 1)) + nb) break;
-      n++;
+      if (done || i + k > int'(b.len) ||
+          (b.burst != 2'b00 && beat_addr(b, i + k) != (beat_addr(b, i + k - 1) & ~(nb - 1)) + nb))
+        done = 1'b1;
+      else
+        n++;
     end
     return n;
   endfunction

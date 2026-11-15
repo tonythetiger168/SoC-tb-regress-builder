@@ -394,6 +394,7 @@ module chi_mesh_soc_nodirect_tb_top;
     .irq(apb_irq)
   );
 
+
   initial begin
     if ($test$plusargs("VCD")) begin
       $dumpfile("chi_mesh_soc_nodirect.vcd");

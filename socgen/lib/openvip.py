@@ -114,8 +114,10 @@ def wire(s, pv, ports, mparams, ip_pins):
             raise SpecError(f"peripheral {s.name}.pins_vip.inout: {pin}[{hi}] outside {pin}[{ip.width - 1}:0]")
         base = f"{s.name}_{pin}"
         net = base if io.hi is None else (f"{base}[{hi}:{lo}]" if hi != lo else f"{base}[{lo}]")
-        so, soe, mi, moe = (need(f"{port}_s", "output"), need(f"{port}_s_oe", "output"),
+        so, soe, mi, moe = (need(io.out or f"{port}_s", "output"), need(io.oe or f"{port}_s_oe", "output"),
                             need(f"{port}_m", "input"), need(f"{port}_m_oe", "input"))
+        if io.out and not (so and soe):
+            raise SpecError(f"peripheral {s.name}.pins_vip.inout: {pv.model} has no outputs {io.out} / {io.oe}")
         slo, mlo = need(f"{port}_s_lo", "output"), need(f"{port}_m_lo", "input")
         if so and soe:
             ow, oew = width(so.range, eff), width(soe.range, eff)
