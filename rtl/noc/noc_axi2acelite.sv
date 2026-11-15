@@ -10,7 +10,8 @@
 //  * every EVERY-th VIP read / write, the shim inserts a transaction of its
 //    own and swallows its response: on AR in turn a read barrier,
 //    CleanShared, CleanInvalid and MakeInvalid (on the line of the last
-//    coherent VIP read); on AW a write barrier.
+//    coherent VIP read); on AW a write barrier. Own transactions take every
+//    ID in turn; barriers alternate memory / synchronisation (AxBAR[1]).
 // Responses come back in issue order, so a FIFO of "own" flags per direction
 // tells the shim's responses from the VIP's.
 // ============================================================================
@@ -100,6 +101,7 @@ module noc_axi2acelite
   logic [1:0]     r_kind;                 // next own read: barrier, CleanShared, CleanInvalid, MakeInvalid
   logic [31:0]    r_line;                 // line of the last coherent VIP read
   logic           r_have;
+  logic [IDW-1:0] r_oid;                  // ID of the own reads (every ID in turn)
   logic           r_own;                  // presenting an own AR
   logic [QD-1:0]  rq;                     // own flag per AR in flight, in order
   logic [QB-1:0]  rq_wp, rq_rp;
@@ -107,9 +109,9 @@ module noc_axi2acelite
 
   always_comb begin
     if (r_own) begin
-      arid = '0; arprot = 3'b000; arburst = 2'b01; arsize = 3'd2;
-      if (r_kind == 2'd0) begin           // barrier
-        araddr = '0; arlen = 8'd0; arsnoop = 4'b0000; ardomain = 2'b01; arbar = 2'b01;
+      arid = r_oid; arprot = 3'b000; arburst = 2'b01; arsize = 3'd2;
+      if (r_kind == 2'd0) begin           // barrier: memory and synchronisation in turn
+        araddr = '0; arlen = 8'd0; arsnoop = 4'b0000; ardomain = 2'b01; arbar = {r_oid[0], 1'b1};
       end else begin                      // cache maintenance on the last coherent line
         araddr = r_line; arlen = 8'd15; ardomain = 2'b01; arbar = 2'b00;
         arsnoop = r_kind == 2'd1 ? 4'b1000 : r_kind == 2'd2 ? 4'b1001 : 4'b1101;
@@ -133,12 +135,12 @@ module noc_axi2acelite
 
   always_ff @(posedge clk or negedge rst_n)
     if (!rst_n) begin
-      r_cnt <= '0; r_kind <= '0; r_line <= '0; r_have <= 1'b0; r_own <= 1'b0;
+      r_cnt <= '0; r_kind <= '0; r_line <= '0; r_have <= 1'b0; r_own <= 1'b0; r_oid <= '0;
       rq <= '0; rq_wp <= '0; rq_rp <= '0;
     end else begin
       if (arvalid && arready) begin
         rq[rq_wp] <= r_own; rq_wp <= rq_wp + 1'b1;
-        if (r_own) begin r_own <= 1'b0; r_kind <= r_kind + 1'b1; r_cnt <= '0; end
+        if (r_own) begin r_own <= 1'b0; r_kind <= r_kind + 1'b1; r_cnt <= '0; if (r_kind == 2'd3) r_oid <= r_oid + 1'b1; end
         else begin
           r_cnt <= r_cnt + 1'b1;
           if (r_coh) begin r_line <= {s_araddr[31:6], 6'd0}; r_have <= 1'b1; end
@@ -151,6 +153,7 @@ module noc_axi2acelite
 
   // ---------------- write side ----------------
   logic [7:0]     w_cnt;
+  logic [IDW-1:0] w_oid;                  // ID of the next own write (every ID in turn)
   logic           w_own;
   logic [QD-1:0]  wq;
   logic [QB-1:0]  wq_wp, wq_rp;
@@ -166,8 +169,8 @@ module noc_axi2acelite
 
   always_comb begin
     if (w_own) begin
-      awid = '0; awaddr = '0; awlen = 8'd0; awsize = 3'd2; awburst = 2'b01; awprot = 3'b000;
-      awsnoop = 3'b000; awdomain = 2'b01; awbar = 2'b01;
+      awid = w_oid; awaddr = '0; awlen = 8'd0; awsize = 3'd2; awburst = 2'b01; awprot = 3'b000;
+      awsnoop = 3'b000; awdomain = 2'b01; awbar = {w_oid[0], 1'b1};
     end else begin
       awid = s_awid; awaddr = s_awaddr; awlen = s_awlen; awsize = s_awsize; awburst = s_awburst;
       awprot = s_awprot; awbar = 2'b00;
@@ -186,11 +189,11 @@ module noc_axi2acelite
 
   always_ff @(posedge clk or negedge rst_n)
     if (!rst_n) begin
-      w_cnt <= '0; w_own <= 1'b0; wq <= '0; wq_wp <= '0; wq_rp <= '0;
+      w_cnt <= '0; w_own <= 1'b0; wq <= '0; wq_wp <= '0; wq_rp <= '0; w_oid <= '0;
     end else begin
       if (awvalid && awready) begin
         wq[wq_wp] <= w_own; wq_wp <= wq_wp + 1'b1;
-        if (w_own) begin w_own <= 1'b0; w_cnt <= '0; end
+        if (w_own) begin w_own <= 1'b0; w_cnt <= '0; w_oid <= w_oid + 1'b1; end
         else w_cnt <= w_cnt + 1'b1;
       end
       if (!w_own && !(s_awvalid && !awready) && int'(w_cnt) >= EVERY) w_own <= 1'b1;

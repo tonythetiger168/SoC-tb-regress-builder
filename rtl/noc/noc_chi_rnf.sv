@@ -158,7 +158,6 @@ module noc_chi_rnf
   logic [255:0]   ns_wd;
   logic [31:0]    ns_be;
   logic [2:0]     wb_resp;
-  logic [25:0]    wb_line;
 
   function automatic logic [31:0] beat_addr(int unsigned i);
     logic [31:0] nb = 32'd1 << b_size;
@@ -285,7 +284,7 @@ module noc_chi_rnf
       p_dat.dataid  = {h1, 1'b0};
       p_dat.be      = '1;
       p_dat.data    = cdat[s_idx][256*h1 +: 256];
-    end else if (go) begin
+    end else begin                        // go: no snoop queued or in progress
       if (st == M_ACK && room_rsp) begin
         push_rsp = 1'b1;
         p_rsp.nid    = ack_nid;
@@ -327,7 +326,7 @@ module noc_chi_rnf
       ack_nid <= '0;
       st <= M_IDLE; wk <= W_FILL; b_wr <= 1'b0; last_rd <= 1'b0; b_id <= '0; b_addr <= '0;
       b_len <= '0; b_i <= '0; b_size <= '0; b_burst <= '0; b_worst <= '0;
-      r_data <= '0; r_resp <= '0; txn <= '0; wb_idx <= '0; wb_resp <= '0; wb_line <= '0;
+      r_data <= '0; r_resp <= '0; txn <= '0; wb_idx <= '0; wb_resp <= '0;
       ns_n <= '0; ns_k <= '0; ns_half <= 1'b0; ns_rd <= 1'b0; ns_last <= 1'b0; ns_wd <= '0; ns_be <= '0;
     end else begin
       // ---------------- TX queues ----------------

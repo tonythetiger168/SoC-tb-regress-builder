@@ -12,6 +12,7 @@ regress/<soc>_<list>.txt and regress/suites/<soc>.yaml in the repo root.
 import argparse
 import math
 import os
+import re
 import shutil
 import sys
 
@@ -435,7 +436,16 @@ def _mesh_flows(m):
             x, y = {2: (x + 1, y), 3: (x - 1, y), 0: (x, y + 1), 1: (x, y - 1)}[out]
             inp = {2: 3, 3: 2, 0: 1, 1: 0}[out]          # entering from the opposite side
     pairs = [(a, b) for a in range(nm) for b in range(nm, nm + ns)]
-    for a, b in pairs + [(b, a) for a, b in pairs]:
+    pairs += [(b, a) for a, b in pairs]
+    if m.chi.homes:
+        # CHI: requests and responses through the homes, snoops, DMT data from a
+        # slave straight to a requester, DCT data between RN-Fs: any endpoint
+        # may talk to any other (an over-approximation: fewer waivers, never wrong)
+        nodes += [(h.die if m.chiplet.dies > 1 else 0, h.node[0], h.node[1]) for h in m.chi.homes]
+        nep = len(nodes)
+        pairs = [(a, b) for a in range(nep) for b in range(nep)
+                 if a != b and not (gws and (nodes[a] in gws or nodes[b] in gws))]
+    for a, b in pairs:
         (da, xa, ya), (db, xb, yb) = nodes[a], nodes[b]
         if da == db:
             route(da, xa, ya, xb, yb)
@@ -447,12 +457,8 @@ def _mesh_flows(m):
 
 def _mesh_cov_waivers(m):
     """noc.model mesh (rtl/noc/ NIs, adapters, open router): what the generated
-    AMBA NoC structurally cannot do in this SoC. CHI meshes are not covered here,
-    and chiplet (multi-die) benches are closed by the NoC generator work: the
-    die/gateway rules below are kept for it but stay off until it enables them."""
+    NoC structurally cannot do in this SoC (AMBA, chiplet and CHI meshes)."""
     L = []
-    if m.chi.rn:
-        return L
     MESH = "\\.u_mesh(_d\\S+)?"
     nm = len(m.masters)
     ni = m.noc_ni
@@ -478,6 +484,8 @@ def _mesh_cov_waivers(m):
     pkg = nocgen.cfg_pkg(m).split("\n")
     for fn, why in (("ep_name(", "ep_name() names endpoints in messages only"),
                     ("hn_ep(", "hn_ep(): CHI home lookup, no CHI home nodes here")):
+        if fn == "hn_ep(" and m.chi.homes:
+            continue
         a = next(i for i, ln in enumerate(pkg) if "function automatic" in ln and fn in ln) + 1
         b = next(i for i in range(a, len(pkg)) if "endfunction" in pkg[i]) + 1
         L.append(f"line noc_cfg_pkg \\S+ \\S*/noc_cfg_pkg\\.sv:({rng(a, b + 1)})$ # {why}")
@@ -671,11 +679,30 @@ def _mesh_cov_waivers(m):
         T(N, "m_a[rw]burst\\[1\\]", "noc_ni_slv\\.sv$", "chunks are FIXED or INCR (WRAP bursts split at the wrap point)")
         T("\\.u_noc", f"{t.name}_(ax_)?a[rw]burst\\[1\\]", NOC, "chunks are FIXED or INCR")
         T(N, "m_a[rw]size\\[2\\]", "noc_ni_slv\\.sv$", "32-bit data bus: AxSIZE <= 2")
-        T(N, f"(rp|wp)\\[\\d+\\]\\.(copc|cresp|dataid|hnid)\\[", "noc_ni_slv\\.sv$",
-          "CHI fields: zero without CHI home nodes")
+        if not (m.chi.homes and m.chi.dmt and t.index in m.chi.coh_targets):
+            T(N, f"(rp|wp)\\[\\d+\\]\\.(copc|cresp|dataid|hnid)\\[", "noc_ni_slv\\.sv$",
+              "CHI fields: zero (no DMT read to this slave)" if m.chi.homes else "CHI fields: zero without CHI home nodes")
+        # requesters: the masters, or for CHI the homes (coherent memory, RN-F
+        # NoSnp) and with DMT the RN-Fs (the read's source is the requester)
+        ngw = len(m.chiplet.gateways) if m.chiplet.dies > 1 else 0
+        hn = list(range(nm + len(m.targets) + ngw, nm + len(m.targets) + ngw + len(m.chi.homes)))
+        if not m.chi.homes:
+            rq, rqs = list(range(nm)), f"masters 0..{nm - 1}"
+        elif t.index in m.chi.coh_targets:
+            rq = hn + (list(m.chi.rn) if m.chi.dmt else [])
+            rqs = f"homes {hn}" + (f" and RN-Fs {list(m.chi.rn)} (DMT reads)" if m.chi.dmt else "")
+        else:
+            rq = hn + [i for i in range(nm) if i not in m.chi.rn]
+            rqs = f"homes {hn} (RN-F NoSnp) and RN-I masters"
         for b in range(epb):
-            if not any(e >> b & 1 for e in range(nm)):
-                T(N, f"(rp|wp)\\[\\d+\\]\\.src\\[{b}\\]", "noc_ni_slv\\.sv$", f"requesters are masters 0..{nm - 1}")
+            if not any(e >> b & 1 for e in rq):
+                T(N, f"(rp|wp)\\[\\d+\\]\\.src\\[{b}\\]", "noc_ni_slv\\.sv$", f"requesters are {rqs}")
+        if m.chi.homes and t.index in m.chi.coh_targets:
+            wq = hn
+            for b in range(epb):
+                if not any(e >> b & 1 for e in wq):
+                    T(N, f"wp\\[\\d+\\]\\.src\\[{b}\\]", "noc_ni_slv\\.sv$",
+                      f"writes to coherent memory come from the homes {hn} only")
         T(N, f"rp\\[\\d+\\]\\.tag\\[({rng(lg(ni.maxo), 6)})\\]", "noc_ni_slv\\.sv$",
           f"read tag = the master NI's response slot (< MAXO = {ni.maxo})")
         T(N, f"wp\\[\\d+\\]\\.tag\\[({rng(lg(ni.maxb), 6)})\\]", "noc_ni_slv\\.sv$",
@@ -753,6 +780,112 @@ def _mesh_cov_waivers(m):
             L.append(f"user {g}c_a[rw]_fixed # behind the {t.protocol} adapter the VIP sees single INCR beats")
             L.append(f"user {g}c_[rb]_wait # the {t.protocol} test shim raises READY in the state after the "
                      "request handshake, before the slave can answer")
+    if m.chi.rn:
+        L += _chi_cov_waivers(m, NR)
+    return L
+
+
+def _chi_cov_waivers(m, NR):
+    """CHI meshes: what the HN-Fs (noc_hnf), the RN-F NIs (noc_ni_chi) and the
+    ACE-Lite adapters (noc_acelite2axi) structurally cannot do in this SoC, the
+    bench models in front of them, and the configuration (DMT, DCT)."""
+    L = []
+    T = lambda h, pt, f, why: L.append(f"toggle {h} {pt}\\S* \\S*{f} # {why}")   # noqa: E731
+    B = lambda h, kind, f, txt, why, nth=0: L.append(                                 # noqa: E731
+        f"{kind.split()[0]} {h} {kind.split()[1]} \\S*rtl/noc/{f.replace('.', '[.]')}:{_rtl_line(f, txt, nth)}$ # {why}")
+    rng = lambda lo, hi: "|".join(str(b) for b in range(lo, hi))   # noqa: E731
+    pkg = nocgen.cfg_pkg(m)
+
+    def const(name):
+        mt = re.search(name + r"\s*=\s*\d+'[hd]([0-9A-Fa-f]+)", pkg)
+        return int(mt.group(1), 16 if "'h" in mt.group(0) else 10)
+    nm, ns = len(m.masters), len(m.targets)
+    ngw = len(m.chiplet.gateways) if m.chiplet.dies > 1 else 0
+    hn = [nm + ns + ngw + i for i in range(len(m.chi.homes))]
+    rn = list(m.chi.rn)
+    epb = max(1, (nm + ns + ngw + len(hn)).bit_length())
+    never = lambda vals, w: [b for b in range(w) if not any(v >> b & 1 for v in vals)]   # noqa: E731
+    H, HF = "\\.u_hnf\\d+", "noc_hnf\\.sv$"
+    # ---- bench models in <soc>_tb_top (stand-ins for CPUs / IO masters, like the VIPs) ----
+    for f, what in (("noc_chi_rnf", "the CHI RN-F model (AXI4 VIP -> MESI cache -> CHI) standing in for a CPU"),
+                    ("noc_axi2acelite", "the ACE-Lite source (AXI4 VIP -> ACE-Lite, own barriers and CMOs) "
+                                        "standing in for an IO-coherent master")):
+        for met in ("line", "branch", "toggle"):
+            L.append(f"{met} \\.u_\\S+_shim \\S+ \\S*rtl/noc/{f}[.]sv(:\\d+)?$ # bench model: {what}; a "
+                     "testbench instance in the tb_top like the VIPs, not NoC RTL (what it sends is checked by "
+                     "the home's single-writer assertion, its own assertions and the coherence test)")
+    # ---- HN-F ----
+    T(H, "ej_ready", HF, "the home always ejects (ej_ready tied high)")
+    cap = sum(1 if x.index in rn else m.noc_ni.maxo if x.protocol in ("axi4", "ace_lite") else 1 for x in m.masters)
+    T(H, f"rq_cnt\\[({rng(cap.bit_length(), 8)})\\]", HF,
+      f"at most {cap} requests in flight to a home (one per RN-F, MAXO = {m.noc_ni.maxo} chunks per AXI4 / "
+      "ACE-Lite master, one per AXI4-Lite / AHB master)")
+    T(H, "overflow", HF, f"the request queue (64) holds every request the masters can have in flight ({cap})")
+    B(H, "branch if", "noc_hnf.sv", "if (rq_cnt == (QB+1)'(QD)) overflow", f"the request queue holds all {cap}")
+    T(H, "mem_pend\\[\\d+\\]\\[2\\]", HF, "a slot has at most two memory chunks in flight (the halves of one line)")
+    B(H, "line case", "noc_hnf.sv", "default: st[k] <= H_IDLE;", "FSM default arm: every state is decoded")
+    B(H, "line case", "noc_hnf.sv", "          default: ;", "a home is sent requests, memory responses, CHI RSP and "
+      "DAT only (requests are taken above, snoops go to RN-Fs)")
+    B(H, "branch else", "noc_hnf.sv", "end else if ((ej.copc[3:0] == RSP_SNPRESP", "RN-Fs send a home CompAck, "
+      "SnpResp and SnpRespFwded on RSP, nothing else")
+    for nth in (0, 1):
+        B(H, "branch else", "noc_hnf.sv", "if (holds(r, L[ej_kt])) begin", "a home snoops only RN-Fs its exact filter "
+          "lists, and the entry stays until the snoop response (the set is busy in this slot)", nth)
+    B(H, "branch else", "noc_hnf.sv", "if (ej.cresp[2]) dirty[ej_kt]", "an RN-F answers a snoop with data only "
+      "for a dirty line (SnpRespData_PD / SnpRespDataFwded_PD)")
+    if m.chi.dmt:
+        why = ("DMT: the home never reads memory for itself (ReadShared / ReadUnique data goes from the slave to "
+               "the requester; RN-I chunks and NoSnp requests are forwarded)")
+        B(H, "branch cond_else", "noc_hnf.sv", "np.op     = (st[k] == H_WB) ? OP_WR : OP_RD;", why)
+        B(H, "branch if", "noc_hnf.sv", "else if (ej.op == OP_RDATA) lbuf", why)
+    if m.chi.dmt and m.chi.dct:
+        why = ("DMT and DCT: the home never sends ReadShared / ReadUnique data itself (memory data comes straight "
+               "from the slave, a unique owner forwards its line, and only a unique owner can hold it dirty)")
+        B(H, "line elsif", "noc_hnf.sv", "end else if (is_rs[k] || is_ru[k]) begin", why)
+        B(H, "branch else", "noc_hnf.sv", "if (rep_n[k] + 2'd1 ==", why)
+        T(H, "(rep_n\\[\\d+\\]\\[1\\]|gr_cresp\\[\\d+\\]\\[2\\])", HF, why)
+    T(H, "(oq_cnt\\[2\\]|can_push:1->0)", HF, NR + " (the home's output queue fills only while its "
+      "router input is full)")
+    # ---- RN-F NIs (noc_ni_chi), fed by the RN-F model ----
+    for x in m.masters:
+        if x.index not in rn:
+            continue
+        N, NF = f"\\.u_ni_{x.name}", "noc_ni_chi\\.sv$"
+        T(N, "ej_ready", NF, "an RN-F takes every response, data and snoop (ej_ready tied high)")
+        T(N, "txrsp_flit\\.(dbid|resperr)\\[", NF, "the RN-F sends CompAck, SnpResp and SnpRespFwded on RSP: "
+          "no DBID, no RespErr")
+        T(N, "txrsp_flit\\.resp\\[2\\]", NF, "RSP carries no PassDirty (dirty data goes on DAT)")
+        ops = [const(n) for n in ("RSP_SNPRESP", "RSP_COMPACK", "RSP_SNPRESPFWDED")]
+        for b in never(ops, 4):
+            T(N, f"txrsp_flit\\.opcode\\[{b}\\]", NF, f"RSP opcodes of an RN-F: {[hex(v) for v in ops]}")
+        ops = [const(n) for n in ("REQ_READSHARED", "REQ_READNOSNP", "REQ_READUNIQUE", "REQ_CLEANUNIQUE",
+                                  "REQ_EVICT", "REQ_WRITEBACKFULL", "REQ_WRITENOSNPPTL")]
+        for b in never(ops, 6):
+            T(N, f"txreq_flit\\.opcode\\[{b}\\]", NF, f"REQ opcodes of the RN-F: {[hex(v) for v in ops]}")
+        for b in never(hn, epb):
+            T(N, f"txrsp_flit\\.nid\\[{b}\\]", NF, f"RSP goes to a home ({hn}): CompAck to the HomeNID, snoop "
+              "responses to the snooping home")
+        for b in never(rn, epb):
+            T(N, f"rxsnp_flit\\.fwdnid\\[{b}\\]", NF, f"FwdNID is a requesting RN-F ({rn})")
+    # snoop addresses: lines of the coherent memory
+    coh = [t for t in m.targets if t.index in m.chi.coh_targets]
+    lo, hi = min(t.base for t in coh), max(t.base + t.size for t in coh) - 1
+    zb = [b for b in range(6, 32) if not any(a >> b & 1 for a in (lo, hi)) and (hi - lo) < (1 << b)]
+    if zb:
+        T("\\.u_ni_\\w+", f"rxsnp_flit\\.addr\\[({'|'.join(map(str, zb))})\\]", "noc_ni_chi\\.sv$",
+          f"snoops carry lines of the coherent memory 0x{lo:08X}..0x{hi:08X}: these address bits are 0")
+    T("\\.u_ni_\\w+", "rxsnp_flit\\.addr\\[[0-5]\\]", "noc_ni_chi\\.sv$", "snoops carry line addresses")
+    # ---- ACE-Lite adapters (noc_acelite2axi), fed by the bench's ACE-Lite source ----
+    A, AF = "\\.u_\\w+_acel", "noc_acelite2axi\\.sv$"
+    T(A, "(s_a[rw]size|m_a[rw]size)\\[2\\]", AF, "32-bit data bus: AxSIZE <= 2")
+    T(A, "s_arsnoop\\[1\\]", AF, "ACE-Lite read snoop codes: ReadNoSnoop / ReadOnce 0000, CleanShared 1000, "
+      "CleanInvalid 1001, MakeInvalid 1101 (bit 1 only in ACE5 CleanSharedPersist, not supported)")
+    T(A, "s_awsnoop\\[[12]\\]", AF, "ACE-Lite write snoop codes: WriteNoSnoop / WriteUnique 000, "
+      "WriteLineUnique 001 (bits 1, 2 only in ACE5 WriteUniquePtlStash etc., not supported)")
+    nb = m.noc_ni.maxb + m.noc_ni.maxo
+    T(A, f"(r_out|w_out)\\[({rng(nb.bit_length(), 8)})\\]", AF,
+      f"at most MAXB + MAXO = {nb} bursts without their response: the master NI holds MAXB = {m.noc_ni.maxb} "
+      f"bursts and MAXO = {m.noc_ni.maxo} chunks per direction")
     return L
 
 

@@ -33,6 +33,7 @@ NoC: generated RTL `chi_mesh_soc_nodirect_noc` (2x2 mesh of orca_noc_router (ope
 |---|---|---|---|---|
 | 0 | 0x10000000 | gpio | open-ip GPIO | 0x47500200 |
 | 1 | 0x10001000 | uart | open-ip UART | 0x55410200 |
+| 2 | 0x10002000 | ext | APB VIP | - |
 
 open-ip-portfolio commit `359f40a67051a7da5dba4d0bf57c01e67bdcf2fa`.
 

@@ -85,9 +85,12 @@ module noc_hnf
   function automatic logic [IB-1:0] set_of(logic [25:0] l); return l[IB-1:0]; endfunction
   function automatic logic [TW-1:0] tag_of(logic [25:0] l); return l[25:IB]; endfunction
 
+  // one return at the end: Verilator 5.052 loses the branch coverage of a
+  // return (or break / continue) inside an unrolled loop
   function automatic int rn_of(int ep);
-    for (int r = 0; r < NRN; r++) if (RN_EP[r] == ep) return r;
-    return -1;
+    int x = -1;
+    for (int r = 0; r < NRN; r++) if (x < 0 && RN_EP[r] == ep) x = r;
+    return x;
   endfunction
 
   // does RN-F r hold line l (per the filter)?
@@ -423,13 +426,14 @@ module noc_hnf
             automatic logic [NRN-1:0] msk = '0;
             automatic logic [4:0] so = SNP_UNIQUE;
             for (int r = 0; r < NRN; r++) begin
-              if (!holds(r, L[k]) || r == rqr[k]) continue;
-              if (ni_chunk[k]) begin
-                if (cur[k].op == OP_RD) begin so = SNP_CLEANSHARED; msk[r] = sf_u[r][LS[k]]; end
-                else msk[r] = 1'b1;
-              end else if (is_rs[k]) begin so = SNP_SHARED; msk[r] = sf_u[r][LS[k]]; end
-              else if (is_ru[k]) msk[r] = 1'b1;
-              else if (is_cu[k]) msk[r] = holds(rqr[k], L[k]);
+              if (holds(r, L[k]) && r != rqr[k]) begin
+                if (ni_chunk[k]) begin
+                  if (cur[k].op == OP_RD) begin so = SNP_CLEANSHARED; msk[r] = sf_u[r][LS[k]]; end
+                  else msk[r] = 1'b1;
+                end else if (is_rs[k]) begin so = SNP_SHARED; msk[r] = sf_u[r][LS[k]]; end
+                else if (is_ru[k]) msk[r] = 1'b1;
+                else if (is_cu[k]) msk[r] = holds(rqr[k], L[k]);
+              end
             end
             // DCT: ReadShared / ReadUnique with a unique owner: it forwards the line
             if (CHI_DCT && (is_rs[k] || is_ru[k]))
@@ -453,8 +457,7 @@ module noc_hnf
           end
 
           H_SNP: if (gnt[k]) begin
-            automatic logic [NRN-1:0] t = snp_todo[k];
-            for (int r = 0; r < NRN; r++) if (t[r]) begin t[r] = 1'b0; break; end
+            automatic logic [NRN-1:0] t = snp_todo[k] & (snp_todo[k] - 1'b1);   // the lowest one sent
             snp_todo[k] <= t;
             if (t == 0) st[k] <= H_SNPW;
           end

@@ -328,9 +328,10 @@ package mini_soc_test_pkg;
     endfunction
 
     task run_item(int mi, bit wr, logic [31:0] a, int beats, bit [2:0] size, axi4_burst_e burst,
-                  int partial = 0);
+                  int partial = 0, int w_gap = 0);
       axi4_item t = axi4_api::make(wr, a, beats, size, burst, 8'($urandom_range((1 << ID_WIDTH) - 1, 0)));
       t.prot = 3'($urandom);
+      t.w_gap = w_gap;
       // partial 1: random strobes; partial 2+k: beat i drops byte (i + k) % 4, so
       // passes k = 0..3 set and clear every byte lane of every chunk word
       if (partial == 1) foreach (t.strb[i]) t.strb[i] = t.lanes(i) & 4'($urandom_range(14, 1));
@@ -410,6 +411,7 @@ package mini_soc_test_pkg;
       end
       $display("COV_PASS");
     endtask
+
 
 
     // RTL slave port: every address bit of its window both ways, 256-beat bursts

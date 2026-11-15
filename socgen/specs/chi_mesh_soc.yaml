@@ -55,6 +55,7 @@ slaves:
     peripherals:
       - {name: gpio, ip: GPIO}
       - {name: uart, ip: UART, pins: {rxd: "1'b1"}}
+      - {name: ext,  vip: apb}                       # APB slave VIP: every read-data bit of the peripheral port
 
 regress:
   ral_master: cpu0
