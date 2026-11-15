@@ -189,13 +189,14 @@ module soc_ddr4_chan #(
   end
 
   final begin
-    $display("DRAM %s act %0d hit %0d ref %0d rd %0d wr %0d errors %0d model %s",
-             NAME, n_act, n_hit, n_ref, n_rd, n_wr, errors,
 `ifdef MICRON_DDR4
-             "micron"
+    // Micron's model reports violations only as log messages: regress.py
+    // fails a run on this line plus any ERROR message in the log
+    $display("DRAM %s act %0d hit %0d ref %0d rd %0d wr %0d errors see-log model micron",
+             NAME, n_act, n_hit, n_ref, n_rd, n_wr);
 `else
-             "ddr4_dev_model"
+    $display("DRAM %s act %0d hit %0d ref %0d rd %0d wr %0d errors %0d model ddr4_dev_model",
+             NAME, n_act, n_hit, n_ref, n_rd, n_wr, errors);
 `endif
-             );
   end
 endmodule

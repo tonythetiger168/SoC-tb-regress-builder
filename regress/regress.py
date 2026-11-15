@@ -10,6 +10,9 @@ parallel, and report.
 Test list lines: ``<tb> <test> <seeds> [plusargs...]`` (``#`` comments).
 A run PASSES when the simulator exits 0, the log has ``UVM_ERROR : 0`` and
 ``UVM_FATAL : 0``, and the scoreboard printed ``SB_PASS checks=<n>`` with n > 0.
+A run on Micron's DDR4 model (``DRAM ... model micron``) also fails on any
+non-UVM log line with ``ERROR``: Micron reports JEDEC violations only as
+messages, so the bench's own DRAM error count stays 0 there.
 Outputs in --out: one log per run (<tb>/<test>__s<seed>.log), summary.csv,
 summary.md and junit.xml. Exit status 1 if any run fails or a build fails.
 """
@@ -47,6 +50,18 @@ def build(tb, sim, jobs):
     return p.returncode == 0
 
 
+MICRON_RUN = re.compile(r"^DRAM \S+ .* model micron$", re.M)
+MICRON_ERR = re.compile(r"(?<![A-Za-z_])ERROR\b")
+
+
+def vendor_model_error(log):
+    """First Micron model violation message in a Micron run, else ''."""
+    if not MICRON_RUN.search(log):
+        return ""
+    return next((l for l in log.splitlines()
+                 if not l.startswith("UVM_") and not l.startswith("DRAM ") and MICRON_ERR.search(l)), "")
+
+
 def classify(rc, log):
     errs = re.search(r"^UVM_ERROR\s*:\s*(\d+)", log, re.M)
     fats = re.search(r"^UVM_FATAL\s*:\s*(\d+)", log, re.M)
@@ -59,6 +74,9 @@ def classify(rc, log):
         return "FAIL", checks, first or "no UVM report summary (crash or timeout?)"
     if int(errs.group(1)) or int(fats.group(1)):
         return "FAIL", checks, first
+    verr = vendor_model_error(log)
+    if verr:
+        return "FAIL", checks, "Micron model: " + verr.strip()
     if rc != 0:
         return "FAIL", checks, first
     if checks == 0:

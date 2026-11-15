@@ -33,15 +33,22 @@ Micron has no public eMMC or UFS models, so the bench keeps `emd_model` for them
 3. `scripts/fetch_micron_models.sh` clones that repository into `ext/micron/`,
    which is git-ignored. It then writes `ext/micron/micron.f`, which holds the
    `+define+MICRON_DDR4` define, the Micron files in compile order, and
-   `vip/micron/micron_ddr4_dev.sv`. The Makefile adds that file list to
-   every build when it exists (`MICRON_F`).
+   `vip/micron/micron_ddr4_dev.sv`. When that file list exists, the Makefile
+   adds it (`MICRON_F`) only to benches with a DDR4 channel, that is, benches
+   whose file list has `vip/dram/soc_ddr4_chan.sv`.
+4. Micron's model reports JEDEC violations only as log messages. The bench's
+   own DRAM error count therefore stays 0, and the channel's final line reads
+   `errors see-log model micron`. On such a run `regress/regress.py` fails
+   the test on any non-UVM log line that contains `ERROR`.
 
 ## Status
 
 - DDR4: `memories[].model: ddr4` works today with `ddr4_dev_model`. That model
   has the same pins as Micron's, and its JEDEC checks run on every command.
-  `micron_ddr4_dev.sv` has not been run yet, because nobody has the files yet.
-  Micron's model uses `#` delays, classes and interface `inout` wires, so it
-  may need small changes to build under Verilator `--timing`.
+  `micron_ddr4_dev.sv` is UNVERIFIED: it has never been compiled, because the
+  Micron files are not available yet. No bench runs on a Micron model until
+  one has built and passed against it. Micron's model uses `#` delays, `real`
+  timing, `specify` checks, classes and interface `inout` wires, so expect
+  porting work under Verilator `--timing`.
 - MT25Q, LPDDR4X, LPDDR5X: these are waiting for the model files and for a
   JEDEC LPDDR4X / LPDDR5X controller in open-ip-portfolio.
