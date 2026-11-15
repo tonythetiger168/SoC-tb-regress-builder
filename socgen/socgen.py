@@ -307,6 +307,8 @@ def generate(m, out, ip_root, spec_path, write_repo_files=True, vip_root=None):
                     f"filelist: {rel_out}/sim/files.f\ntop: {m.name}_tb_top\n"
                     f"list:\n{lists}"
                     f"cov_include: ['{rel_out}/rtl/*']\n"
+                    # the mesh cov test's stress phases run 10-25 min on the larger meshes
+                    + ("timeout: 2400\n" if m.noc.model == "mesh" else "")
                     + (f"requires: [{ORCA_RTL[-1]}]\nfallback: {{filelist: {rel_out}/sim/files_open.f}}\n"
                        if orca else
                        # RTL masters from the private repos (fetched into ext/): the bench was
