@@ -328,24 +328,30 @@ package phone_soc_test_pkg;
     endfunction
 
     task run_item(int mi, bit wr, logic [31:0] a, int beats, bit [2:0] size, axi4_burst_e burst,
-                  bit partial = 0);
+                  int partial = 0);
       axi4_item t = axi4_api::make(wr, a, beats, size, burst, 8'($urandom_range((1 << ID_WIDTH) - 1, 0)));
       t.prot = 3'($urandom);
-      if (partial) foreach (t.strb[i]) t.strb[i] = t.lanes(i) & 4'($urandom_range(14, 1));
+      // partial 1: random strobes; partial 2+k: beat i drops byte (i + k) % 4, so
+      // passes k = 0..3 set and clear every byte lane of every chunk word
+      if (partial == 1) foreach (t.strb[i]) t.strb[i] = t.lanes(i) & 4'($urandom_range(14, 1));
+      else if (partial > 1) foreach (t.strb[i]) t.strb[i] = t.lanes(i) & ~(4'h1 << ((i + partial - 2) % 4));
       axi4_api::run(env.m_agent[mi].sqr, t);
     endtask
 
     // every burst shape, written then read back
-    task shapes(int mi, logic [31:0] a, bit long_ok);
+    // every burst shape, written then read back. AHB-Lite has no write strobes
+    // and only aligned transfers (noc_axi2ahb / noc_ahb2axi), so a path with an
+    // AHB master or slave gets no partial strobes and no unaligned word beats.
+    task shapes(int mi, logic [31:0] a, bit long_ok, bit ahb = 0);
       for (int wr = 1; wr >= 0; wr--) begin
         run_item(mi, wr, a,          4,  2, AXI4_FIXED);
         run_item(mi, wr, a,          1,  2, AXI4_FIXED);
         run_item(mi, wr, a,          16, 2, AXI4_FIXED);
         run_item(mi, wr, a + 32'h8,  4,  2, AXI4_WRAP);
         run_item(mi, wr, a + 32'h20, 16, 2, AXI4_WRAP);
-        run_item(mi, wr, a + 32'h41, 6,  0, AXI4_INCR, wr);    // byte beats, unaligned start
-        run_item(mi, wr, a + 32'h82, 5,  1, AXI4_INCR, wr);    // halfword beats
-        run_item(mi, wr, a + 32'hC2, 3,  2, AXI4_INCR, wr);    // unaligned word start, partial strobes
+        run_item(mi, wr, a + 32'h41, 6,  0, AXI4_INCR, wr && !ahb);   // byte beats, unaligned start
+        run_item(mi, wr, a + 32'h82, 5,  1, AXI4_INCR, wr && !ahb);   // halfword beats
+        if (!ahb) run_item(mi, wr, a + 32'hC2, 3, 2, AXI4_INCR, wr);  // unaligned word start, partial strobes
         if (long_ok) run_item(mi, wr, a + 32'h100, 64, 2, AXI4_INCR);
       end
     endtask
@@ -360,13 +366,20 @@ package phone_soc_test_pkg;
         int vm[$];
         for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) vm.push_back(mi);
         for (int k = 0; k < (vm.size() > NS ? vm.size() : NS); k++) begin
-          int mi = vm[k % vm.size()], si = k % NS;
-          if (S_KIND[si] == "apb_bridge") begin
-            if (hole != 0) shapes(mi, hole, 0);
-          end else if (S_KIND[si] != "periph") shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1);   // stays in its 4 KB granule
-          else begin                                      // RTL slave
-            shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 0);
-            if (k < NS) rtl_slave_walk(mi, si);
+          int si = k % NS;
+          // a port paired with an AHB / AXI4-Lite master (single beats only) also
+          // gets the shapes from a full AXI4 master
+          for (int pass = 0; pass < 2; pass++) begin
+            int mi = pass ? first_vip() : vm[k % vm.size()];
+            bit ahb = M_PROTO[mi] == "ahb" || S_PROTO[si] == "ahb";
+            if (pass && (k >= NS || M_PROTO[vm[k % vm.size()]] == "axi4" || M_PROTO[mi] != "axi4")) break;
+            if (S_KIND[si] == "apb_bridge") begin
+              if (hole != 0) shapes(mi, hole, 0, ahb);
+            end else if (S_KIND[si] != "periph") shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1, ahb);   // stays in its 4 KB granule
+            else begin                                      // RTL slave
+              shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 0, ahb);
+              if (k < NS) rtl_slave_walk(mi, si);
+            end
           end
         end
         if (HAS_UNMAPPED) foreach (vm[i]) begin
@@ -398,6 +411,7 @@ package phone_soc_test_pkg;
       $display("COV_PASS");
     endtask
 
+
     // RTL slave port: every address bit of its window both ways, 256-beat bursts
     task rtl_slave_walk(int mi, int si);
       logic [31:0] base = S_BASE[si], size = 32'h1000;
@@ -417,7 +431,9 @@ package phone_soc_test_pkg;
       return 32'h1000;
     endfunction
 
+    // first VIP master, preferring a full AXI4 one (strobes, unaligned beats)
     function int first_vip();
+      for (int mi = 0; mi < NM; mi++) if (vip_master(mi) && M_PROTO[mi] == "axi4") return mi;
       for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) return mi;
       return 0;
     endfunction
