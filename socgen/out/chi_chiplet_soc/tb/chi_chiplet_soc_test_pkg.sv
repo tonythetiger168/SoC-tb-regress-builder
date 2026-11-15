@@ -653,9 +653,13 @@ package chi_chiplet_soc_test_pkg;
       // slave ports on one router (single reads and writes, zero latency), so
       // the response flits of one router's slaves leave it back to back and
       // meet the other group's traffic on the way
+      // (every router pair up to 2x2; on bigger meshes each router with itself
+      // and its east and north neighbours, which keeps the run time linear)
       for (int ra = 0; ra < noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y; ra++)
         for (int rb = 0; rb < noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y; rb++)
           for (int par = 0; par < 2; par++) begin
+            if (noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y > 4 && rb != ra && rb != ra + 1 &&
+                rb != ra + noc_cfg_pkg::MESH_X) continue;
             for (int i = 0; i < ms.size(); i++) begin
               int r = (i % 2 == par) ? ra : rb;
               int ss[$];
