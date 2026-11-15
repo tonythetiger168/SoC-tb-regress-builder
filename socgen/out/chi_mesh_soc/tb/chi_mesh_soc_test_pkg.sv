@@ -567,6 +567,17 @@ package chi_mesh_soc_test_pkg;
       chi_races(ms);
       wait fork;
       env.cfg.set_timing(0);
+      begin                                     // the registers again after the walkers: every home
+        uvm_reg regs[$];                        // takes a NoSnp to the bridge after an RN-I's chunks
+        uvm_status_e st;
+        uvm_reg_data_t v;
+        if (env.regmodel != null) env.regmodel.get_registers(regs);
+        foreach (regs[i]) regs[i].read(st, v);
+        foreach (ms[i])                         // and writes from every master (an unmapped offset:
+          foreach (APB_MAPPED_SLOT[k])          // PSLVERR, no side effect), so every home takes some
+            for (int j = 0; j < 4; j++)
+              run_item(ms[i], 1, APB_BASE + (APB_MAPPED_SLOT[k] << 12) + 32'hFFC, 1, 2, AXI4_INCR);
+      end
       foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 1;
     endtask
 

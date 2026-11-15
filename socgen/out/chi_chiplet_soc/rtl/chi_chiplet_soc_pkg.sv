@@ -76,11 +76,12 @@ package chi_chiplet_soc_pkg;
   localparam int APB_SLOT_BITS = 4;          // PADDR[15:12]
   localparam int APB_NSLOTS = 16;            // slots in the window
   localparam int APB_SLOT_GPIO = 0;   // 0x10000000 ip GPIO
-  localparam int APB_NMAPPED = 1;
-  localparam int APB_MAPPED_SLOT [APB_NMAPPED] = '{ 0 };
-  localparam string APB_SLOT_NAME [APB_NMAPPED] = '{ "gpio" };
+  localparam int APB_SLOT_EXT = 1;   // 0x10001000 vip apb vip
+  localparam int APB_NMAPPED = 2;
+  localparam int APB_MAPPED_SLOT [APB_NMAPPED] = '{ 0, 1 };
+  localparam string APB_SLOT_NAME [APB_NMAPPED] = '{ "gpio", "ext" };
   // ID register value per mapped slot (0: no ID register)
-  localparam logic [31:0] APB_SLOT_ID [APB_NMAPPED] = '{ 32'h47500200 };
+  localparam logic [31:0] APB_SLOT_ID [APB_NMAPPED] = '{ 32'h47500200, 32'h00000000 };
   function automatic int apb_slot_of(logic [31:0] a);
     return int'((a - APB_BASE) >> 12);
   endfunction

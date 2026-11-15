@@ -414,6 +414,13 @@ def _rtl_line(f, text, nth=0):
     return hits[nth]
 
 
+def _owning_homes(m, t, hn):
+    """the home endpoints (of hn) that own lines of coherent target t (address interleave)"""
+    g = m.chi.granule
+    return sorted({hn[specmod.home_of(m, a)] for a in range(t.base & ~(g - 1), t.base + t.size, g)[:4096]
+                   if specmod.decode(m, a) == t.index} or set(hn))
+
+
 def _mesh_flows(m):
     """(die, router, in port, out port) hops of every flit the AMBA mesh
     carries: master -> slave requests and slave -> master responses, XY
@@ -452,8 +459,12 @@ def _mesh_flows(m):
                 if m.chi.dct:
                     pairs += [(a, b) for b in rn if b != a]      # DCT: CompData between RN-Fs
             else:
+                # (an ACE-Lite NoSnoop could reach coherent memory directly, but the bench's
+                # ACE-Lite source marks every coherent address shareable: noc_axi2acelite)
                 pairs += [(a, nm + t) for t in range(ns) if t not in coh] + [(a, h) for h in hn]
-        pairs += [(h, nm + t) for h in hn for t in range(ns)]  # homes: memory, forwarded NoSnp / chunks
+        for t in range(ns):                     # homes: memory (the channels they own), forwarded NoSnp / chunks
+            own = _owning_homes(m, m.targets[t], hn) if t in coh else hn
+            pairs += [(h, nm + t) for h in own]
         if m.chi.dmt:
             pairs += [(nm + t, a) for t in coh for a in rn]    # DMT: CompData from the slave
         pairs = sorted(set(pairs) | {(b, a) for a, b in pairs})
@@ -586,6 +597,16 @@ def _mesh_cov_waivers(m):
                 elif all(v >> b & 1 for v in rrv):
                     T(H, f"g_r\\[{n}\\]\\.rr\\[{b}\\]:1->0", "rtl/noc/noc_mesh\\.sv$",
                       f"router {n} node mux pointer takes {sorted(rrv)} only")
+            # links between routers that no flit of this die crosses (XY routes per die)
+            for d in range(4):
+                if d in edge:
+                    continue
+                if not any(dd == die and r == n and i == d for (dd, r, i, o) in hops):
+                    T(H, f"rx_v\\[{n}\\]\\[{d}\\]", "rtl/noc/noc_mesh\\.sv$",
+                      f"die {die} router {n} [{x}, {y}]: no XY route of this die enters from the {dname[d]}")
+                if not any(dd == die and r == n and o == d for (dd, r, i, o) in hops):
+                    T(H, f"tx_v\\[{n}\\]\\[{d}\\]", "rtl/noc/noc_mesh\\.sv$",
+                      f"die {die} router {n} [{x}, {y}]: no XY route of this die leaves to the {dname[d]}")
     if m.chiplet.dies > 1:
         for t in ("if (tx_cnt == (QB+1)'(QD) && !tx_pop)", "if (rx_cnt == (QB+1)'(QD) && !rx_pop)"):
             L.append(f"branch \\.u_gw\\d+ if \\S*rtl/noc/noc_d2d_gw[.]sv:{_rtl_line('noc_d2d_gw.sv', t)}$ "
@@ -614,6 +635,19 @@ def _mesh_cov_waivers(m):
         T("\\.u_noc", f"{x.name}_(ax_)?a[rw]size\\[2\\]", NOC, "32-bit data bus: AxSIZE <= 2")
         T(N, "whb\\.(nchunk|nrsp)\\[[6-7]\\]", "noc_ni_mst\\.sv$",
           "at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)")
+        # destinations: non-coherent slaves, the homes (coherent memory), the
+        # coherent slaves themselves without homes or for ACE-Lite NoSnp, EP_NONE
+        if x.index not in m.chi.rn:
+            ns_, ngw_ = len(m.targets), (len(m.chiplet.gateways) if m.chiplet.dies > 1 else 0)
+            hn_ = [nm + ns_ + ngw_ + i for i in range(len(m.chi.homes))]
+            coh_ = set(m.chi.coh_targets) if m.chi.homes else set()
+            dsts = [nm + t for t in range(ns_) if x.protocol == "ace_lite" or t not in coh_] + hn_
+            epb_ = lg(len(nodes) + 1)
+            dsts.append((1 << epb_) - 1)
+            why = f"destinations of {x.name}: endpoints {sorted(dsts)} (EP_NONE = {(1 << epb_) - 1} on a decode miss)"
+            for b in range(epb_):
+                if all(v >> b & 1 for v in dsts):
+                    T(N, f"(rh_dst|wh_dst)\\[{b}\\]:1->0", "noc_ni_mst\\.sv$", why)
         if x.protocol != "ace_lite":
             T(N, f"(s_a[rw]nosnp|{BR}\\.nosnp)", "noc_ni_mst\\.sv$",
               f"{x.name} is not ACE-Lite: nosnp tied 0 (coherent memory always through its home)")
@@ -714,9 +748,7 @@ def _mesh_cov_waivers(m):
                  f"requesters are the homes {hn} (RN-F NoSnp) and the RN-I masters")
         else:
             # the homes that send this slave its lines (address interleave)
-            g = m.chi.granule
-            mine = sorted({hn[specmod.home_of(m, a)] for a in range(t.base & ~(g - 1), t.base + t.size, g)[:4096]
-                           if specmod.decode(m, a) == t.index} or set(hn))
+            mine = _owning_homes(m, t, hn)
             why = f"writes to coherent memory come from its homes {mine} (write-backs, RN-I chunks): no CHI fields"
             T(N, "wp\\[\\d+\\]\\.(copc|cresp|dataid|hnid)\\[", "noc_ni_slv\\.sv$", why)
             vals("src", mine, why, "wp")
@@ -904,6 +936,16 @@ def _chi_cov_waivers(m, NR):
         T("\\.u_ni_\\w+", "dmt", "noc_ni_chi\\.sv$", why)
     T(H, "(oq_cnt\\[2\\]|can_push:1->0)", HF, NR + " (the home's output queue fills only while its "
       "router input is full)")
+    if m.chiplet.dies > 1:
+        why = ("NOT REACHED (analysis, not a proof): in the chiplet bench a home and the memory channel it owns "
+               "sit on one die, a few hops apart, so the channel drains a home's line requests as fast as they "
+               "come and the home's output queue empties each cycle; the requests that cross the UCIe link "
+               "arrive spread out by the link's PHY latency. The other die's home fills these (its traffic "
+               "crosses the link in trains)")
+        T(H, "oq_cnt\\[1\\]", HF, why)
+        for t in m.targets:
+            if t.index in m.chi.coh_targets:
+                T(f"\\.u_ni_{t.name}", "(rq_cnt|wq_cnt)\\[2\\]", "noc_ni_slv\\.sv$", why)
     NRS = ("NOT REACHED in every slot (analysis, not a proof): home slot k >= 1 takes a request only while the "
            "lower slots are busy, so the rarer values (address bits only decode misses carry, NoSnp kinds and "
            "strobes, race outcomes such as a CleanUnique losing its line or a write-back after a SnpSharedFwd) "
@@ -925,8 +967,8 @@ def _chi_cov_waivers(m, NR):
     # slave NI queues: the chunks to a slave come from the homes' slots (one line
     # at a time each) and the RN-I masters; the stress phases fill them part way
     for t in m.targets:
-        T(f"\\.u_ni_{t.name}", "((rq_cnt|wq_cnt)\\[3\\]|(rp_cnt|wp_cnt)\\[2\\])", "noc_ni_slv\\.sv$",
-          NR + " (eight chunks queued at one slave NI, or four bursts pending: the RN-Fs reach it one line at a "
+        T(f"\\.u_ni_{t.name}", "((rq_cnt|wq_cnt)\\[[3-9]\\]|(rp_cnt|wp_cnt)\\[[2-9]\\])", "noc_ni_slv\\.sv$",
+          NR + " (eight or more chunks queued at one slave NI, or four bursts pending: the RN-Fs reach it one line at a "
           "time per home slot, and only the RN-I masters send chunks of their own)")
     # ---- RN-F NIs (noc_ni_chi), fed by the RN-F model ----
     for x in m.masters:

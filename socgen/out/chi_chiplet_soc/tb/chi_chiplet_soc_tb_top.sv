@@ -31,6 +31,7 @@ module chi_chiplet_soc_tb_top;
   final $display("D2D link: %0d flits corrupted by the PHY model, %0d UCIe replays", d2d_flits, d2d_replays);
   axi4_if m_if [NM] (.aclk(aclk), .aresetn(vip_resetn));
   axi4_if s_if [NS] (.aclk(aclk), .aresetn(vip_resetn));
+  apb_if  apb_ext_if (.pclk(aclk), .presetn(aresetn));
 
   for (genvar i = 0; i < NM; i++) begin : g_m
     axi4_sva #(.NAME($sformatf("m_%0d", i))) u_sva (m_if[i]);
@@ -347,7 +348,7 @@ module chi_chiplet_soc_tb_top;
 
   // ---------------- APB subsystem on S_PERIPH ----------------
 
-  logic [0:0] apb_irq;
+  logic [1:0] apb_irq;
   chi_chiplet_soc_apb_subsys u_apb (
     .clk(aclk), .rst_n(aresetn),
     .awid(s_if[S_PERIPH].awid),
@@ -381,9 +382,15 @@ module chi_chiplet_soc_tb_top;
     .rlast(s_if[S_PERIPH].rlast),
     .rvalid(s_if[S_PERIPH].rvalid),
     .rready(s_if[S_PERIPH].rready),
+    .ext_paddr(apb_ext_if.paddr), .ext_psel(apb_ext_if.psel), .ext_penable(apb_ext_if.penable),
+    .ext_pwrite(apb_ext_if.pwrite), .ext_pwdata(apb_ext_if.pwdata), .ext_pstrb(apb_ext_if.pstrb),
+    .ext_pprot(apb_ext_if.pprot), .ext_prdata(apb_ext_if.prdata), .ext_pready(apb_ext_if.pready),
+    .ext_pslverr(apb_ext_if.pslverr),
     .irq(apb_irq)
   );
 
+  apb_sva #(.NAME("apb_ext")) u_apb_ext_sva (apb_ext_if);
+  initial uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top.env.apb_ext.*", "vif", apb_ext_if);
 
   initial begin
     if ($test$plusargs("VCD")) begin
