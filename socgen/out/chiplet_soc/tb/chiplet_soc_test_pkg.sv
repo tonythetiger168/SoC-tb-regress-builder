@@ -617,6 +617,15 @@ package chiplet_soc_test_pkg;
       begin
         logic [31:0] apb = NAPB_VIP ? apb_vip_base(0) + 32'h200 : empty_slot();
         for (int si = 0; si < NS; si++) begin
+          // on meshes over 2x2, one slave port per router (the phase targets
+          // router outputs; e.g. 4 LPDDR channels on one edge router are one)
+          bit seen = 0;
+          if (noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y > 4)
+            for (int x = 0; x < si; x++)
+              if (S_KIND[x] != "apb_bridge" && S_KIND[si] != "apb_bridge" &&
+                  noc_cfg_pkg::EP_X[NM + x] == noc_cfg_pkg::EP_X[NM + si] &&
+                  noc_cfg_pkg::EP_Y[NM + x] == noc_cfg_pkg::EP_Y[NM + si]) seen = 1;
+          if (seen) continue;
           for (int i = 0; i < ms.size(); i++) begin
             automatic int mi = ms[i], s = si, ii = i, t = (si + 1) % NS;
             if (M_PROTO[mi] != "axi4") continue;
