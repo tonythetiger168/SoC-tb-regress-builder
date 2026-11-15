@@ -34,7 +34,7 @@ while read -r tb t n args; do
     log=$D/run_${t}_$s.log
     (cd "$D" && ./obj/V"$TOP" +UVM_TESTNAME="$t" +verilator+seed+"$s" $args > "$(basename "$log")" 2>&1
      mv coverage.dat "cov_${t}_$s.dat")
-    if grep -qE 'UVM_(ERROR|FATAL) [^:]*@' "$log" || ! grep -q 'PASS' "$log"; then
+    if grep -qE 'UVM_(ERROR|FATAL) [^:]*@' "$log" || ! grep -qE '^(SB_PASS checks=[1-9]|RAL_PASS|COV_PASS)' "$log"; then
       echo "FAIL $t seed $s ($log)"; fail=1
     else echo "pass $t seed $s"; fi
   done

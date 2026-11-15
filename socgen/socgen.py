@@ -374,8 +374,11 @@ def _cov_waivers(m, spec_rel):
         L.append("toggle u_apb \\w*a[rw]size\\[2\\] # 32-bit data bus: AxSIZE <= 2, bit 2 is always 0")
     L.append("toggle u_apb(\\.[\\w*]+)? (rst_n|PRESETN):1->0 # power-on reset only: the socgen benches do not "
              "reset mid-run (each block's reset is checked by its own bench and the RAL reset test)")
-    L.append("toggle u_apb irq\\[ # peripheral interrupts are IP pins (closed by each IP's own bench); "
-             "register blocks and APB VIP slots tie theirs to 0")
+    tied = [i for i, sl in enumerate(m.apb.slots) if not (sl.kind == "ip" and sl.wrapper.has_irq)]
+    if tied:
+        L.append(f"toggle u_apb irq\\[({'|'.join(map(str, tied))})\\] # tied to 0: register blocks, APB VIP "
+                 "slots and IPs without an interrupt output (the IP interrupts are driven by the tb_top "
+                 "routing check)")
     for sl in m.apb.slots:
         if sl.kind == "ip":
             axi = {x.pin for x in getattr(sl, "axi_ports", [])}
