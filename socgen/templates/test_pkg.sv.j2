@@ -393,7 +393,7 @@ package {{ m.name }}_test_pkg;
         for (int k = 0; k < 4; k++) run_item(mi, 0, a + 32'h2, 1, 1, AXI4_INCR);
         for (int k = 0; k < 4; k++) run_item(mi, 0, a, 1, 2, AXI4_INCR);
         if (!ahb) for (int k = 0; k < 4; k++) run_item(mi, 1, a + 32'h100, 16, 2, AXI4_INCR, 2 + k);
-        if (M_PROTO[mi] == "axi4") begin
+        if (M_PROTO[mi] == "axi4" || M_PROTO[mi] == "ace_lite") begin
           for (int k = 0; k < 4; k++) run_item(mi, 0, a, 256, 2, AXI4_INCR);
           for (int k = 0; k < 4; k++) run_item(mi, 0, a, 1, 2, AXI4_INCR);
           for (int k = 0; k < 4; k++) run_item(mi, 1, a, 256, 2, AXI4_INCR);
@@ -554,8 +554,17 @@ package {{ m.name }}_test_pkg;
         end
         wait fork;
       end
-      foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 1;
+      // the races again while the RN-Is keep the homes' other slots busy
       chi_races(ms);
+      env.cfg.set_timing(2);
+      for (int i = 0; i < ms.size(); i++) begin
+        automatic int mi = ms[i];
+        if (M_PROTO[mi] != "chi") fork chi_walker(mi); join_none
+      end
+      chi_races(ms);
+      wait fork;
+      env.cfg.set_timing(0);
+      foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 1;
     endtask
 
     // directed races between two RN-Fs (and an RN-I) on one line, in every
@@ -571,7 +580,11 @@ package {{ m.name }}_test_pkg;
         for (int j = 0; j < 2 * CHI_NL; j++) begin
           automatic logic [31:0] x = CHI_CB + g * CHI_GRAN + 32'h800 + (j % CHI_NL) * 64;
           automatic logic [31:0] y = x + CHI_NL * 64 * (1 + j / CHI_NL);      // same set, another tag
+          automatic logic [31:0] z = x + CHI_NL * 64 * 3;                     // a third tag
           automatic int a0 = c[j % 2], a1 = c[(j + 1) % 2];
+          // a clean victim's Evict racing another RN-F's ReadUnique of it
+          rd(a0, z);
+          fork rd(a0, x); wr(a1, z, $urandom); join
           rd(a0, x); rd(a1, x);
           fork wr(a0, x + 4, $urandom); wr(a1, x + 8, $urandom); join
           wr(a0, x, $urandom);
@@ -593,7 +606,7 @@ package {{ m.name }}_test_pkg;
       logic [31:0] r = 0;
       for (int j = 0; j < 64 && r == 0; j++) begin
         logic [31:0] t = $urandom & ~32'h3F;
-        if (cmesh_decode(t) == S_DEF) r = t;
+        if ({{ m.prefix }}_decode(t) == S_DEF) r = t;
       end
       return r;
     endfunction
@@ -611,9 +624,26 @@ package {{ m.name }}_test_pkg;
         if (r < 55)                       // hot lines: 2 tags x 4 granules, 4 or all sets
           a = CHI_CB + ($urandom_range(3, 0) * CHI_GRAN) + ($urandom_range(1, 0) * CHI_NL * 64)
               + ($urandom_range(r < 30 ? 3 : CHI_NL - 1, 0) << 6) + ($urandom_range(15, 0) << 2);
-        else if (r < 75 || !chi) begin    // anywhere in the coherent window
+        else if (!chi && r >= 75 && r < 80) begin   // any memory slave: 8 random words, written then read
+          int sl[$];
+          for (int si = 0; si < NS; si++)
+            if (!S_COH[si] && (S_KIND[si] == "memory" || S_KIND[si] == "channel")) sl.push_back(si);
+          if (sl.size() == 0) continue;
+          a = (PATH_ADDR[mi][sl[$urandom_range(sl.size() - 1, 0)]] & ~32'hFFF) | 32'h680;
+          if (NAPB_VIP && $urandom_range(1, 0)) a = apb_vip_base(0) + 32'h600 + 32'h20 * mi;   // the APB VIP
+          run_item(mi, 1, a, 8, 2, AXI4_INCR);
+          run_item(mi, 0, a, 8, 2, AXI4_INCR);
+          continue;
+        end else if (r < 75 || !chi) begin    // anywhere in the coherent window
           a = CHI_CB + ($urandom_range(chi_csz / 4 - 1, 0) << 2);
           if (!chi && !ahb && r >= 90) bt = AXI4_FIXED;   // RN-I FIXED chunks through the home
+          if (!chi && !ahb && r >= 85 && r < 90) begin   // RN-I narrow beats at odd addresses
+            bit [2:0] sz = $urandom_range(1, 0);
+            a += $urandom_range(3, 0);
+            if (sz) a[0] = 1'b0;
+            run_item(mi, wr, a, ((a & 32'hFFF) > 32'hFF0) ? 1 : $urandom_range(4, 1), sz, AXI4_INCR);
+            continue;
+          end
         end else if (r < 90 && nc >= 0)   // non-coherent memory: own words only (scoreboarded)
           a = ((PATH_ADDR[mi][nc] & ~32'hFFF) | 32'h600) + ($urandom_range(31, 0) << 2);
         else if (r < 92 && chi && nc >= 0) begin   // NoSnp into the slave's error windows (DERR / NDERR)

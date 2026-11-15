@@ -421,7 +421,7 @@ package phone_soc_mesh_test_pkg;
         for (int k = 0; k < 4; k++) run_item(mi, 0, a + 32'h2, 1, 1, AXI4_INCR);
         for (int k = 0; k < 4; k++) run_item(mi, 0, a, 1, 2, AXI4_INCR);
         if (!ahb) for (int k = 0; k < 4; k++) run_item(mi, 1, a + 32'h100, 16, 2, AXI4_INCR, 2 + k);
-        if (M_PROTO[mi] == "axi4") begin
+        if (M_PROTO[mi] == "axi4" || M_PROTO[mi] == "ace_lite") begin
           for (int k = 0; k < 4; k++) run_item(mi, 0, a, 256, 2, AXI4_INCR);
           for (int k = 0; k < 4; k++) run_item(mi, 0, a, 1, 2, AXI4_INCR);
           for (int k = 0; k < 4; k++) run_item(mi, 1, a, 256, 2, AXI4_INCR);

@@ -442,9 +442,21 @@ def _mesh_flows(m):
         # slave straight to a requester, DCT data between RN-Fs: any endpoint
         # may talk to any other (an over-approximation: fewer waivers, never wrong)
         nodes += [(h.die if m.chiplet.dies > 1 else 0, h.node[0], h.node[1]) for h in m.chi.homes]
-        nep = len(nodes)
-        pairs = [(a, b) for a in range(nep) for b in range(nep)
-                 if a != b and not (gws and (nodes[a] in gws or nodes[b] in gws))]
+        hn = list(range(nm + ns + len(gws), len(nodes)))
+        rn = set(m.chi.rn)
+        coh = set(m.chi.coh_targets)
+        pairs = []
+        for a in range(nm):                     # RN-I: direct to non-coherent slaves, else via a home
+            if a in rn:
+                pairs += [(a, h) for h in hn]   # RN-F: everything through its homes (REQ, RSP, DAT, SNP back)
+                if m.chi.dct:
+                    pairs += [(a, b) for b in rn if b != a]      # DCT: CompData between RN-Fs
+            else:
+                pairs += [(a, nm + t) for t in range(ns) if t not in coh] + [(a, h) for h in hn]
+        pairs += [(h, nm + t) for h in hn for t in range(ns)]  # homes: memory, forwarded NoSnp / chunks
+        if m.chi.dmt:
+            pairs += [(nm + t, a) for t in coh for a in rn]    # DMT: CompData from the slave
+        pairs = sorted(set(pairs) | {(b, a) for a, b in pairs})
     for a, b in pairs:
         (da, xa, ya), (db, xb, yb) = nodes[a], nodes[b]
         if da == db:
@@ -679,34 +691,55 @@ def _mesh_cov_waivers(m):
         T(N, "m_a[rw]burst\\[1\\]", "noc_ni_slv\\.sv$", "chunks are FIXED or INCR (WRAP bursts split at the wrap point)")
         T("\\.u_noc", f"{t.name}_(ax_)?a[rw]burst\\[1\\]", NOC, "chunks are FIXED or INCR")
         T(N, "m_a[rw]size\\[2\\]", "noc_ni_slv\\.sv$", "32-bit data bus: AxSIZE <= 2")
-        if not (m.chi.homes and m.chi.dmt and t.index in m.chi.coh_targets):
-            T(N, f"(rp|wp)\\[\\d+\\]\\.(copc|cresp|dataid|hnid)\\[", "noc_ni_slv\\.sv$",
-              "CHI fields: zero (no DMT read to this slave)" if m.chi.homes else "CHI fields: zero without CHI home nodes")
-        # requesters: the masters, or for CHI the homes (coherent memory, RN-F
-        # NoSnp) and with DMT the RN-Fs (the read's source is the requester)
         ngw = len(m.chiplet.gateways) if m.chiplet.dies > 1 else 0
         hn = list(range(nm + len(m.targets) + ngw, nm + len(m.targets) + ngw + len(m.chi.homes)))
+        coh = bool(m.chi.homes) and t.index in m.chi.coh_targets
+
+        def vals(field, vs, why, pre="(rp|wp)"):
+            """waive the bits of an NI request field that the values vs never move"""
+            w = {"src": epb, "hnid": epb, "copc": 6, "cresp": 3, "dataid": 2}[field]
+            for b in range(w):
+                if not any(v >> b & 1 for v in vs):
+                    T(N, f"{pre}\\[\\d+\\]\\.{field}\\[{b}\\]", "noc_ni_slv\\.sv$", why)
+                elif all(v >> b & 1 for v in vs):
+                    T(N, f"{pre}\\[\\d+\\]\\.{field}\\[{b}\\]:1->0", "noc_ni_slv\\.sv$", why)
         if not m.chi.homes:
-            rq, rqs = list(range(nm)), f"masters 0..{nm - 1}"
-        elif t.index in m.chi.coh_targets:
-            rq = hn + (list(m.chi.rn) if m.chi.dmt else [])
-            rqs = f"homes {hn}" + (f" and RN-Fs {list(m.chi.rn)} (DMT reads)" if m.chi.dmt else "")
+            T(N, "(rp|wp)\\[\\d+\\]\\.(copc|cresp|dataid|hnid)\\[", "noc_ni_slv\\.sv$",
+              "CHI fields: zero without CHI home nodes")
+            vals("src", list(range(nm)), f"requesters are masters 0..{nm - 1}")
+        elif not coh:
+            T(N, "(rp|wp)\\[\\d+\\]\\.(copc|cresp|dataid|hnid)\\[", "noc_ni_slv\\.sv$",
+              "CHI fields: zero (no DMT read to a slave outside the coherent memory)")
+            vals("src", hn + [i for i in range(nm) if i not in m.chi.rn],
+                 f"requesters are the homes {hn} (RN-F NoSnp) and the RN-I masters")
         else:
-            rq = hn + [i for i in range(nm) if i not in m.chi.rn]
-            rqs = f"homes {hn} (RN-F NoSnp) and RN-I masters"
-        for b in range(epb):
-            if not any(e >> b & 1 for e in rq):
-                T(N, f"(rp|wp)\\[\\d+\\]\\.src\\[{b}\\]", "noc_ni_slv\\.sv$", f"requesters are {rqs}")
-        if m.chi.homes and t.index in m.chi.coh_targets:
-            wq = hn
-            for b in range(epb):
-                if not any(e >> b & 1 for e in wq):
-                    T(N, f"wp\\[\\d+\\]\\.src\\[{b}\\]", "noc_ni_slv\\.sv$",
-                      f"writes to coherent memory come from the homes {hn} only")
-        T(N, f"rp\\[\\d+\\]\\.tag\\[({rng(lg(ni.maxo), 6)})\\]", "noc_ni_slv\\.sv$",
-          f"read tag = the master NI's response slot (< MAXO = {ni.maxo})")
-        T(N, f"wp\\[\\d+\\]\\.tag\\[({rng(lg(ni.maxb), 6)})\\]", "noc_ni_slv\\.sv$",
-          f"write tag = the master NI's burst slot (< MAXB = {ni.maxb})")
+            # the homes that send this slave its lines (address interleave)
+            g = m.chi.granule
+            mine = sorted({hn[specmod.home_of(m, a)] for a in range(t.base & ~(g - 1), t.base + t.size, g)[:4096]
+                           if specmod.decode(m, a) == t.index} or set(hn))
+            why = f"writes to coherent memory come from its homes {mine} (write-backs, RN-I chunks): no CHI fields"
+            T(N, "wp\\[\\d+\\]\\.(copc|cresp|dataid|hnid)\\[", "noc_ni_slv\\.sv$", why)
+            vals("src", mine, why, "wp")
+            if m.chi.dmt:
+                why = (f"reads come from its homes {mine} and, with DMT, carry the requesting RN-F {list(m.chi.rn)} "
+                       "as source, CompData, state I / SC / UC, DataID 0 / 2 and the home as HomeNID")
+                vals("src", mine + list(m.chi.rn), why, "rp")
+                vals("copc", [0, 4], why, "rp")
+                vals("cresp", [0, 1, 2], why, "rp")
+                vals("dataid", [0, 2], why, "rp")
+                vals("hnid", [0] + mine, why, "rp")
+            else:
+                why = f"reads come from its homes {mine}: no CHI fields (no DMT)"
+                T(N, "rp\\[\\d+\\]\\.(copc|cresp|dataid|hnid)\\[", "noc_ni_slv\\.sv$", why)
+                vals("src", mine, why, "rp")
+        hw = (lg(m.chi.slots) + 2) if m.chi.homes else 0     # a home's tag: {slot, kind}
+        if not (coh and m.chi.dmt):                           # DMT reads carry the RN-F's TxnID
+            T(N, f"rp\\[\\d+\\]\\.tag\\[({rng(max(lg(ni.maxo), hw), 6)})\\]", "noc_ni_slv\\.sv$",
+              f"read tag = the master NI's response slot (< MAXO = {ni.maxo})"
+              + (f" or a home's {{slot, kind}} ({hw} bits)" if hw else ""))
+        T(N, f"wp\\[\\d+\\]\\.tag\\[({rng(max(lg(ni.maxb), hw), 6)})\\]", "noc_ni_slv\\.sv$",
+          f"write tag = the master NI's burst slot (< MAXB = {ni.maxb})"
+          + (f" or a home's {{slot, kind}} ({hw} bits)" if hw else ""))
         T(N, f"(rq_cnt|wq_cnt)\\[({rng(cap.bit_length(), 8)})\\]", "noc_ni_slv\\.sv$",
           f"at most {cap} chunks in flight to one slave (MAXO = {ni.maxo} per AXI4 master, one per "
           "AXI4-Lite / AHB master)")
@@ -846,6 +879,30 @@ def _chi_cov_waivers(m, NR):
         T(H, "(rep_n\\[\\d+\\]\\[1\\]|gr_cresp\\[\\d+\\]\\[2\\])", HF, why)
     T(H, "(oq_cnt\\[2\\]|can_push:1->0)", HF, NR + " (the home's output queue fills only while its "
       "router input is full)")
+    NRS = ("NOT REACHED in every slot (analysis, not a proof): home slot k >= 1 takes a request only while the "
+           "lower slots are busy, so the rarer values (address bits only decode misses carry, NoSnp kinds and "
+           "strobes, race outcomes such as a CleanUnique losing its line or a write-back after a SnpSharedFwd) "
+           "do not all reach every upper slot; slot 0 takes each of them (the K slots are identical registers "
+           "written by one loop, and every slot's state machine is covered)")
+    T(H, "((L|LT|lost|nderr|is_\\w+|wd_resp|wd_be)\\[[1-9]\\d*\\]|ln\\[[1-9]\\d*\\]\\[[01]\\])", HF, NRS)
+    hw = max(1, (m.chi.slots - 1).bit_length()) + 2
+    for t in m.targets:
+        N = f"\\.u_ni_{t.name}"
+        if t.index not in m.chi.coh_targets:
+            T(N, f"(rp|wp)\\[\\d+\\]\\.tag\\[{hw - 1}\\]", "noc_ni_slv\\.sv$",
+              "NOT REACHED (analysis, not a proof): a NoSnp request forwarded from home slot "
+              f"{1 << (hw - 3)} or above to this slave (the home's lower slots busy at that moment); "
+              "the lower slots' tags are covered")
+        elif m.chi.dmt:
+            T(N, "rp\\[\\d+\\]\\.cresp\\[0\\]", "noc_ni_slv\\.sv$",
+              "NOT REACHED in every queue entry (analysis, not a proof): a DMT read granting SC (ReadShared of a "
+              "line another RN-F holds) is taken by the other pending-read entries")
+    # slave NI queues: the chunks to a slave come from the homes' slots (one line
+    # at a time each) and the RN-I masters; the stress phases fill them part way
+    for t in m.targets:
+        T(f"\\.u_ni_{t.name}", "((rq_cnt|wq_cnt)\\[3\\]|(rp_cnt|wp_cnt)\\[2\\])", "noc_ni_slv\\.sv$",
+          NR + " (eight chunks queued at one slave NI, or four bursts pending: the RN-Fs reach it one line at a "
+          "time per home slot, and only the RN-I masters send chunks of their own)")
     # ---- RN-F NIs (noc_ni_chi), fed by the RN-F model ----
     for x in m.masters:
         if x.index not in rn:
@@ -883,9 +940,11 @@ def _chi_cov_waivers(m, NR):
     T(A, "s_awsnoop\\[[12]\\]", AF, "ACE-Lite write snoop codes: WriteNoSnoop / WriteUnique 000, "
       "WriteLineUnique 001 (bits 1, 2 only in ACE5 WriteUniquePtlStash etc., not supported)")
     nb = m.noc_ni.maxb + m.noc_ni.maxo
-    T(A, f"(r_out|w_out)\\[({rng(nb.bit_length(), 8)})\\]", AF,
-      f"at most MAXB + MAXO = {nb} bursts without their response: the master NI holds MAXB = {m.noc_ni.maxb} "
-      f"bursts and MAXO = {m.noc_ni.maxo} chunks per direction")
+    T(A, f"r_out\\[({rng(nb.bit_length(), 8)})\\]", AF,
+      f"at most MAXB + MAXO = {nb} reads without their last beat: the master NI holds MAXB = {m.noc_ni.maxb} "
+      f"bursts until issued and MAXO = {m.noc_ni.maxo} chunks until answered")
+    T(A, f"w_out\\[({rng(m.noc_ni.maxb.bit_length(), 8)})\\]", AF,
+      f"at most MAXB = {m.noc_ni.maxb} writes without their B: the master NI holds a write burst until its B")
     return L
 
 
