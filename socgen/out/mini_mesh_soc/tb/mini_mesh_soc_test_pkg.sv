@@ -308,7 +308,61 @@ package mini_mesh_soc_test_pkg;
         c.apb_cfg_h[i].err_lo = b + 32'hF00;
         c.apb_cfg_h[i].err_hi = b + 32'hFFF;
       end
+      // mesh: SLVERR and DECERR windows on every slave VIP (their response
+      // bits are NoC RTL ports here)
+      foreach (c.s_cfg[i]) begin
+        logic [31:0] b = err_base(AXI_S_PORT[i]);
+        c.s_cfg[i].add_err_range(b, b + 32'h7F, AXI4_SLVERR);
+        c.s_cfg[i].add_err_range(b + 32'h80, b + 32'hFF, AXI4_DECERR);
+      end
     endfunction
+
+    // +0xE00 of master 0's 4 KB block in port si: no other phase uses it
+    function logic [31:0] err_base(int si);
+      return (PATH_ADDR[0][si] & ~32'hFFF) | 32'hE00;
+    endfunction
+
+    function logic [31:0] target_size(int si);
+      if (si == 0) return 32'h10000000;
+      if (si == 1) return 32'h10000000;
+      if (si == 2) return 32'h10000000;
+      if (si == 3) return 32'h10000000;
+      if (si == 4) return 32'h00010000;
+      if (si == 5) return 32'h00010000;
+      if (si == 6) return 32'h00010000;
+      if (si == 7) return 32'h00010000;
+      if (si == 8) return 32'h00010000;
+      return 32'h1000;
+    endfunction
+
+    // mesh: slave error responses, every address bit of every target from
+    // every master, and a 256-beat burst each way from every master
+    task mesh_extra();
+      int vm[$];
+      for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) vm.push_back(mi);
+      for (int si = 0; si < NS; si++) begin
+        logic [31:0] b = err_base(si);
+        if (S_KIND[si] != "channel" && S_KIND[si] != "memory" && S_KIND[si] != "vip") continue;
+        env.sb.ign_lo.push_back(b);
+        env.sb.ign_hi.push_back(b + 32'h100);
+        foreach (vm[i]) for (int wr = 1; wr >= 0; wr--) begin
+          run_item(vm[i], wr, b, 2, 2, AXI4_INCR);              // SLVERR
+          run_item(vm[i], wr, b + 32'h80, 2, 2, AXI4_INCR);     // DECERR
+        end
+      end
+      foreach (vm[i]) for (int si = 0; si < NS; si++) begin
+        if (S_KIND[si] == "apb_bridge") continue;
+        for (int bit_ = 2; (32'd1 << bit_) < target_size(si); bit_++)
+          run_item(vm[i], 0, S_BASE[si] + (32'd1 << bit_), 1, 2, AXI4_INCR);
+        run_item(vm[i], 0, S_BASE[si] + target_size(si) - 32'h4, 1, 2, AXI4_INCR);
+      end
+      foreach (vm[i]) begin
+        int si = i % NS;
+        if (S_KIND[si] == "apb_bridge") si = (si + 1) % NS;
+        run_item(vm[i], 1, (PATH_ADDR[vm[i]][si] & ~32'hFFF) | 32'h400, 256, 2, AXI4_INCR);
+        run_item(vm[i], 0, (PATH_ADDR[vm[i]][si] & ~32'hFFF) | 32'h400, 256, 2, AXI4_INCR);
+      end
+    endtask
 
     function logic [31:0] apb_vip_base(int i);
       foreach (APB_SLOT_NAME[k])
@@ -384,6 +438,7 @@ package mini_mesh_soc_test_pkg;
         end
       end
       if (hole != 0) apb_port_stress(hole, empty_slot(1));
+      mesh_extra();
       pipe_stress();
       for (int i = 0; i < NAPB_VIP; i++) begin
         logic [31:0] b = apb_vip_base(i);
@@ -416,22 +471,31 @@ package mini_mesh_soc_test_pkg;
     // PATH_ADDR (one writer per address, so the scoreboard sees no races).
     task pipe_stress();
       int ms[$];
+      int unsigned acc[$];
       for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) ms.push_back(mi);
       foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 16;
-      // passes 0/1 (reads/writes): zero-latency slaves, so the next burst's R
-      // or B is ready while the slave NI still holds the previous response
-      // flit; passes 2/3: heavy back-pressure everywhere
-      for (int pass = 0; pass < 4; pass++) begin
-        env.cfg.set_timing(pass < 2 ? 0 : 2);
+      // passes 0-2 with zero-latency slaves (no access time either), 3-5 with
+      // heavy back-pressure:
+      // reads, writes, then both at once (the slave NI's read and write
+      // response flits then compete for injection, so the slave's next R / B
+      // waits). Mixed-pass reads go to +0xC00 of the 4 KB block, which no
+      // other phase writes, so they cannot race the writes.
+      foreach (env.cfg.s_cfg[i]) acc.push_back(env.cfg.s_cfg[i].access_latency);
+      for (int pass = 0; pass < 6; pass++) begin
+        env.cfg.set_timing(pass < 3 ? 0 : 2);
+        foreach (env.cfg.s_cfg[i]) env.cfg.s_cfg[i].access_latency = (pass < 3) ? 0 : acc[i];
         for (int si = 0; si < NS; si++) begin
           if (S_KIND[si] == "apb_bridge") continue;
           // one fork level only: Verilator 5.052 binds a nested fork's view of
           // the outer fork's locals to the last iteration
           for (int i = 0; i < ms.size(); i++)
             for (int k = 0; k < 16; k++) begin
-              automatic int mi = ms[i], kk = k, w = pass % 2, s = si;
+              automatic int mi = ms[i], kk = k, s = si;
+              automatic int w = (pass % 3 == 2) ? kk % 2 : pass % 3;
+              automatic logic [31:0] a = (pass % 3 == 2 && !w) ? (PATH_ADDR[mi][s] & ~32'hFFF) | 32'hC00
+                                                               : PATH_ADDR[mi][s] & ~32'h3F;
               fork
-                run_item(mi, w, PATH_ADDR[mi][s] & ~32'h3F, (w || kk < 12) ? 16 : 1 + kk % 8, 2, AXI4_INCR);
+                run_item(mi, w, a, (w || kk < 12) ? 16 : 1 + kk % 8, 2, AXI4_INCR);
               join_none
             end
           wait fork;

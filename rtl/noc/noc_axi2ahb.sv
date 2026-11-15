@@ -74,19 +74,22 @@ module noc_axi2ahb #(
 
   function automatic logic [31:0] next_addr(logic [31:0] a, logic [31:0] start, logic [2:0] size,
                                             logic [1:0] burst, logic [7:0] len);
-    logic [31:0] nb, aligned, wsize, wbase, n;
+    logic [31:0] nb, aligned, wsize, wbase, n, r;
+    // one return at the end: Verilator 5.052 loses the line coverage of
+    // case arms that return directly
     nb      = 32'd1 << size;
     aligned = a & ~(nb - 32'd1);
     case (burst)
-      2'b00: return a;
+      2'b00: r = a;
       2'b10: begin
         wsize = nb * (32'(len) + 32'd1);
         wbase = start & ~(wsize - 32'd1);
         n = aligned + nb;
-        return (n >= wbase + wsize) ? wbase : n;
+        r = (n >= wbase + wsize) ? wbase : n;
       end
-      default: return aligned + nb;
+      default: r = aligned + nb;
     endcase
+    return r;
   endfunction
 
   wire take_wr = s_awvalid && (!s_arvalid || last_rd);

@@ -45,11 +45,15 @@ module noc_router_open
 
   function automatic int dir_of(logic [FLIT_W-1:0] d);
     noc_flit_t f = noc_flit_t'(d);
-    if (int'(f.dest_x) > X_POS) return 2;
-    if (int'(f.dest_x) < X_POS) return 3;
-    if (int'(f.dest_y) > Y_POS) return 0;
-    if (int'(f.dest_y) < Y_POS) return 1;
-    return 4;
+    int r;
+    // one return at the end: Verilator 5.052 loses the line coverage of
+    // branches that return directly
+    if      (int'(f.dest_x) > X_POS) r = 2;
+    else if (int'(f.dest_x) < X_POS) r = 3;
+    else if (int'(f.dest_y) > Y_POS) r = 0;
+    else if (int'(f.dest_y) < Y_POS) r = 1;
+    else                             r = 4;
+    return r;
   endfunction
 
   // input FIFOs

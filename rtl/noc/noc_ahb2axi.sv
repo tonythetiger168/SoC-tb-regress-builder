@@ -76,11 +76,15 @@ module noc_ahb2axi #(
   wire cap = hsel && hready && htrans[1];          // address phase accepted
 
   function automatic logic [3:0] strb_of(logic [1:0] a, logic [2:0] s);
+    logic [3:0] r;
+    // one return at the end: Verilator 5.052 loses the line coverage of
+    // case arms that return directly
     case (s)
-      3'd0:    return 4'b0001 << a;
-      3'd1:    return a[1] ? 4'b1100 : 4'b0011;
-      default: return 4'b1111;
+      3'd0:    r = 4'b0001 << a;
+      3'd1:    r = a[1] ? 4'b1100 : 4'b0011;
+      default: r = 4'b1111;
     endcase
+    return r;
   endfunction
 
   always_ff @(posedge clk or negedge rst_n) begin

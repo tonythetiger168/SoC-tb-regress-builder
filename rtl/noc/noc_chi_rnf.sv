@@ -152,11 +152,15 @@ module noc_chi_rnf
   function automatic logic [31:0] beat_addr(int unsigned i);
     logic [31:0] nb = 32'd1 << b_size;
     logic [31:0] tot = nb * (32'(b_len) + 1);
+    logic [31:0] r;
+    // one return at the end: Verilator 5.052 loses the line coverage of
+    // case arms that return directly
     case (b_burst)
-      2'b00: return b_addr;
-      2'b10: return (b_addr & ~(tot - 1)) | ((b_addr + i * nb) & (tot - 1));
-      default: return (i == 0) ? b_addr : (b_addr & ~(nb - 1)) + i * nb;
+      2'b00: r = b_addr;
+      2'b10: r = (b_addr & ~(tot - 1)) | ((b_addr + i * nb) & (tot - 1));
+      default: r = (i == 0) ? b_addr : (b_addr & ~(nb - 1)) + i * nb;
     endcase
+    return r;
   endfunction
 
   wire [31:0]   a    = beat_addr(b_i);
