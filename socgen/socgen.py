@@ -444,7 +444,7 @@ def _mesh_cov_waivers(m):
     and chiplet (multi-die) benches are closed by the NoC generator work: the
     die/gateway rules below are kept for it but stay off until it enables them."""
     L = []
-    if m.chi.rn or m.chiplet.dies > 1:
+    if m.chi.rn:
         return L
     MESH = "\\.u_mesh(_d\\S+)?"
     nm = len(m.masters)
