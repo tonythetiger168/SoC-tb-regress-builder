@@ -375,6 +375,7 @@ def _cov_waivers(m, spec_rel):
          "# (scripts/cov/score_cov.py; <metric> <regex> # reason)",
          f"line {m.name}_pkg  # package functions are called only by testbench classes (no hardware)",
          f"branch {m.name}_pkg  # package functions are called only by testbench classes (no hardware)"]
+    L += _dram_cov_waivers(m)
     if not m.apb:
         return "\n".join(L) + "\n"
     win = (m.apb.size - 1).bit_length()
@@ -436,6 +437,43 @@ def _cov_waivers(m, spec_rel):
             L.append(f"toggle (?<= )PRDATA\\[({_bits(never)})\\]\\S* \\S*{f} # {bn}: no readable register "
                      f"drives these bits (hw_* tied to 0, bits outside fields)")
     return "\n".join(L) + "\n"
+
+
+def _dram_cov_waivers(m):
+    """Waivers for the DDR4 channels (vip/dram/soc_ddr4_chan, memories[].model:
+    ddr4): the channel's glue is scored; the DDR4_JEDEC_AXI controller's own
+    outputs are IP function, closed by its own bench in open-ip-portfolio."""
+    L = []
+    chans = [(i, t) for i, t in enumerate(m.targets) if t.kind == "channel" and t.model != "vip"]
+    if not chans:
+        return L
+    L.append(f"toggle {m.name}_pkg dram_ready:1->0 # testbench flag: set once after DDR4 init, never cleared")
+    for i, t in chans:
+        u = f"u_{t.name}"
+        L.append(f"toggle {u} (s_)?(awid|arid|bid|rid)\\[({_bits(0xFF & ~((1 << m.id_width) - 1))})\\] "
+                 f"# the NoC forwards {m.id_width}-bit master IDs into the channel's 8-bit ID")
+        w = (t.size - 1).bit_length()
+        if t.size & (t.size - 1) == 0 and t.base % t.size == 0 and w < 32:
+            L.append(f"toggle {u} (s_)?a[rw]addr\\[({_bits((1 << 32) - (1 << w))})\\] "
+                     f"# {t.name} window 0x{t.base:08X}/0x{t.size:X}: address bits {w}..31 are constant")
+        if m.data_width == 32:
+            L.append(f"toggle {u} (s_)?a[rw]size\\[2\\] # 32-bit data bus: AxSIZE <= 2, bit 2 is always 0")
+        L.append(f"toggle {u} (aresetn|rst_s\\[\\d\\]|ck_rst_n|reset_n|p_reset_n):1->0 # power-on reset only: "
+                 f"the socgen benches do not reset mid-run (DDR4_JEDEC_AXI's own bench resets and re-inits)")
+        L.append(f"toggle {u} (p_)?cke:1->0 # CKE drops only in reset (DDR4_JEDEC_AXI: no power-down)")
+        L.append(f"toggle {u} init_done:1->0 # init_done falls only in reset (power-on reset only here)")
+        L.append(f"toggle {u} (p_)?odt(:| ) # DDR4_JEDEC_AXI ties ODT low (single rank, no termination control)")
+        L.append(f"toggle {u} (p_)?bg\\[1\\] # x16 devices: one bank-group bit, BG[1] is tied to 0")
+        L.append(f"toggle {u} (s_)?[br]resp\\[ # DDR4_JEDEC_AXI answers SLVERR only to bursts the NoC never "
+                 f"sends (bad WLAST, AxSIZE > 2); its own bench covers them")
+        L.append(f"toggle {u} err_irq(:| ) # DDR4_JEDEC_AXI error interrupt: see the RESP waiver (IP function)")
+        L.append(f"toggle {u} n_(act|hit|rd|wr|ref|err)\\[ # DDR4_JEDEC_AXI statistics counters: IP function; "
+                 f"high bits need more traffic than a bench run, closed by its own bench")
+        L.append(f"toggle {u} (bready|s_awready|s_arready):1->0 # AXI_Async_Bridge FIFOs (depth 8) never fill: the "
+                 f"NoC keeps one burst per direction in flight per port and the controller drains B at once")
+        L.append(f"user g_s\\[{i}\\]\\.u_sva\\.c_a[rw]_wait # {t.name}: the bridge's AW/AR FIFO accepts at once; "
+                 f"the NoC never overlaps bursts per direction on a port")
+    return L
 
 
 def _paths_csv(m):

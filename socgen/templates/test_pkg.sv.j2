@@ -364,7 +364,13 @@ package {{ m.name }}_test_pkg;
           int mi = vm[k % vm.size()], si = k % NS;
           if (S_KIND[si] == "apb_bridge") begin
             if (hole != 0) shapes(mi, hole, 0);
-          end else if (S_KIND[si] != "periph") shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1);   // stays in its 4 KB granule
+          end else if (S_KIND[si] != "periph") begin
+            shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1);   // stays in its 4 KB granule
+{% for t in dram_chans %}            if (si == S_{{ t.name|upper }}) begin             // DDR4 channel: 256-beat bursts (AxLEN[7:6])
+              run_item(mi, 1, (PATH_ADDR[mi][si] & ~32'hFFF) + 32'h400, 256, 2, AXI4_INCR);
+              run_item(mi, 0, (PATH_ADDR[mi][si] & ~32'hFFF) + 32'h400, 256, 2, AXI4_INCR);
+            end
+{% endfor %}          end
           else begin                                      // RTL slave
             shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 0);
             if (k < NS) rtl_slave_walk(mi, si);
