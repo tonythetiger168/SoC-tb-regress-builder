@@ -443,11 +443,9 @@ def _dram_cov_waivers(m):
     """Waivers for the DDR4 channels (vip/dram/soc_ddr4_chan, memories[].model:
     ddr4): the channel's glue is scored; the DDR4_JEDEC_AXI controller's own
     outputs are IP function, closed by its own bench in open-ip-portfolio."""
-    L = []
+    L = [f"toggle {m.name}_pkg dram_ready:1->0 # testbench flag: set once after DDR4 init (1 from the start "
+         f"without DDR4 channels), never cleared"]
     chans = [(i, t) for i, t in enumerate(m.targets) if t.kind == "channel" and t.model != "vip"]
-    if not chans:
-        return L
-    L.append(f"toggle {m.name}_pkg dram_ready:1->0 # testbench flag: set once after DDR4 init, never cleared")
     for i, t in chans:
         u = f"u_{t.name}"
         L.append(f"toggle {u} (s_)?(awid|arid|bid|rid)\\[({_bits(0xFF & ~((1 << m.id_width) - 1))})\\] "

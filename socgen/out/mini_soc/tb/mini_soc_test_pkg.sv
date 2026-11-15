@@ -136,6 +136,7 @@ package mini_soc_test_pkg;
 
     task run_phase(uvm_phase phase);
       phase.raise_objection(this);
+      wait (dram_ready);
       #(20 * TCK * 1ns);
       body();
       #(50 * TCK * 1ns);
@@ -363,7 +364,9 @@ package mini_soc_test_pkg;
           int mi = vm[k % vm.size()], si = k % NS;
           if (S_KIND[si] == "apb_bridge") begin
             if (hole != 0) shapes(mi, hole, 0);
-          end else if (S_KIND[si] != "periph") shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1);   // stays in its 4 KB granule
+          end else if (S_KIND[si] != "periph") begin
+            shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1);   // stays in its 4 KB granule
+          end
           else begin                                      // RTL slave
             shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 0);
             if (k < NS) rtl_slave_walk(mi, si);

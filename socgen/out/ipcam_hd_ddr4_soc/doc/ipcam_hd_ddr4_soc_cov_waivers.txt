@@ -2,7 +2,7 @@
 # (scripts/cov/score_cov.py; <metric> <regex> # reason)
 line ipcam_hd_ddr4_soc_pkg  # package functions are called only by testbench classes (no hardware)
 branch ipcam_hd_ddr4_soc_pkg  # package functions are called only by testbench classes (no hardware)
-toggle ipcam_hd_ddr4_soc_pkg dram_ready:1->0 # testbench flag: set once after DDR4 init, never cleared
+toggle ipcam_hd_ddr4_soc_pkg dram_ready:1->0 # testbench flag: set once after DDR4 init (1 from the start without DDR4 channels), never cleared
 toggle u_ddr0 (s_)?(awid|arid|bid|rid)\[(4|5|6|7)\] # the NoC forwards 4-bit master IDs into the channel's 8-bit ID
 toggle u_ddr0 (s_)?a[rw]addr\[(30|31)\] # ddr0 window 0x80000000/0x40000000: address bits 30..31 are constant
 toggle u_ddr0 (s_)?a[rw]size\[2\] # 32-bit data bus: AxSIZE <= 2, bit 2 is always 0
@@ -34,7 +34,7 @@ toggle u_apb (awid|arid|bid|rid)\[(4|5|6|7)\] # the NoC forwards 4-bit master ID
 toggle u_apb [br]resp\[0\] # axi2apb_bridge answers OKAY/SLVERR only
 toggle u_apb \w*a[rw]size\[2\] # 32-bit data bus: AxSIZE <= 2, bit 2 is always 0
 toggle u_apb(\.[\w*]+)? (rst_n|PRESETN):1->0 # power-on reset only: the socgen benches do not reset mid-run (each block's reset is checked by its own bench and the RAL reset test)
-toggle u_apb irq\[ # peripheral interrupts are IP pins (closed by each IP's own bench); register blocks and APB VIP slots tie theirs to 0
+toggle u_apb irq\[(2|3|7|8|9|10|11|24|25|26|27)\] # tied to 0: register blocks, APB VIP slots and IPs without an interrupt output (the IP interrupts are driven by the tb_top routing check)
 toggle u_apb gpio_(gpio)(\[|:) # GPIO pins: IP function, closed at 100% by its own bench in open-ip-portfolio
 toggle u_apb uart_(rxd|txd)(\[|:) # UART pins: IP function, closed at 100% by its own bench in open-ip-portfolio
 toggle u_apb csi2_(rx_bit|rx_valid)(\[|:) # CSI_2 pins: IP function, closed at 100% by its own bench in open-ip-portfolio
