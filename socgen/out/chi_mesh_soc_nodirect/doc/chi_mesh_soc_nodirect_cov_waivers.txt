@@ -277,8 +277,31 @@ branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:362$ # RN-Fs send a home CompAck,
 branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:364$ # a home snoops only RN-Fs its exact filter lists, and the entry stays until the snoop response (the set is busy in this slot)
 branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:378$ # a home snoops only RN-Fs its exact filter lists, and the entry stays until the snoop response (the set is busy in this slot)
 branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:375$ # an RN-F answers a snoop with data only for a dirty line (SnpRespData_PD / SnpRespDataFwded_PD)
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:439$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+line \.u_hnf\d+ block \S*rtl/noc/noc_hnf[.]sv:439$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+line \.u_hnf\d+ block \S*rtl/noc/noc_hnf[.]sv:440$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:441$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:441$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ cond_then \S*rtl/noc/noc_hnf[.]sv:442$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ cond_then \S*rtl/noc/noc_hnf[.]sv:474$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ cond_else \S*rtl/noc/noc_hnf[.]sv:442$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ cond_else \S*rtl/noc/noc_hnf[.]sv:474$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+line \.u_hnf\d+ elsif \S*rtl/noc/noc_hnf[.]sv:472$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:363$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:374$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:573$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+toggle \.u_hnf\d+ (fwded|snp_op\[\d+\]\[4\])\S* \S*noc_hnf\.sv$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+user \.u_\S+_shim\.c_ufwd_ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+line \.u_hnf\d+ case \S*rtl/noc/noc_hnf[.]sv:220$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+line \.u_hnf\d+ case \S*rtl/noc/noc_hnf[.]sv:495$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:495$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:497$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:495$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:497$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:575$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+toggle \.u_ni_\w+ dmt\S* \S*noc_ni_chi\.sv$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
 toggle \.u_hnf\d+ (oq_cnt\[2\]|can_push:1->0)\S* \S*noc_hnf\.sv$ # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the home's output queue fills only while its router input is full)
-toggle \.u_hnf\d+ ((L|LT|lost|nderr|is_\w+|wd_resp|wd_be)\[[1-9]\d*\]|ln\[[1-9]\d*\]\[[01]\])\S* \S*noc_hnf\.sv$ # NOT REACHED in every slot (analysis, not a proof): home slot k >= 1 takes a request only while the lower slots are busy, so the rarer values (address bits only decode misses carry, NoSnp kinds and strobes, race outcomes such as a CleanUnique losing its line or a write-back after a SnpSharedFwd) do not all reach every upper slot; slot 0 takes each of them (the K slots are identical registers written by one loop, and every slot's state machine is covered)
+toggle \.u_hnf\d+ ((L|LT|lost|nderr|is_\w+|wd_resp|wd_be|after_wb)\[[1-9]\d*\]|ln\[[1-9]\d*\]\[[01]\])\S* \S*noc_hnf\.sv$ # NOT REACHED in every slot (analysis, not a proof): home slot k >= 1 takes a request only while the lower slots are busy, so the rarer values (address bits only decode misses carry, NoSnp kinds and strobes, race outcomes such as a CleanUnique losing its line or a write-back after a SnpSharedFwd) do not all reach every upper slot; slot 0 takes each of them (the K slots are identical registers written by one loop, and every slot's state machine is covered)
 toggle \.u_ni_sram (rp|wp)\[\d+\]\.tag\[3\]\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): a NoSnp request forwarded from home slot 2 or above to this slave (the home's lower slots busy at that moment); the lower slots' tags are covered
 toggle \.u_ni_apb_ram (rp|wp)\[\d+\]\.tag\[3\]\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): a NoSnp request forwarded from home slot 2 or above to this slave (the home's lower slots busy at that moment); the lower slots' tags are covered
 toggle \.u_ni_periph (rp|wp)\[\d+\]\.tag\[3\]\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): a NoSnp request forwarded from home slot 2 or above to this slave (the home's lower slots busy at that moment); the lower slots' tags are covered
@@ -290,21 +313,27 @@ toggle \.u_ni_periph ((rq_cnt|wq_cnt)\[3\]|(rp_cnt|wp_cnt)\[2\])\S* \S*noc_ni_sl
 toggle \.u_ni_cpu0 ej_ready\S* \S*noc_ni_chi\.sv$ # an RN-F takes every response, data and snoop (ej_ready tied high)
 toggle \.u_ni_cpu0 txrsp_flit\.(dbid|resperr)\[\S* \S*noc_ni_chi\.sv$ # the RN-F sends CompAck, SnpResp and SnpRespFwded on RSP: no DBID, no RespErr
 toggle \.u_ni_cpu0 txrsp_flit\.resp\[2\]\S* \S*noc_ni_chi\.sv$ # RSP carries no PassDirty (dirty data goes on DAT)
-toggle \.u_ni_cpu0 txrsp_flit\.opcode\[2\]\S* \S*noc_ni_chi\.sv$ # RSP opcodes of an RN-F: ['0x1', '0x2', '0x9']
+toggle \.u_ni_cpu0 txrsp_flit\.opcode\[2\]\S* \S*noc_ni_chi\.sv$ # RSP opcodes of an RN-F: ['0x1', '0x2']
+toggle \.u_ni_cpu0 txrsp_flit\.opcode\[3\]\S* \S*noc_ni_chi\.sv$ # RSP opcodes of an RN-F: ['0x1', '0x2']
 toggle \.u_ni_cpu0 txreq_flit\.opcode\[5\]\S* \S*noc_ni_chi\.sv$ # REQ opcodes of the RN-F: ['0x1', '0x4', '0x7', '0xb', '0xd', '0x1b', '0x1c']
 toggle \.u_ni_cpu0 txrsp_flit\.nid\[2\]\S* \S*noc_ni_chi\.sv$ # RSP goes to a home ([9, 10]): CompAck to the HomeNID, snoop responses to the snooping home
 toggle \.u_ni_cpu0 rxsnp_flit\.fwdnid\[1\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
 toggle \.u_ni_cpu0 rxsnp_flit\.fwdnid\[2\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
 toggle \.u_ni_cpu0 rxsnp_flit\.fwdnid\[3\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
+toggle \.u_ni_cpu0 rxsnp_flit\.opcode\[4\]\S* \S*noc_ni_chi\.sv$ # DCT off: snoops ['0x1', '0x7', '0x8'] only
+toggle \.u_ni_cpu0 rx(rsp|dat|snp)_flit\.nid\[2\]\S* \S*noc_ni_chi\.sv$ # flits reach an RN-F from [9, 10] only (homes)
 toggle \.u_ni_cpu1 ej_ready\S* \S*noc_ni_chi\.sv$ # an RN-F takes every response, data and snoop (ej_ready tied high)
 toggle \.u_ni_cpu1 txrsp_flit\.(dbid|resperr)\[\S* \S*noc_ni_chi\.sv$ # the RN-F sends CompAck, SnpResp and SnpRespFwded on RSP: no DBID, no RespErr
 toggle \.u_ni_cpu1 txrsp_flit\.resp\[2\]\S* \S*noc_ni_chi\.sv$ # RSP carries no PassDirty (dirty data goes on DAT)
-toggle \.u_ni_cpu1 txrsp_flit\.opcode\[2\]\S* \S*noc_ni_chi\.sv$ # RSP opcodes of an RN-F: ['0x1', '0x2', '0x9']
+toggle \.u_ni_cpu1 txrsp_flit\.opcode\[2\]\S* \S*noc_ni_chi\.sv$ # RSP opcodes of an RN-F: ['0x1', '0x2']
+toggle \.u_ni_cpu1 txrsp_flit\.opcode\[3\]\S* \S*noc_ni_chi\.sv$ # RSP opcodes of an RN-F: ['0x1', '0x2']
 toggle \.u_ni_cpu1 txreq_flit\.opcode\[5\]\S* \S*noc_ni_chi\.sv$ # REQ opcodes of the RN-F: ['0x1', '0x4', '0x7', '0xb', '0xd', '0x1b', '0x1c']
 toggle \.u_ni_cpu1 txrsp_flit\.nid\[2\]\S* \S*noc_ni_chi\.sv$ # RSP goes to a home ([9, 10]): CompAck to the HomeNID, snoop responses to the snooping home
 toggle \.u_ni_cpu1 rxsnp_flit\.fwdnid\[1\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
 toggle \.u_ni_cpu1 rxsnp_flit\.fwdnid\[2\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
 toggle \.u_ni_cpu1 rxsnp_flit\.fwdnid\[3\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
+toggle \.u_ni_cpu1 rxsnp_flit\.opcode\[4\]\S* \S*noc_ni_chi\.sv$ # DCT off: snoops ['0x1', '0x7', '0x8'] only
+toggle \.u_ni_cpu1 rx(rsp|dat|snp)_flit\.nid\[2\]\S* \S*noc_ni_chi\.sv$ # flits reach an RN-F from [9, 10] only (homes)
 toggle \.u_ni_\w+ rxsnp_flit\.addr\[(28|29|30)\]\S* \S*noc_ni_chi\.sv$ # snoops carry lines of the coherent memory 0x80000000..0x8FFFFFFF: these address bits are 0
 toggle \.u_ni_\w+ rxsnp_flit\.addr\[[0-5]\]\S* \S*noc_ni_chi\.sv$ # snoops carry line addresses
 toggle \.u_\w+_acel (s_a[rw]size|m_a[rw]size)\[2\]\S* \S*noc_acelite2axi\.sv$ # 32-bit data bus: AxSIZE <= 2

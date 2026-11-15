@@ -877,6 +877,31 @@ def _chi_cov_waivers(m, NR):
         B(H, "line elsif", "noc_hnf.sv", "end else if (is_rs[k] || is_ru[k]) begin", why)
         B(H, "branch else", "noc_hnf.sv", "if (rep_n[k] + 2'd1 ==", why)
         T(H, "(rep_n\\[\\d+\\]\\[1\\]|gr_cresp\\[\\d+\\]\\[2\\])", HF, why)
+    if not m.chi.dct:
+        why = "DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData"
+        B(H, "branch if", "noc_hnf.sv", "if (CHI_DCT && (is_rs[k] || is_ru[k]))", why)
+        B(H, "line block", "noc_hnf.sv", "if (CHI_DCT && (is_rs[k] || is_ru[k]))", why)
+        L.append(f"line {H} block \\S*rtl/noc/noc_hnf[.]sv:{_rtl_line('noc_hnf.sv', 'if (CHI_DCT && (is_rs[k] || is_ru[k]))') + 1}$ # {why}")
+        for kind in ("branch if", "branch else"):
+            B(H, kind, "noc_hnf.sv", "if (r != rqr[k] && holds(r, L[k]) && sf_u[r][LS[k]]) begin", why)
+        for kind in ("branch cond_then", "branch cond_else"):
+            B(H, kind, "noc_hnf.sv", "so = is_rs[k] ? SNP_SHAREDFWD : SNP_UNIQUEFWD;", why)
+            B(H, kind, "noc_hnf.sv", "st[k] <= dirty[k] ? H_WB : H_GRANT;   // SnpSharedFwd", why)
+        B(H, "line elsif", "noc_hnf.sv", "end else if (fwded[k]) begin", why)
+        B(H, "branch if", "noc_hnf.sv", "if (ej.copc[3:0] == RSP_SNPRESPFWDED) fwded", why)
+        B(H, "branch if", "noc_hnf.sv", "if (ej.copc[3:0] == DAT_SNPRESPDATAFWDED) fwded", why)
+        B(H, "branch if", "noc_hnf.sv", "if (snp_op[ps] == SNP_SHAREDFWD || snp_op[ps] == SNP_UNIQUEFWD) n_dct++;", why)
+        T(H, "(fwded|snp_op\\[\\d+\\]\\[4\\])", HF, why)
+        L.append(f"user \\.u_\\S+_shim\\.c_ufwd_ # {why}")
+    if not m.chi.dmt:
+        why = "DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData"
+        B(H, "line case", "noc_hnf.sv", "H_DMT: begin                          // DMT", why)
+        B(H, "line case", "noc_hnf.sv", "H_DMT: if (gnt[k]) begin", why)
+        for kind in ("branch if", "branch else"):
+            B(H, kind, "noc_hnf.sv", "H_DMT: if (gnt[k]) begin", why)
+            B(H, kind, "noc_hnf.sv", "if (mem_sent[k] == 2'd1) begin", why)
+        B(H, "branch if", "noc_hnf.sv", "if (push && st[ps] == H_DMT) n_dmt++;", why)
+        T("\\.u_ni_\\w+", "dmt", "noc_ni_chi\\.sv$", why)
     T(H, "(oq_cnt\\[2\\]|can_push:1->0)", HF, NR + " (the home's output queue fills only while its "
       "router input is full)")
     NRS = ("NOT REACHED in every slot (analysis, not a proof): home slot k >= 1 takes a request only while the "
@@ -884,7 +909,7 @@ def _chi_cov_waivers(m, NR):
            "strobes, race outcomes such as a CleanUnique losing its line or a write-back after a SnpSharedFwd) "
            "do not all reach every upper slot; slot 0 takes each of them (the K slots are identical registers "
            "written by one loop, and every slot's state machine is covered)")
-    T(H, "((L|LT|lost|nderr|is_\\w+|wd_resp|wd_be)\\[[1-9]\\d*\\]|ln\\[[1-9]\\d*\\]\\[[01]\\])", HF, NRS)
+    T(H, "((L|LT|lost|nderr|is_\\w+|wd_resp|wd_be|after_wb)\\[[1-9]\\d*\\]|ln\\[[1-9]\\d*\\]\\[[01]\\])", HF, NRS)
     hw = max(1, (m.chi.slots - 1).bit_length()) + 2
     for t in m.targets:
         N = f"\\.u_ni_{t.name}"
@@ -912,7 +937,7 @@ def _chi_cov_waivers(m, NR):
         T(N, "txrsp_flit\\.(dbid|resperr)\\[", NF, "the RN-F sends CompAck, SnpResp and SnpRespFwded on RSP: "
           "no DBID, no RespErr")
         T(N, "txrsp_flit\\.resp\\[2\\]", NF, "RSP carries no PassDirty (dirty data goes on DAT)")
-        ops = [const(n) for n in ("RSP_SNPRESP", "RSP_COMPACK", "RSP_SNPRESPFWDED")]
+        ops = [const(n) for n in ("RSP_SNPRESP", "RSP_COMPACK") + (("RSP_SNPRESPFWDED",) if m.chi.dct else ())]
         for b in never(ops, 4):
             T(N, f"txrsp_flit\\.opcode\\[{b}\\]", NF, f"RSP opcodes of an RN-F: {[hex(v) for v in ops]}")
         ops = [const(n) for n in ("REQ_READSHARED", "REQ_READNOSNP", "REQ_READUNIQUE", "REQ_CLEANUNIQUE",
@@ -924,6 +949,15 @@ def _chi_cov_waivers(m, NR):
               "responses to the snooping home")
         for b in never(rn, epb):
             T(N, f"rxsnp_flit\\.fwdnid\\[{b}\\]", NF, f"FwdNID is a requesting RN-F ({rn})")
+        if not m.chi.dct:
+            sops = [const(n) for n in ("SNP_SHARED", "SNP_UNIQUE", "SNP_CLEANSHARED")]
+            for b in never(sops, 5):
+                T(N, f"rxsnp_flit\\.opcode\\[{b}\\]", NF, f"DCT off: snoops {[hex(v) for v in sops]} only")
+        srcs = hn + ([nm + t for t in sorted(m.chi.coh_targets)] if m.chi.dmt else []) \
+            + ([r for r in rn if r != x.index] if m.chi.dct else [])
+        for b in never(srcs, epb):
+            T(N, f"rx(rsp|dat|snp)_flit\\.nid\\[{b}\\]", NF, f"flits reach an RN-F from {srcs} only (homes"
+              + (", DMT slaves" if m.chi.dmt else "") + (", DCT RN-Fs" if m.chi.dct else "") + ")")
     # snoop addresses: lines of the coherent memory
     coh = [t for t in m.targets if t.index in m.chi.coh_targets]
     lo, hi = min(t.base for t in coh), max(t.base + t.size for t in coh) - 1
