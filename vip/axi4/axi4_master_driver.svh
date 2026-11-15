@@ -41,7 +41,7 @@ class axi4_master_driver extends uvm_driver #(axi4_item);
   task run_phase(uvm_phase phase);
     reset_outputs();
     @(posedge vif.aclk iff vif.aresetn === 1'b1);
-    fork r_collect(); b_collect(); join_none
+    fork r_collect(); b_collect(); w_send(); join_none
     forever begin
       seq_item_port.get_next_item(req);
       if (cfg.max_outstanding > 1) begin
@@ -161,8 +161,11 @@ class axi4_master_driver extends uvm_driver #(axi4_item);
     wait (rd_q.size() + wr_q.size() < cfg.max_outstanding);
     t.t_start = $time;
     if (t.write) begin
-      issue_write(t);
+      // AW goes ahead; the W beats follow in AW order from w_send(), so the
+      // next AW can be accepted while earlier W data is still going out
+      issue_aw(t);
       wr_q.push_back(t);
+      w_mb.put(t);
     end else begin
       t.resp = new[t.beats()];
       rd_q.push_back(t);                 // queued before AR, so an early R finds it
@@ -186,41 +189,38 @@ class axi4_master_driver extends uvm_driver #(axi4_item);
     vif.mst_cb.arvalid <= 1'b0;
   endtask
 
-  // AW and W of one burst (the same as drive_write without the response)
-  task issue_write(axi4_item t);
-    fork
-      begin
-        repeat (t.aw_delay) @(vif.mst_cb);
-        @(vif.mst_cb);
-        vif.mst_cb.awid    <= t.id;
-        vif.mst_cb.awaddr  <= t.addr;
-        vif.mst_cb.awlen   <= t.len;
-        vif.mst_cb.awsize  <= t.size;
-        vif.mst_cb.awburst <= t.burst;
-        vif.mst_cb.awprot  <= t.prot;
-        vif.mst_cb.awcache <= t.cache;
-        vif.mst_cb.awvalid <= 1'b1;
-        do @(vif.mst_cb); while (!(vif.mst_cb.awready === 1'b1 && vif.awvalid === 1'b1));
-        vif.mst_cb.awvalid <= 1'b0;
-      end
-      begin
-        @(vif.mst_cb);
-        for (int unsigned i = 0; i < t.beats(); i++) begin
-          int unsigned gap = (i == 0) ? 0 : axi4_cfg::rand_delay(t.w_gap);
-          if (gap) begin
-            vif.mst_cb.wvalid <= 1'b0;
-            repeat (gap) @(vif.mst_cb);
-          end
-          vif.mst_cb.wdata  <= t.data[i];
-          vif.mst_cb.wstrb  <= t.strb[i];
-          vif.mst_cb.wlast  <= (i == t.len);
-          vif.mst_cb.wvalid <= 1'b1;
-          do @(vif.mst_cb); while (!(vif.mst_cb.wready === 1'b1 && vif.wvalid === 1'b1));
-        end
+  // AW of one pipelined burst (its W beats go out from w_send)
+  task issue_aw(axi4_item t);
+    repeat (t.aw_delay) @(vif.mst_cb);
+    @(vif.mst_cb);
+    vif.mst_cb.awid    <= t.id;
+    vif.mst_cb.awaddr  <= t.addr;
+    vif.mst_cb.awlen   <= t.len;
+    vif.mst_cb.awsize  <= t.size;
+    vif.mst_cb.awburst <= t.burst;
+    vif.mst_cb.awprot  <= t.prot;
+    vif.mst_cb.awcache <= t.cache;
+    vif.mst_cb.awvalid <= 1'b1;
+    do @(vif.mst_cb); while (!(vif.mst_cb.awready === 1'b1 && vif.awvalid === 1'b1));
+    vif.mst_cb.awvalid <= 1'b0;
+  endtask
+
+  task issue_w(axi4_item t);
+    @(vif.mst_cb);
+    for (int unsigned i = 0; i < t.beats(); i++) begin
+      int unsigned gap = (i == 0) ? 0 : axi4_cfg::rand_delay(t.w_gap);
+      if (gap) begin
         vif.mst_cb.wvalid <= 1'b0;
-        vif.mst_cb.wlast  <= 1'b0;
+        repeat (gap) @(vif.mst_cb);
       end
-    join
+      vif.mst_cb.wdata  <= t.data[i];
+      vif.mst_cb.wstrb  <= t.strb[i];
+      vif.mst_cb.wlast  <= (i == t.len);
+      vif.mst_cb.wvalid <= 1'b1;
+      do @(vif.mst_cb); while (!(vif.mst_cb.wready === 1'b1 && vif.wvalid === 1'b1));
+    end
+    vif.mst_cb.wvalid <= 1'b0;
+    vif.mst_cb.wlast  <= 1'b0;
   endtask
 
   function void finish(axi4_item t);
@@ -228,6 +228,16 @@ class axi4_master_driver extends uvm_driver #(axi4_item);
     t.done = 1;
     `uvm_info("AXI4_MDRV", {"done: ", t.convert2string()}, UVM_HIGH)
   endfunction
+
+  // W beats of the pipelined writes, in AW order
+  mailbox #(axi4_item) w_mb = new();
+  task w_send();
+    axi4_item t;
+    forever begin
+      w_mb.get(t);
+      issue_w(t);
+    end
+  endtask
 
   task b_collect();
     forever begin

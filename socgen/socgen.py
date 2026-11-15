@@ -398,6 +398,256 @@ def _bits(mask_zero):
     return "|".join(str(b) for b in range(32) if mask_zero >> b & 1)
 
 
+def _rtl_line(f, text, nth=0):
+    """line number of the nth line of rtl/noc/<f> that contains text"""
+    hits = [i + 1 for i, ln in enumerate(open(os.path.join(ROOT, "rtl", "noc", f))) if text in ln]
+    if len(hits) <= nth:
+        raise SystemExit(f"socgen: '{text}' not found in rtl/noc/{f} (coverage waiver anchor)")
+    return hits[nth]
+
+
+def _mesh_flows(m):
+    """(router, in port, out port) hops of every flit the AMBA mesh carries:
+    master -> slave requests and slave -> master responses, XY routed.
+    Ports: 0 N (y+1), 1 S, 2 E (x+1), 3 W, 4 local (noc_router_open)."""
+    nodes = [tuple(x.node[:2]) for x in m.masters] + [tuple(t.node[:2]) for t in m.targets]
+    nm = len(m.masters)
+    pairs = [(a, b) for a in range(nm) for b in range(nm, len(nodes))]
+    pairs += [(b, a) for a, b in pairs]
+    hops = set()
+    for a, b in pairs:
+        (x, y), (dx, dy) = nodes[a], nodes[b]
+        inp = 4
+        while True:
+            out = 2 if dx > x else 3 if dx < x else 0 if dy > y else 1 if dy < y else 4
+            hops.add((y * m.noc.cols + x, inp, out))
+            if out == 4:
+                break
+            x, y = {2: (x + 1, y), 3: (x - 1, y), 0: (x, y + 1), 1: (x, y - 1)}[out]
+            inp = {2: 3, 3: 2, 0: 1, 1: 0}[out]          # entering from the opposite side
+    return nodes, hops
+
+
+def _mesh_cov_waivers(m):
+    """noc.model mesh (rtl/noc/ NIs, adapters, open router): what the generated
+    AMBA NoC structurally cannot do in this SoC. CHI meshes are not covered here."""
+    L = []
+    if m.chi.rn or m.chiplet.dies > 1:
+        return L
+    nm = len(m.masters)
+    ni = m.noc_ni
+    lg = lambda n: max(1, (n - 1).bit_length())           # noqa: E731  clog2
+    rng = lambda lo, hi: "|".join(str(b) for b in range(lo, hi))   # noqa: E731
+    T = lambda h, pt, f, why: L.append(f"toggle {h} {pt}\\S* \\S*{f} # {why}")   # noqa: E731
+    NOC = f"{m.name}_noc\\.sv$"
+    ALL = "\\S+"
+    # ---- whole NoC ----
+    T(ALL, "rst_n:1->0", "rtl/noc/noc_\\w+\\.sv$|" + NOC, "power-on reset only: the benches do not reset mid-run")
+    T(ALL, "(ej_ready(\\[\\d+\\])?|l_tx_r\\[\\d+\\]|local_tx_ready):1->0",
+      "rtl/noc/noc_(ni_slv|ni_mst|mesh|router_open)\\.sv$|" + NOC,
+      "every NI ejects at once (master NI: a response slot per chunk in flight; slave NI: request queues "
+      "sized for every chunk all masters can have in flight), so the local output is always ready")
+    T(ALL, "out_r\\[4\\]:1->0", "noc_router_open\\.sv$", "local output: every NI ejects at once (see ej_ready)")
+    L.append(f"branch \\.u_mesh if \\S*rtl/noc/noc_mesh\\.sv:{_rtl_line('noc_mesh.sv', '!ej_ready[e]) l_tx_r')}$ "
+             "# no NI ever deasserts ej_ready")
+    nb0 = _rtl_line("noc_mesh.sv", "function automatic int nb(")
+    L.append(f"line \\.u_mesh \\S+ \\S*rtl/noc/noc_mesh\\.sv:({rng(nb0, nb0 + 8)})$ "
+             "# nb(): elaboration-time neighbour function (generate localparams), never called at run time")
+    L.append(f"branch \\.u_mesh \\S+ \\S*rtl/noc/noc_mesh\\.sv:({rng(nb0, nb0 + 8)})$ "
+             "# nb(): elaboration-time neighbour function")
+    L.append("line noc_cfg_pkg \\S+ \\S*/noc_cfg_pkg\\.sv:\\d+$ "
+             "# noc_cfg_pkg functions: ep_name() is for messages only, hn_ep()/coherent() are CHI-only; "
+             "the run-time decode lives in the NIs (covered there)")
+    for f, txt in (("noc_ahb2axi.sv", "default: st <= IDLE;"), ("noc_axi2ahb.sv", "default: st <= IDLE;"),
+                   ("noc_axi2lite.sv", "default: st <= IDLE;"), ("noc_apb2axi.sv", "default: st <= IDLE;")):
+        L.append(f"line \\S+ case \\S*rtl/noc/{f.replace('.', '[.]')}:{_rtl_line(f, txt)}$ "
+                 "# FSM default arm: every state encoding in use is decoded")
+    a2h = _rtl_line("noc_axi2ahb.sv", "ADDR:  if (hready)")
+    L.append(f"branch \\S+ else \\S*rtl/noc/noc_axi2ahb[.]sv:{a2h}$ # HREADY is high in the address phase: "
+             "this master never pipelines (address phase only after the previous data phase completed), and an "
+             "AHB slave inserts wait states only in a data phase")
+    # ---- mesh links and routers (noc_router_open) ----
+    X, Y = m.noc.cols, m.noc.rows
+    nodes, hops = _mesh_flows(m)
+    dname = ["north", "south", "east", "west"]
+    for n in range(X * Y):
+        x, y = n % X, n // X
+        edge = [d for d, ok in enumerate((y + 1 < Y, y > 0, x + 1 < X, x > 0)) if not ok]
+        R = f"\\.u_mesh\\.g_r\\[{n}\\]\\.u_rt"
+        for d in edge:
+            T("\\.u_mesh", f"(rx_v|tx_v|tx_r|rx_r)\\[{n}\\]\\[{d}\\]", "rtl/noc/noc_mesh\\.sv$",
+              f"router {n} [{x}, {y}] {dname[d]} side is the mesh edge (tied off)")
+            T(R, f"({dname[d]}_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\\[{d}\\]|"
+                 f"g_in\\[{d}\\]\\.\\w+|rr\\[{d}\\]|win\\[{d}\\])", "noc_router_open\\.sv$",
+              f"router {n} [{x}, {y}] {dname[d]} port is on the mesh edge: nothing enters or leaves there")
+        T(R, "test_en", "noc_router_open\\.sv$", "test_en is tied to 0")
+        # inputs / outputs no flit of this SoC uses (XY routing, endpoint placement)
+        used_in = {i for (r, i, o) in hops if r == n}
+        used_out = {o for (r, i, o) in hops if r == n}
+        for p in range(5):
+            if p in edge:
+                continue
+            if p not in used_in:
+                T(R, f"((in_v|in_r|ne|nempty|pop)\\[{p}\\]|g_in\\[{p}\\]\\.\\w+)", "noc_router_open\\.sv$",
+                  f"router {n} input {p}: no XY route of this SoC enters here")
+            if p not in used_out:
+                T(R, f"((ov|out_r)\\[{p}\\]|rr\\[{p}\\]|win\\[{p}\\])", "noc_router_open\\.sv$",
+                  f"router {n} output {p}: no XY route of this SoC leaves here")
+                continue
+            ins = sorted({i for (r, i, o) in hops if r == n and o == p})
+            rrv = {(i + 1) % 5 for i in ins}
+            for b in range(3):
+                if not any(i >> b & 1 for i in ins):
+                    T(R, f"win\\[{p}\\]\\[{b}\\]", "noc_router_open\\.sv$",
+                      f"router {n} output {p} is fed by inputs {ins} only (XY routes of this SoC)")
+                if not any(v >> b & 1 for v in rrv):
+                    T(R, f"rr\\[{p}\\]\\[{b}\\]", "noc_router_open\\.sv$",
+                      f"router {n} output {p}: round-robin pointer takes {sorted(rrv)} only")
+                elif all(v >> b & 1 for v in rrv):
+                    T(R, f"rr\\[{p}\\]\\[{b}\\]:1->0", "noc_router_open\\.sv$",
+                      f"router {n} output {p}: round-robin pointer takes {sorted(rrv)} only")
+        # dir_of() arms and output muxes that need a neighbour on that side
+        arm = {2: "> X_POS) r = 2", 3: "< X_POS) r = 3", 0: "> Y_POS) r = 0", 1: "< Y_POS) r = 1"}
+        mux = {d: f"assign {dname[d]}_tx_valid" for d in range(4)}
+        for d in edge:
+            L.append(f"line {R} \\S+ \\S*rtl/noc/noc_router_open[.]sv:{_rtl_line('noc_router_open.sv', arm[d])}$ "
+                     f"# router {n} [{x}, {y}]: no destination lies {dname[d]} of the mesh edge")
+            L.append(f"branch {R} cond_then \\S*rtl/noc/noc_router_open[.]sv:"
+                     f"{_rtl_line('noc_router_open.sv', mux[d])}$ # router {n}: {dname[d]} output on the mesh edge")
+        # node mux: the endpoints on this router
+        here = [e for e, nd in enumerate(nodes) if nd == (x, y)]
+        nep = len(nodes)
+        rrv = {(e + 1) % nep for e in here}
+        pick = set(here) | rrv | {0}
+        for b in range(lg(nep)):
+            if not any(v >> b & 1 for v in pick):
+                T("\\.u_mesh", f"g_r\\[{n}\\]\\.pick\\[{b}\\]", "rtl/noc/noc_mesh\\.sv$",
+                  f"router {n} node mux: endpoints {here} only")
+            if not any(v >> b & 1 for v in rrv):
+                T("\\.u_mesh", f"g_r\\[{n}\\]\\.rr\\[{b}\\]", "rtl/noc/noc_mesh\\.sv$",
+                  f"router {n} node mux pointer takes {sorted(rrv)} only")
+            elif all(v >> b & 1 for v in rrv):
+                T("\\.u_mesh", f"g_r\\[{n}\\]\\.rr\\[{b}\\]:1->0", "rtl/noc/noc_mesh\\.sv$",
+                  f"router {n} node mux pointer takes {sorted(rrv)} only")
+    # ---- master NIs (noc_ni_mst, DW = 32) and their adapters ----
+    one = [x for x in m.masters if x.protocol in ("axi4lite", "ahb")]
+    BR = "(rb\\[\\d+\\]|rh|wh|whb\\.b)"
+    for x in m.masters:
+        N = f"\\.u_ni_{x.name}"
+        T(N, f"(s_a[rw]size|{BR}\\.size)\\[2\\]", "noc_ni_mst\\.sv$", "32-bit data bus: AxSIZE <= 2")
+        T("\\.u_noc", f"{x.name}_(ax_)?a[rw]size\\[2\\]", NOC, "32-bit data bus: AxSIZE <= 2")
+        T(N, "whb\\.(nchunk|nrsp)\\[[6-7]\\]", "noc_ni_mst\\.sv$",
+          "at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)")
+        if x in one:
+            why = (f"{x.name} is an {'AHB-Lite' if x.protocol == 'ahb' else 'AXI4-Lite'} port: single beats, "
+                   f"ID 0, INCR, one transfer in flight")
+            pts = (f"(s_a[rw](id|len)\\[|s_[br]id\\[|s_a[rw]burst\\[1\\]|s_a[rw]burst\\[0\\]:1->0|s_wlast:1->0|"
+                   f"{BR}\\.(id|len)\\[|{BR}\\.burst\\[1\\]|{BR}\\.burst\\[0\\]:1->0|(rb_i|wb_i|wc_n|rs_k)\\[|"
+                   f"wc_(data|strb)\\[[1-7]\\]|whb\\.(nchunk|nrsp)\\[[1-7]\\]|(rb_cnt|wb_cnt|wb_pend|rs_cnt|w_infl)\\[[1-9]\\]|"
+                   f"s_a[rw]ready:1->0|(r_slot_end|rh_last|wh_lastc):1->0)")
+            T(N, pts, "noc_ni_mst\\.sv$", why)
+            T("\\.u_noc", f"{x.name}_ax_(a[rw](id|len)\\[|[br]id\\[|a[rw]burst\\[1\\]|a[rw]burst\\[0\\]:1->0|"
+                          f"wlast:1->0|a[rw]ready:1->0)", NOC, why)
+            for f, txt, kind in (("noc_ni_mst.sv", "default: r = (i == 0) ? b.addr", "cond_else"),
+                                 ("noc_ni_mst.sv", "if (rh_last) begin", "else"),
+                                 ("noc_ni_mst.sv", "if (r_slot_end) begin", "else"),
+                                 ("noc_ni_mst.sv", "if (w_cdone) begin", "else"),
+                                 ("noc_ni_mst.sv", "if (wh_lastc) begin", "else"),
+                                 ("noc_ni_mst.sv", "if (done || i + k > int'(b.len)", "else")):
+                L.append(f"branch {N} {kind} \\S*rtl/noc/noc_ni_mst[.]sv:{_rtl_line(f, txt)}$ # {why}")
+            L.append(f"line {N} \\S+ \\S*rtl/noc/noc_ni_mst[.]sv:{_rtl_line('noc_ni_mst.sv', chr(39).join(['2', 'b10: begin']))}$ "
+                     f"# {why}: no WRAP bursts")
+            if x.protocol == "axi4lite":
+                T(f"({N}|\\.u_noc)", f"((s_a[rw]size|{BR}\\.size|{x.name}_ax_a[rw]size)\\[[02]\\]|"
+                  f"(s_a[rw]size|{BR}\\.size|{x.name}_ax_a[rw]size)\\[1\\]:1->0)", "noc_ni_mst\\.sv$|" + NOC,
+                  "AXI4-Lite has no AxSIZE: tied to 2")
+            else:
+                T(f"({N}|\\.u_noc)", f"(s_a[rw]prot|{BR}\\.prot|{x.name}_ax_a[rw]prot)\\[1\\]",
+                  "noc_ni_mst\\.sv$|" + NOC, "AHB has no secure bit: noc_ahb2axi drives AxPROT[1] = 0")
+                T("\\.u_noc", f"{x.name}_(hburst\\[|hprot\\[[23]\\]|htrans\\[0\\]|hsel:1->0|hsize\\[2\\])", NOC,
+                  "the AHB test shim (noc_axi2ahb) issues SINGLE NONSEQ transfers, HPROT[3:2] = 0, "
+                  "HSIZE <= 2, HSEL tied high")
+        # DW = 32: the 64-bit beat merge never runs
+        for txt in ("if (rhs.rresp[rs_k + 3'(w)] > s_rresp)",):
+            L.append(f"branch {N} if \\S*rtl/noc/noc_ni_mst[.]sv:{_rtl_line('noc_ni_mst.sv', txt)}$ "
+                     "# DW = 32: one word per beat, nothing to merge")
+        for k in range(2):
+            L.append(f"branch {N} cond_then \\S*rtl/noc/noc_ni_mst[.]sv:"
+                     f"{_rtl_line('noc_ni_mst.sv', '(R == 2) ? 3' + chr(39) + 'd2', k)}$ # DW = 32: R = 1")
+        L.append(f"branch {N} cond_then \\S*rtl/noc/noc_ni_mst[.]sv:"
+                 f"{_rtl_line('noc_ni_mst.sv', '8' + chr(39) + '(rsp_w && OW' + chr(39) + '(ej_pkt.tag) == OW' + chr(39) + '(wb_ip))')}$ "
+                 "# a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in "
+                 "4 KB), so a DECERR chunk never meets a response of the same burst")
+    # merged adapter instances (Verilator merges the coverage of a module's instances: u_*)
+    T(ALL, "(m_a[rw](id|len)\\[|m_[br]id\\[|m_a[rw]burst\\[1\\]|m_a[rw]burst\\[0\\]:1->0|m_wlast:1->0|"
+      "(m_a[rw]size|size_q|hsize)\\[2\\]|hburst\\[|hprot\\[[23]\\]|htrans\\[0\\]|hsel:1->0|(m_a[rw]prot|prot_q)\\[1\\])",
+      "rtl/noc/noc_ahb2axi\\.sv$", "noc_ahb2axi issues single INCR beats with ID 0 and AxPROT[1] = 0; its AHB "
+      "masters (noc_axi2ahb) issue SINGLE NONSEQ transfers, HSIZE <= 2, HPROT[3:2] = 0, HSEL tied high")
+    T(ALL, "((s_a[rw]size|size_q|hsize)\\[2\\]|hburst\\[|hprot\\[[23]\\]|htrans\\[0\\]|s_[br]resp\\[0\\])",
+      "rtl/noc/noc_axi2ahb\\.sv$", "noc_axi2ahb: 32-bit bus (size <= 2), SINGLE NONSEQ transfers, HPROT[3:2] = 0, "
+      "answers OKAY / SLVERR only")
+    T(ALL, "(s_a[rw]size|size_q)\\[2\\]", "rtl/noc/noc_axi2lite\\.sv$", "32-bit data bus: AxSIZE <= 2")
+    T(ALL, "(m_a[rw](id|len)\\[|m_[br]id\\[|m_a[rw]burst\\[1\\]|m_a[rw]burst\\[0\\]:1->0|m_wlast:1->0|"
+      "m_a[rw]size\\[[02]\\]|m_a[rw]size\\[1\\]:1->0)", "rtl/noc/noc_apb2axi\\.sv$",
+      "noc_apb2axi issues single 32-bit INCR beats with ID 0")
+    # ---- slave NIs (noc_ni_slv) ----
+    cap = sum(ni.maxo if x.protocol == "axi4" else 1 for x in m.masters)
+    epb = lg(len(nodes) + 1)
+    for j, t in enumerate(m.targets):
+        N = f"\\.u_ni_{t.name}"
+        P = f"\\.u_noc {t.name}_(ax_)?"
+        why_id = "the slave NI issues ID 0 (one ID, in-order answers)"
+        T(N, "m_a[rw]id\\[", "noc_ni_slv\\.sv$", why_id)
+        T("\\.u_noc", f"{t.name}_(ax_)?(awid|arid|bid|rid)\\[", NOC, why_id)
+        T(N, "m_a[rw]len\\[[3-7]\\]", "noc_ni_slv\\.sv$", "one burst per chunk: at most 8 beats")
+        T("\\.u_noc", f"{t.name}_(ax_)?a[rw]len\\[[3-7]\\]", NOC, "one burst per chunk: at most 8 beats")
+        T(N, "m_a[rw]burst\\[1\\]", "noc_ni_slv\\.sv$", "chunks are FIXED or INCR (WRAP bursts split at the wrap point)")
+        T("\\.u_noc", f"{t.name}_(ax_)?a[rw]burst\\[1\\]", NOC, "chunks are FIXED or INCR")
+        T(N, "m_a[rw]size\\[2\\]", "noc_ni_slv\\.sv$", "32-bit data bus: AxSIZE <= 2")
+        T(N, f"(rp|wp)\\[\\d+\\]\\.(copc|cresp|dataid|hnid)\\[", "noc_ni_slv\\.sv$",
+          "CHI fields: zero without CHI home nodes")
+        for b in range(epb):
+            if not any(e >> b & 1 for e in range(nm)):
+                T(N, f"(rp|wp)\\[\\d+\\]\\.src\\[{b}\\]", "noc_ni_slv\\.sv$", f"requesters are masters 0..{nm - 1}")
+        T(N, f"rp\\[\\d+\\]\\.tag\\[({rng(lg(ni.maxo), 6)})\\]", "noc_ni_slv\\.sv$",
+          f"read tag = the master NI's response slot (< MAXO = {ni.maxo})")
+        T(N, f"wp\\[\\d+\\]\\.tag\\[({rng(lg(ni.maxb), 6)})\\]", "noc_ni_slv\\.sv$",
+          f"write tag = the master NI's burst slot (< MAXB = {ni.maxb})")
+        T(N, f"(rq_cnt|wq_cnt)\\[({rng(cap.bit_length(), 8)})\\]", "noc_ni_slv\\.sv$",
+          f"at most {cap} chunks in flight to one slave (MAXO = {ni.maxo} per AXI4 master, one per "
+          "AXI4-Lite / AHB master)")
+        w = (t.size - 1).bit_length()
+        if w < 32:
+            bits = rng(w, 32)
+            why = f"window 0x{t.base:08X} / 0x{t.size:X}: address bits {w}..31 are constant"
+            T(N, f"m_a[rw]addr\\[({bits})\\]", "noc_ni_slv\\.sv$", why)
+            T("\\.u_noc", f"{t.name}_(ax_)?(a[rw]addr|haddr|paddr)\\[({bits})\\]", NOC, why)
+            T(f"\\.u_{t.name}_shim", f"(m_a[rw]addr|paddr|haddr|addr_q)\\[({bits})\\]", "rtl/noc/noc_\\w+\\.sv$", why)
+        if t.protocol in ("ahb", "axi4lite", "apb") or t.kind == "apb_bridge":
+            ad = {"ahb": "noc_axi2ahb", "axi4lite": "noc_axi2lite"}.get(t.protocol, "axi2apb_bridge")
+            T(N, "(rp_cnt|wp_cnt)\\[[1-9]\\]", "noc_ni_slv\\.sv$",
+              f"{ad} takes the next burst only when idle: one burst in flight")
+        if t.protocol in ("ahb", "apb") or t.kind == "apb_bridge":
+            why = "answers OKAY / SLVERR only (AHB / APB have one error response)"
+            T(N, "(m_[br]resp\\[0\\]|r_resp\\[\\d+\\]\\[0\\])", "noc_ni_slv\\.sv$", why)
+            T("\\.u_noc", f"{t.name}_(ax_)?[br]resp\\[0\\]", NOC, why)
+        if t.kind == "apb_bridge":
+            T("\\.u_apb", "((awid|arid|bid|rid)\\[|a[rw]len\\[[3-7]\\]|a[rw]burst\\[1\\])", "\\.sv$",
+              "the slave NI issues ID 0, at most 8 beats, FIXED / INCR")
+        if t.protocol == "ahb":
+            T("\\.u_noc", f"{t.name}_(hburst\\[|hprot\\[[23]\\]|htrans\\[0\\]|hsel:1->0|hsize\\[2\\])", NOC,
+              "noc_axi2ahb issues SINGLE NONSEQ transfers, HPROT[3:2] = 0, HSIZE <= 2; HSEL tied high")
+    # SVA cover properties on the slave VIP ports
+    for j, t in enumerate(m.targets):
+        g = f"\\.g_s\\[{j}\\]\\.u_sva\\."
+        L.append(f"user {g}c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)")
+        if t.protocol in ("ahb", "axi4lite", "apb"):
+            L.append(f"user {g}c_a[rw]_fixed # behind the {t.protocol} adapter the VIP sees single INCR beats")
+            L.append(f"user {g}c_[rb]_wait # the {t.protocol} test shim raises READY in the state after the "
+                     "request handshake, before the slave can answer")
+    return L
+
+
 def _cov_waivers(m, spec_rel):
     """Coverage waivers that follow from the generated structure (score_cov.py
     format: '<metric> <regex> # reason'). Hierarchy: <soc>_tb_top.u_apb..."""
@@ -405,6 +655,8 @@ def _cov_waivers(m, spec_rel):
          "# (scripts/cov/score_cov.py; <metric> <regex> # reason)",
          f"line {m.name}_pkg  # package functions are called only by testbench classes (no hardware)",
          f"branch {m.name}_pkg  # package functions are called only by testbench classes (no hardware)"]
+    if m.noc.model == "mesh":
+        L += _mesh_cov_waivers(m)
     if not m.apb:
         return "\n".join(L) + "\n"
     win = (m.apb.size - 1).bit_length()

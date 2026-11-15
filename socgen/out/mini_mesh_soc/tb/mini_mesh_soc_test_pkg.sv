@@ -322,6 +322,15 @@ package mini_mesh_soc_test_pkg;
       return (PATH_ADDR[0][si] & ~32'hFFF) | 32'hE00;
     endfunction
 
+    // a memory port for master mi: an AXI4 one if there is one
+    function int mem_port(int mi);
+      int r = -1;
+      for (int si = 0; si < NS; si++)
+        if ((S_KIND[si] == "channel" || S_KIND[si] == "memory") && (r < 0 || (S_PROTO[r] != "axi4" && S_PROTO[si] == "axi4")))
+          r = si;
+      return r < 0 ? 0 : r;
+    endfunction
+
     function logic [31:0] target_size(int si);
       if (si == 0) return 32'h10000000;
       if (si == 1) return 32'h10000000;
@@ -346,8 +355,8 @@ package mini_mesh_soc_test_pkg;
         env.sb.ign_lo.push_back(b);
         env.sb.ign_hi.push_back(b + 32'h100);
         foreach (vm[i]) for (int wr = 1; wr >= 0; wr--) begin
-          run_item(vm[i], wr, b, 2, 2, AXI4_INCR);              // SLVERR
-          run_item(vm[i], wr, b + 32'h80, 2, 2, AXI4_INCR);     // DECERR
+          run_item(vm[i], wr, b, 8, 2, AXI4_INCR);              // SLVERR, every word of a chunk
+          run_item(vm[i], wr, b + 32'h80, 8, 2, AXI4_INCR);     // DECERR
         end
       end
       foreach (vm[i]) for (int si = 0; si < NS; si++) begin
@@ -355,7 +364,52 @@ package mini_mesh_soc_test_pkg;
         for (int bit_ = 2; (32'd1 << bit_) < target_size(si); bit_++)
           run_item(vm[i], 0, S_BASE[si] + (32'd1 << bit_), 1, 2, AXI4_INCR);
         run_item(vm[i], 0, S_BASE[si] + target_size(si) - 32'h4, 1, 2, AXI4_INCR);
+        // writes too, on memories (the walk addresses are written in sequence)
+        if (S_KIND[si] != "channel" && S_KIND[si] != "memory" && S_KIND[si] != "vip") continue;
+        for (int bit_ = 2; (32'd1 << bit_) < target_size(si); bit_++)
+          run_item(vm[i], 1, S_BASE[si] + (32'd1 << bit_), 1, 2, AXI4_INCR);
+        run_item(vm[i], 1, S_BASE[si] + target_size(si) - 32'h4, 1, 2, AXI4_INCR);
       end
+      // every master: each address bit at a decode miss (DECERR in the master NI)
+      foreach (vm[i])
+        for (int bit_ = 2; bit_ < 32; bit_++)
+          if (mmesh_decode(32'd1 << bit_) == S_DEF) begin
+            for (int k = 0; k < 4; k++) run_item(vm[i], 0, 32'd1 << bit_, 1, 2, AXI4_INCR);   // every slot
+            for (int k = 0; k < 4; k++) run_item(vm[i], 1, 32'd1 << bit_, 1, 2, AXI4_INCR);
+          end
+      // every master: the burst shapes on a memory in +0x800 of its 4 KB block
+      // (no other phase uses it), WRAP bursts that split at the wrap point at
+      // odd words, narrow reads at odd addresses, multi-chunk partially strobed
+      // writes, and long then short bursts through every burst-queue slot
+      foreach (vm[i]) begin
+        int mi = vm[i], si = mem_port(mi);
+        bit ahb = M_PROTO[mi] == "ahb" || S_PROTO[si] == "ahb";
+        logic [31:0] a = (PATH_ADDR[mi][si] & ~32'hFFF) | 32'h800;
+        shapes(mi, a, 0, ahb);
+        for (int wr = 1; wr >= 0; wr--) begin
+          run_item(mi, wr, a + 32'h24, 16, 2, AXI4_WRAP);
+          run_item(mi, wr, a + 32'h14, 16, 2, AXI4_WRAP);
+          run_item(mi, wr, a + 32'h1C, 8, 2, AXI4_WRAP);
+        end
+        // narrow / odd reads through every read-burst slot (MAXB = 4), then words
+        for (int k = 0; k < 8; k++) run_item(mi, 0, a + 1 + 2 * (k % 2), 1, 0, AXI4_INCR);
+        for (int k = 0; k < 4; k++) run_item(mi, 0, a + 32'h2, 1, 1, AXI4_INCR);
+        for (int k = 0; k < 4; k++) run_item(mi, 0, a, 1, 2, AXI4_INCR);
+        if (!ahb) for (int k = 0; k < 4; k++) run_item(mi, 1, a + 32'h100, 16, 2, AXI4_INCR, 1);
+        if (M_PROTO[mi] == "axi4") begin
+          for (int k = 0; k < 4; k++) run_item(mi, 0, a, 256, 2, AXI4_INCR);
+          for (int k = 0; k < 4; k++) run_item(mi, 0, a, 1, 2, AXI4_INCR);
+          for (int k = 0; k < 4; k++) run_item(mi, 1, a, 256, 2, AXI4_INCR);
+          for (int k = 0; k < 4; k++) run_item(mi, 1, a, 1, 2, AXI4_INCR);
+        end
+      end
+      // APB VIP completers: multi-beat bursts with random data, so every word
+      // of the peripheral port's read chunk carries data
+      for (int i = 0; i < NAPB_VIP; i++)
+        for (int k = 0; k < 8; k++) begin
+          run_item(first_vip(), 1, apb_vip_base(i) + 32'h100, 8, 2, AXI4_INCR);
+          run_item(first_vip(), 0, apb_vip_base(i) + 32'h100, 8, 2, AXI4_INCR);
+        end
       foreach (vm[i]) begin
         int si = i % NS;
         if (S_KIND[si] == "apb_bridge") si = (si + 1) % NS;
@@ -478,29 +532,83 @@ package mini_mesh_soc_test_pkg;
       // heavy back-pressure:
       // reads, writes, then both at once (the slave NI's read and write
       // response flits then compete for injection, so the slave's next R / B
-      // waits). Mixed-pass reads go to +0xC00 of the 4 KB block, which no
+      // waits; mixed-pass writes are single beats so B responses come back to
+      // back). Mixed-pass reads go to +0xC00 of the 4 KB block, which no
       // other phase writes, so they cannot race the writes.
       foreach (env.cfg.s_cfg[i]) acc.push_back(env.cfg.s_cfg[i].access_latency);
-      for (int pass = 0; pass < 6; pass++) begin
-        env.cfg.set_timing(pass < 3 ? 0 : 2);
-        foreach (env.cfg.s_cfg[i]) env.cfg.s_cfg[i].access_latency = (pass < 3) ? 0 : acc[i];
+      // passes 6-8: the same hot spots with single beats only (reads, writes,
+      // mixed), the APB port included, so request flits pile up in the routers
+      for (int pass = 0; pass < 9; pass++) begin
+        bit fast = pass < 3 || pass >= 6;
+        env.cfg.set_timing(fast ? 0 : 2);
+        foreach (env.cfg.s_cfg[i]) env.cfg.s_cfg[i].access_latency = fast ? 0 : acc[i];
         for (int si = 0; si < NS; si++) begin
-          if (S_KIND[si] == "apb_bridge") continue;
+          logic [31:0] apb = NAPB_VIP ? apb_vip_base(0) + 32'h200 : empty_slot();
+          if (S_KIND[si] == "apb_bridge" && pass < 6) continue;
           // one fork level only: Verilator 5.052 binds a nested fork's view of
           // the outer fork's locals to the last iteration
           for (int i = 0; i < ms.size(); i++)
             for (int k = 0; k < 16; k++) begin
               automatic int mi = ms[i], kk = k, s = si;
-              automatic int w = (pass % 3 == 2) ? kk % 2 : pass % 3;
-              automatic logic [31:0] a = (pass % 3 == 2 && !w) ? (PATH_ADDR[mi][s] & ~32'hFFF) | 32'hC00
-                                                               : PATH_ADDR[mi][s] & ~32'h3F;
+              automatic bit mixed = pass % 3 == 2;
+              automatic int w = mixed ? kk % 2 : pass % 3;
+              automatic logic [31:0] a = (mixed && !w) ? (PATH_ADDR[mi][s] & ~32'hFFF) | 32'hC00
+                                                       : PATH_ADDR[mi][s] & ~32'h3F;
+              automatic int n = (pass >= 6) ? 1 : w ? ((pass % 3 == 2) ? 1 : 16) : (kk < 12) ? 16 : 1 + kk % 8;
+              if (S_KIND[s] == "apb_bridge")      // reads below the writes, writes per master
+                a = w ? apb + 32'h40 * (i + 1) + 4 * (kk % 16) : apb + 4 * (kk % 16);
               fork
-                run_item(mi, w, a, (w || kk < 12) ? 16 : 1 + kk % 8, 2, AXI4_INCR);
+                run_item(mi, w, a, n, 2, AXI4_INCR);
               join_none
             end
           wait fork;
         end
       end
+      // storm: every master at once to every port, single beats, zero latency,
+      // so flits from several inputs meet at one router output and queue up
+      env.cfg.set_timing(0);
+      foreach (env.cfg.s_cfg[i]) env.cfg.s_cfg[i].access_latency = 0;
+      for (int round = 0; round < 8; round++) begin
+        for (int i = 0; i < ms.size(); i++)
+          for (int k = 0; k < 16; k++) begin
+            automatic int mi = ms[i], kk = k, s = (k + i + round) % NS;
+            automatic int w = (kk + round) % 2;
+            if (S_KIND[s] == "apb_bridge") s = (s + 1) % NS;
+            fork
+              run_item(mi, w, w ? (PATH_ADDR[mi][s] & ~32'h3F) + 4 * (kk % 8) : (PATH_ADDR[mi][s] & ~32'hFFF) | 32'hC00,
+                       1, 2, AXI4_INCR);
+            join_none
+          end
+        wait fork;
+      end
+      // streams: every master keeps 16 single beats in flight for a long
+      // while, each thread walking over all ports (thread 0 / 1 on the APB
+      // port), so all links carry traffic at once and the router input
+      // FIFOs of the busy outputs fill up. Odd threads write (own address),
+      // even threads read the never-written +0xC00 region.
+      begin
+        logic [31:0] apb = NAPB_VIP ? apb_vip_base(0) + 32'h200 : empty_slot();
+        for (int i = 0; i < ms.size(); i++)
+          for (int k = 0; k < 16; k++) begin
+            automatic int mi = ms[i], kk = k, ii = i;
+            fork
+              for (int j = 0; j < 24; j++) begin
+                int s = (kk + j) % NS;
+                bit w = kk % 2;
+                logic [31:0] a;
+                if (S_KIND[s] == "apb_bridge") s = (s + 1) % NS;
+                if (kk <= 1) for (int x = 0; x < NS; x++) if (S_KIND[x] == "apb_bridge") s = x;
+                if (S_KIND[s] == "apb_bridge")
+                  a = w ? apb + 32'h40 * (ii + 1) + 4 * (j % 16) : apb + 4 * (j % 16);
+                else
+                  a = w ? (PATH_ADDR[mi][s] & ~32'h3F) + 4 * (kk / 2) : ((PATH_ADDR[mi][s] & ~32'hFFF) | 32'hC00) + 4 * kk;
+                run_item(mi, w, a, 1, 2, AXI4_INCR);
+              end
+            join_none
+          end
+        wait fork;
+      end
+      foreach (env.cfg.s_cfg[i]) env.cfg.s_cfg[i].access_latency = acc[i];
       foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 1;
     endtask
 
