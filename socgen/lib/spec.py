@@ -435,7 +435,7 @@ def elaborate(raw, path="<spec>"):
     return m
 
 
-MASTER_PROTOCOLS = ("axi4", "axi4lite", "ahb", "chi")
+MASTER_PROTOCOLS = ("axi4", "axi4lite", "ahb", "chi", "ace_lite")
 SLAVE_PROTOCOLS = ("axi4", "axi4lite", "ahb", "apb")
 
 
@@ -788,7 +788,7 @@ def hops(a, b):
 # same numbers): a single-beat read costs MESH_REQ + MESH_RSP + 2 * hops + access
 # cycles from AR to R, plus the protocol adapters' cycles; writes about 2 more.
 MESH_REQ, MESH_RSP, MESH_HOP = 5, 4, 1
-MESH_ADAPTER = {"axi4": 0, "axi4lite": 2, "ahb": 4, "apb": 5}
+MESH_ADAPTER = {"axi4": 0, "axi4lite": 2, "ahb": 4, "apb": 5, "ace_lite": 0}
 # chiplet: one way across the UCIe link (gateways + two UCIe adapters, measured with
 # socgen/specs/chiplet_soc.yaml), plus the PHY delay each way
 MESH_D2D = 5

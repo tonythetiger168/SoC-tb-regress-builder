@@ -10,7 +10,7 @@ NoC: generated RTL `chi_mesh_soc_nodirect_noc` (2x2 mesh of orca_noc_router (ope
 |---|---|---|
 | master cpu0 | CHI RN-F | [0, 0] |
 | master cpu1 | CHI RN-F | [0, 1] |
-| master dma | AXI4 | [1, 1] |
+| master dma | ACE-Lite | [1, 1] |
 | master mcu | AHB-Lite | [1, 1] |
 | slave ddr0 | AXI4 | [0, 1] |
 | slave ddr1 | AXI4 | [1, 1] |

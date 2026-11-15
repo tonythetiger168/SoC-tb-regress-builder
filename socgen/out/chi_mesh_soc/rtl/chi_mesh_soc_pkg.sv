@@ -143,7 +143,7 @@ package chi_mesh_soc_pkg;
   localparam bit M_IS_RTL [NM] = '{ 1'b0, 1'b0, 1'b0, 1'b0 };
 
   // ---------------- AMBA protocol of each NoC port (noc.model: mesh) ----------------
-  localparam string M_PROTO [NM] = '{ "chi", "chi", "axi4", "ahb" };
+  localparam string M_PROTO [NM] = '{ "chi", "chi", "ace_lite", "ahb" };
   localparam string S_PROTO [NS] = '{ "axi4", "axi4", "axi4", "apb", "axi4" };
   // slave ports inside the memory the CHI home keeps coherent (chi.coherent)
   localparam bit S_COH [NS+1] = '{ 1, 1, 0, 0, 0, 0 };

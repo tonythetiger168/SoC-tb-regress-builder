@@ -35,7 +35,8 @@ AXI_SIGS = ["awid", "awaddr", "awlen", "awsize", "awburst", "awprot", "awvalid",
 NOC_RTL = ["rtl/noc/noc_router_open.sv", "rtl/noc/noc_mesh.sv", "rtl/noc/noc_ni_mst.sv",
            "rtl/noc/noc_ni_slv.sv", "rtl/noc/noc_axi2lite.sv", "rtl/noc/noc_axi2ahb.sv",
            "rtl/noc/noc_ahb2axi.sv", "rtl/noc/noc_apb2axi.sv", "rtl/noc/noc_d2d_gw.sv", "rtl/noc/noc_d2d_phy.sv",
-           "rtl/noc/noc_ni_chi.sv", "rtl/noc/noc_hnf.sv", "rtl/noc/noc_chi_rnf.sv"]
+           "rtl/noc/noc_ni_chi.sv", "rtl/noc/noc_hnf.sv", "rtl/noc/noc_chi_rnf.sv",
+           "rtl/noc/noc_acelite2axi.sv", "rtl/noc/noc_axi2acelite.sv"]
 ORCA_RTL = ["+incdir+ext/xuanji-core/rtl/common", "ext/xuanji-core/rtl/common/clock_gate.sv",
             "ext/xuanji-core/rtl/noc/orca_noc_router.sv"]
 AXI_SLAVE_OUT = {"awready", "wready", "bid", "bresp", "bvalid", "arready", "rid", "rdata", "rresp", "rlast", "rvalid"}
@@ -578,6 +579,12 @@ def _mesh_cov_waivers(m):
         T("\\.u_noc", f"{x.name}_(ax_)?a[rw]size\\[2\\]", NOC, "32-bit data bus: AxSIZE <= 2")
         T(N, "whb\\.(nchunk|nrsp)\\[[6-7]\\]", "noc_ni_mst\\.sv$",
           "at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)")
+        if x.protocol != "ace_lite":
+            T(N, f"(s_a[rw]nosnp|{BR}\\.nosnp)", "noc_ni_mst\\.sv$",
+              f"{x.name} is not ACE-Lite: nosnp tied 0 (coherent memory always through its home)")
+            for txt in ("rh_dst  = rh.nosnp", "wh_dst   = wh.nosnp"):
+                L.append(f"branch {N} cond_then \\S*rtl/noc/noc_ni_mst[.]sv:{_rtl_line('noc_ni_mst.sv', txt)}$ "
+                         f"# {x.name} is not ACE-Lite: nosnp tied 0")
         if x in one:
             why = (f"{x.name} is an {'AHB-Lite' if x.protocol == 'ahb' else 'AXI4-Lite'} port: single beats, "
                    f"ID 0, INCR, one transfer in flight")
@@ -636,7 +643,7 @@ def _mesh_cov_waivers(m):
       "m_a[rw]size\\[[02]\\]|m_a[rw]size\\[1\\]:1->0)", "rtl/noc/noc_apb2axi\\.sv$",
       "noc_apb2axi issues single 32-bit INCR beats with ID 0")
     # ---- slave NIs (noc_ni_slv) ----
-    cap = sum(ni.maxo if x.protocol == "axi4" else 1 for x in m.masters)
+    cap = sum(ni.maxo if x.protocol in ("axi4", "ace_lite") else 1 for x in m.masters)
     epb = lg(len(nodes) + 1)
     for j, t in enumerate(m.targets):
         N = f"\\.u_ni_{t.name}"

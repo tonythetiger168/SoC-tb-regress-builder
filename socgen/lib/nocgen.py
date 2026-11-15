@@ -49,10 +49,25 @@ CHI = [("txreq_valid", 1, "o"), ("txreq_ready", 1, "i"), ("txreq_flit", "chi_req
        ("rxdat_valid", 1, "i"), ("rxdat_flit", "chi_dat_t", "i"),
        ("rxsnp_valid", 1, "i"), ("rxsnp_flit", "chi_snp_t", "i")]
 
-MST_SIGS = {"axi4": AXI4, "axi4lite": LITE, "ahb": AHB_MST, "chi": CHI}
+# ACE-Lite (IO coherent): AXI4 + AxSNOOP, AxDOMAIN, AxBAR (noc_acelite2axi)
+def _ace_lite():
+    L = []
+    for n, w, d in AXI4:
+        L.append((n, w, d))
+        if n == "awprot":
+            L += [("awsnoop", 3, "o"), ("awdomain", 2, "o"), ("awbar", 2, "o")]
+        if n == "arprot":
+            L += [("arsnoop", 4, "o"), ("ardomain", 2, "o"), ("arbar", 2, "o")]
+    return L
+
+
+ACELITE = _ace_lite()
+
+MST_SIGS = {"axi4": AXI4, "axi4lite": LITE, "ahb": AHB_MST, "chi": CHI, "ace_lite": ACELITE}
 SLV_SIGS = {"axi4": AXI4, "axi4lite": LITE, "ahb": AHB_SLV, "apb": APB}
 
-PROTO_NAME = {"axi4": "AXI4", "axi4lite": "AXI4-Lite", "ahb": "AHB-Lite", "apb": "APB4", "chi": "CHI RN-F"}
+PROTO_NAME = {"axi4": "AXI4", "axi4lite": "AXI4-Lite", "ahb": "AHB-Lite", "apb": "APB4", "chi": "CHI RN-F",
+              "ace_lite": "ACE-Lite"}
 
 
 def clog2(n):
@@ -386,13 +401,20 @@ def noc_module(m):
             L.append(f"    .ej_flit(ej_flit[{i}]), .ej_valid(ej_valid[{i}]), .ej_ready(ej_ready[{i}]));")
             L.append("")
             continue
+        nosnp = ["1'b0", "1'b0"]           # AXI4 / Lite / AHB: coherent memory always via its home
         if x.protocol == "axi4":
             conn = {n: f"{x.name}_{n}" for n in axi_names}
         else:
             for n, w, _ in AXI4:
                 L.append(f"  logic {_w(w)}{a}_{n};")
             conn = {n: f"{a}_{n}" for n in axi_names}
-            if x.protocol == "axi4lite":
+            if x.protocol == "ace_lite":
+                L.append(f"  logic {a}_awnosnp, {a}_arnosnp;")
+                nosnp = [f"{a}_awnosnp", f"{a}_arnosnp"]
+                L.append(f"  noc_acelite2axi #(.IDW(ID_WIDTH)) u_{x.name}_acel (.clk, .rst_n,")
+                L.append("    " + ", ".join(f".s_{n}({x.name}_{n})" for n, _, _ in ACELITE) + ",")
+                L.append("    " + ", ".join(f".m_{n}({a}_{n})" for n in axi_names) + f", .m_awnosnp({a}_awnosnp), .m_arnosnp({a}_arnosnp));")
+            elif x.protocol == "axi4lite":
                 for n, _, d in LITE:
                     L.append(f"  assign {a}_{n} = {x.name}_{n};" if d == "o" else f"  assign {x.name}_{n} = {a}_{n};")
                 L += [f"  assign {a}_awid = '0;", f"  assign {a}_awlen = 8'd0;", f"  assign {a}_awsize = 3'd2;",
@@ -404,7 +426,7 @@ def noc_module(m):
                 L.append("    " + ", ".join(f".m_{n}({a}_{n})" for n in axi_names) + ");")
         L.append(f"  noc_ni_mst #(.SELF({i}), .DW(32), .IDW(ID_WIDTH), .MAXB({ni.maxb}), .MAXO({ni.maxo})) u_ni_{x.name} (")
         L.append("    .clk, .rst_n,")
-        L.append("    " + ", ".join(f".s_{n}({conn[n]})" for n in axi_names) + ",")
+        L.append("    " + ", ".join(f".s_{n}({conn[n]})" for n in axi_names) + f", .s_awnosnp({nosnp[0]}), .s_arnosnp({nosnp[1]}),")
         L.append(f"    .inj_flit(inj_flit[{i}]), .inj_valid(inj_valid[{i}]), .inj_ready(inj_ready[{i}]),")
         L.append(f"    .ej_flit(ej_flit[{i}]), .ej_valid(ej_valid[{i}]), .ej_ready(ej_ready[{i}]));")
         L.append("")
@@ -543,6 +565,11 @@ def tb_hookup(m):
             L.append(f"  noc_chi_rnf #(.IDW(ID_WIDTH)) u_{x.name}_shim (.clk({m.clock.name}), .rst_n(aresetn),")
             L.append(f"    {vip},")
             L.append("    " + ", ".join(f".{n}({sh}_{n})" for n, _, _ in CHI) + ");")
+        elif x.protocol == "ace_lite":
+            # IO-coherent master: the shim sets AxDOMAIN / AxSNOOP and adds barriers and CMOs
+            L.append(f"  noc_axi2acelite #(.IDW(ID_WIDTH)) u_{x.name}_shim (.clk({m.clock.name}), .rst_n(aresetn),")
+            L.append(f"    {vip},")
+            L.append("    " + ", ".join(f".{n}({sh}_{n})" for n, _, _ in ACELITE) + ");")
         elif x.protocol == "axi4lite":
             L.append(f"  noc_axi2lite #(.IDW(ID_WIDTH)) u_{x.name}_shim (.clk({m.clock.name}), .rst_n(aresetn),")
             L.append(f"    {vip},")

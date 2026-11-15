@@ -35,6 +35,7 @@ module noc_ni_mst
   input  logic [2:0]       s_awprot,
   input  logic             s_awvalid,
   output logic             s_awready,
+  input  logic             s_awnosnp,     // ACE-Lite non-shareable: straight to the slave, no home
   input  logic [DW-1:0]    s_wdata,
   input  logic [DW/8-1:0]  s_wstrb,
   input  logic             s_wlast,
@@ -52,6 +53,7 @@ module noc_ni_mst
   input  logic [2:0]       s_arprot,
   input  logic             s_arvalid,
   output logic             s_arready,
+  input  logic             s_arnosnp,     // (tie 0 on AXI4: coherent memory always goes through its home)
   output logic [IDW-1:0]   s_rid,
   output logic [DW-1:0]    s_rdata,
   output logic [1:0]       s_rresp,
@@ -78,6 +80,7 @@ module noc_ni_mst
     logic [2:0]     size;
     logic [1:0]     burst;
     logic [2:0]     prot;
+    logic           nosnp;
   } burst_t;
 
   // AXI4 A3.4.1 beat address
@@ -156,7 +159,7 @@ module noc_ni_mst
     rh      = rb[rb_rp];
     rh_n    = chunk_beats(rh, rb_i);
     rh_last = (int'(rb_i) + rh_n - 1 == int'(rh.len));
-    rh_dst  = decode(beat_addr(rh, rb_i));
+    rh_dst  = rh.nosnp ? decode_tgt(beat_addr(rh, rb_i)) : decode(beat_addr(rh, rb_i));
     rd_issue = (rb_cnt != 0) && (rs_cnt != (OW+1)'(MAXO)) && !rq_v;
   end
 
@@ -189,7 +192,7 @@ module noc_ni_mst
       automatic logic pop_s  = 1'b0;
       if (push_b) begin
         rb[rb_wp] <= '{id: s_arid, addr: s_araddr, len: s_arlen, size: s_arsize,
-                       burst: s_arburst, prot: s_arprot};
+                       burst: s_arburst, prot: s_arprot, nosnp: s_arnosnp};
         rb_wp <= (int'(rb_wp) == MAXB - 1) ? '0 : rb_wp + 1'b1;
       end
       // issue one chunk
@@ -281,7 +284,7 @@ module noc_ni_mst
     wh_a0    = beat_addr(wh, int'(wb_i) - int'(wc_n));
     wh_n     = chunk_beats(wh, int'(wb_i) - int'(wc_n));
     wh_lastc = (int'(wb_i) - int'(wc_n) + wh_n - 1 == int'(wh.len));
-    wh_dst   = decode(wh_a0);
+    wh_dst   = wh.nosnp ? decode_tgt(wh_a0) : decode(wh_a0);
   end
   // a W beat is taken while a burst is being built, the chunk has room and a
   // slot will be free for it
@@ -310,7 +313,7 @@ module noc_ni_mst
       automatic logic rsp_w  = ej_valid && ej_pkt.op == OP_WRSP;
       if (push_b) begin
         wb[wb_wp] <= '{b: '{id: s_awid, addr: s_awaddr, len: s_awlen, size: s_awsize,
-                            burst: s_awburst, prot: s_awprot},
+                            burst: s_awburst, prot: s_awprot, nosnp: s_awnosnp},
                        nchunk: 8'd0, nrsp: 8'd0, issued: 1'b0, worst: 2'b00};
         wb_wp <= (int'(wb_wp) == MAXB - 1) ? '0 : wb_wp + 1'b1;
       end

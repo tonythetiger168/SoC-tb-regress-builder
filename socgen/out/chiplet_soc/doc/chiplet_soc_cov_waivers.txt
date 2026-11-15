@@ -135,44 +135,56 @@ toggle \.u_phy n_err\[(6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|2
 toggle \.u_ni_cpu (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
 toggle \.u_noc cpu_(ax_)?a[rw]size\[2\]\S* \S*chiplet_soc_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
 toggle \.u_ni_cpu whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
-branch \.u_ni_cpu if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
-branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
-branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
-branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_cpu (s_a[rw]nosnp|(rb\[\d+\]|rh|wh|whb\.b)\.nosnp)\S* \S*noc_ni_mst\.sv$ # cpu is not ACE-Lite: nosnp tied 0 (coherent memory always through its home)
+branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:162$ # cpu is not ACE-Lite: nosnp tied 0
+branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:287$ # cpu is not ACE-Lite: nosnp tied 0
+branch \.u_ni_cpu if \S*rtl/noc/noc_ni_mst[.]sv:176$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:215$ # DW = 32: R = 1
+branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:346$ # DW = 32: R = 1
+branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:336$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
 toggle \.u_ni_dma (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
 toggle \.u_noc dma_(ax_)?a[rw]size\[2\]\S* \S*chiplet_soc_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
 toggle \.u_ni_dma whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
-branch \.u_ni_dma if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
-branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
-branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
-branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_dma (s_a[rw]nosnp|(rb\[\d+\]|rh|wh|whb\.b)\.nosnp)\S* \S*noc_ni_mst\.sv$ # dma is not ACE-Lite: nosnp tied 0 (coherent memory always through its home)
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:162$ # dma is not ACE-Lite: nosnp tied 0
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:287$ # dma is not ACE-Lite: nosnp tied 0
+branch \.u_ni_dma if \S*rtl/noc/noc_ni_mst[.]sv:176$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:215$ # DW = 32: R = 1
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:346$ # DW = 32: R = 1
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:336$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
 toggle \.u_ni_npu (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
 toggle \.u_noc npu_(ax_)?a[rw]size\[2\]\S* \S*chiplet_soc_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
 toggle \.u_ni_npu whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
-branch \.u_ni_npu if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
-branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
-branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
-branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_npu (s_a[rw]nosnp|(rb\[\d+\]|rh|wh|whb\.b)\.nosnp)\S* \S*noc_ni_mst\.sv$ # npu is not ACE-Lite: nosnp tied 0 (coherent memory always through its home)
+branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:162$ # npu is not ACE-Lite: nosnp tied 0
+branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:287$ # npu is not ACE-Lite: nosnp tied 0
+branch \.u_ni_npu if \S*rtl/noc/noc_ni_mst[.]sv:176$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:215$ # DW = 32: R = 1
+branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:346$ # DW = 32: R = 1
+branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:336$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
 toggle \.u_ni_mcu (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
 toggle \.u_noc mcu_(ax_)?a[rw]size\[2\]\S* \S*chiplet_soc_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
 toggle \.u_ni_mcu whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+toggle \.u_ni_mcu (s_a[rw]nosnp|(rb\[\d+\]|rh|wh|whb\.b)\.nosnp)\S* \S*noc_ni_mst\.sv$ # mcu is not ACE-Lite: nosnp tied 0 (coherent memory always through its home)
+branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:162$ # mcu is not ACE-Lite: nosnp tied 0
+branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:287$ # mcu is not ACE-Lite: nosnp tied 0
 toggle \.u_ni_mcu (s_a[rw](id|len)\[|s_[br]id\[|s_a[rw]burst\[1\]|s_a[rw]burst\[0\]:1->0|s_wlast:1->0|(rb\[\d+\]|rh|wh|whb\.b)\.(id|len)\[|(rb\[\d+\]|rh|wh|whb\.b)\.burst\[1\]|(rb\[\d+\]|rh|wh|whb\.b)\.burst\[0\]:1->0|(rb_i|wb_i|wc_n|rs_k)\[|wc_(data|strb)\[[1-7]\]|whb\.(nchunk|nrsp)\[[1-7]\]|(rb_cnt|wb_cnt|wb_pend|rs_cnt|w_infl)\[[1-9]\]|s_a[rw]ready:1->0|(r_slot_end|rh_last|wh_lastc):1->0)\S* \S*noc_ni_mst\.sv$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
 toggle \.u_mcu_ahb m_a[rw]ready:1->0\S* \S*rtl/noc/noc_ahb2axi\.sv$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
 branch \.u_mcu_ahb else \S*rtl/noc/noc_ahb2axi[.]sv:114$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight: the master NI always has a free read-burst slot, so ARREADY is high
 toggle \.u_noc mcu_ax_(a[rw](id|len)\[|[br]id\[|a[rw]burst\[1\]|a[rw]burst\[0\]:1->0|wlast:1->0|a[rw]ready:1->0)\S* \S*chiplet_soc_noc\.sv$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
-branch \.u_ni_mcu cond_else \S*rtl/noc/noc_ni_mst[.]sv:97$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
-branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:221$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
-branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:238$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
-branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:323$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
-branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:353$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
-branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:110$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
-line \.u_ni_mcu \S+ \S*rtl/noc/noc_ni_mst[.]sv:92$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight: no WRAP bursts
+branch \.u_ni_mcu cond_else \S*rtl/noc/noc_ni_mst[.]sv:100$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:224$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:241$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:326$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:356$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:113$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+line \.u_ni_mcu \S+ \S*rtl/noc/noc_ni_mst[.]sv:95$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight: no WRAP bursts
 toggle (\.u_ni_mcu|\.u_noc) (s_a[rw]prot|(rb\[\d+\]|rh|wh|whb\.b)\.prot|mcu_ax_a[rw]prot)\[1\]\S* \S*noc_ni_mst\.sv$|chiplet_soc_noc\.sv$ # AHB has no secure bit: noc_ahb2axi drives AxPROT[1] = 0
 toggle \.u_noc mcu_(hburst\[|hprot\[[23]\]|htrans\[0\]|hsel:1->0|hsize\[2\])\S* \S*chiplet_soc_noc\.sv$ # the AHB test shim (noc_axi2ahb) issues SINGLE NONSEQ transfers, HPROT[3:2] = 0, HSIZE <= 2, HSEL tied high
-branch \.u_ni_mcu if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
-branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
-branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
-branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+branch \.u_ni_mcu if \S*rtl/noc/noc_ni_mst[.]sv:176$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:215$ # DW = 32: R = 1
+branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:346$ # DW = 32: R = 1
+branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:336$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
 toggle \S+ (m_a[rw](id|len)\[|m_[br]id\[|m_a[rw]burst\[1\]|m_a[rw]burst\[0\]:1->0|m_wlast:1->0|(m_a[rw]size|size_q|hsize)\[2\]|hburst\[|hprot\[[23]\]|htrans\[0\]|hsel:1->0|(m_a[rw]prot|prot_q)\[1\])\S* \S*rtl/noc/noc_ahb2axi\.sv$ # noc_ahb2axi issues single INCR beats with ID 0 and AxPROT[1] = 0; its AHB masters (noc_axi2ahb) issue SINGLE NONSEQ transfers, HSIZE <= 2, HPROT[3:2] = 0, HSEL tied high
 toggle \S+ ((s_a[rw]size|size_q|hsize)\[2\]|hburst\[|hprot\[[23]\]|htrans\[0\]|s_[br]resp\[0\])\S* \S*rtl/noc/noc_axi2ahb\.sv$ # noc_axi2ahb: 32-bit bus (size <= 2), SINGLE NONSEQ transfers, HPROT[3:2] = 0, answers OKAY / SLVERR only
 toggle \S+ (s_a[rw]size|size_q)\[2\]\S* \S*rtl/noc/noc_axi2lite\.sv$ # 32-bit data bus: AxSIZE <= 2
