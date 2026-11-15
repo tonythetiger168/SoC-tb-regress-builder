@@ -395,6 +395,38 @@ module chi_mesh_soc_tb_top;
   );
 
 
+  // Interrupt routing (SoC glue): after reset, hold every IP interrupt output
+  // low, then drive each one high and low on its own and check that exactly
+  // apb_irq[slot] follows. What makes an IP raise its interrupt is IP function,
+  // closed by that IP's own bench; here only the wiring to the SoC IRQ index is
+  // checked. Every test runs it; it takes 10 clocks.
+  initial begin
+    wait (aresetn);
+    repeat (2) @(posedge aclk);
+    force u_apb.u_gpio.irq = 1'b0;
+    force u_apb.u_uart.irq = 1'b0;
+    @(posedge aclk);
+    force u_apb.u_gpio.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 2'(1) << 0)
+      `uvm_error("IRQ_ROUTE", $sformatf("gpio interrupt: apb_irq = 'b%b, expected only bit 0", apb_irq))
+    force u_apb.u_gpio.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("gpio interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_uart.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 2'(1) << 1)
+      `uvm_error("IRQ_ROUTE", $sformatf("uart interrupt: apb_irq = 'b%b, expected only bit 1", apb_irq))
+    force u_apb.u_uart.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("uart interrupt released: apb_irq = 'b%b", apb_irq))
+    release u_apb.u_gpio.irq;
+    release u_apb.u_uart.irq;
+    `uvm_info("IRQ_ROUTE", "2 IP interrupts reach their apb_irq bits", UVM_LOW)
+  end
+
   initial begin
     if ($test$plusargs("VCD")) begin
       $dumpfile("chi_mesh_soc.vcd");

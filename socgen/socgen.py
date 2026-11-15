@@ -723,9 +723,13 @@ def _mesh_cov_waivers(m):
     NR = ("NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output "
           f"within a few cycles while each master NI holds at most {ni.maxb} bursts / {ni.maxo} chunks in flight; "
           "the cov test's stress phases fill these buffers part way")
+    RB = ("router flow control (input FIFO full, ready 1->0) is closed at 100% by the noc_router_open unit bench "
+          "(tb/noc_router, suite noc_router: random ready stalls on all five ports, scoreboard per output); "
+          "in this SoC it is " + NR)
     T(MESH + "\\.g_r\\[\\d+\\]\\.u_rt", "(in_r\\[\\d\\]:1->0|out_r\\[[0-3]\\]:1->0|"
-      "(north|south|east|west|local)_(rx|tx)_ready:1->0|g_in\\[\\d\\]\\.cnt\\[[2-9]\\])", "noc_router_open\\.sv$", NR)
-    T(MESH, "((rx_r|tx_r)\\[\\d+\\]\\[\\d\\]|l_rx_r\\[\\d+\\]):1->0", "rtl/noc/noc_mesh\\.sv$", NR)
+      "(north|south|east|west|local)_(rx|tx)_ready:1->0|g_in\\[\\d\\]\\.cnt\\[[2-9]\\])", "noc_router_open\\.sv$", RB)
+    T(MESH, "((rx_r|tx_r)\\[\\d+\\]\\[\\d\\]|l_rx_r\\[\\d+\\]):1->0", "rtl/noc/noc_mesh\\.sv$",
+      "the routers' ready wires between mesh nodes: " + RB)
     if m.chiplet.dies > 1:
         T("\\.u_gw\\d+", "(tx|rx)_(cnt|level)\\[[2-9]\\]", "noc_d2d_gw\\.sv$", NR)
     for j, t in enumerate(m.targets):
@@ -771,8 +775,11 @@ def _cov_waivers(m, spec_rel):
         L.append("toggle u_apb \\w*a[rw]size\\[2\\] # 32-bit data bus: AxSIZE <= 2, bit 2 is always 0")
     L.append("toggle u_apb(\\.[\\w*]+)? (rst_n|PRESETN):1->0 # power-on reset only: the socgen benches do not "
              "reset mid-run (each block's reset is checked by its own bench and the RAL reset test)")
-    L.append("toggle u_apb irq\\[ # peripheral interrupts are IP pins (closed by each IP's own bench); "
-             "register blocks and APB VIP slots tie theirs to 0")
+    tied = [i for i, sl in enumerate(m.apb.slots) if not (sl.kind == "ip" and sl.wrapper.has_irq)]
+    if tied:
+        L.append(f"toggle u_apb irq\\[({'|'.join(map(str, tied))})\\] # tied to 0: register blocks, APB VIP "
+                 "slots and IPs without an interrupt output (the IP interrupts are driven by the tb_top "
+                 "routing check)")
     for sl in m.apb.slots:
         if sl.kind == "ip":
             axi = {x.pin for x in getattr(sl, "axi_ports", [])}

@@ -7,7 +7,6 @@ toggle u_apb (awid|arid|bid|rid)\[(4|5|6|7)\] # the NoC forwards 4-bit master ID
 toggle u_apb [br]resp\[0\] # axi2apb_bridge answers OKAY/SLVERR only
 toggle u_apb \w*a[rw]size\[2\] # 32-bit data bus: AxSIZE <= 2, bit 2 is always 0
 toggle u_apb(\.[\w*]+)? (rst_n|PRESETN):1->0 # power-on reset only: the socgen benches do not reset mid-run (each block's reset is checked by its own bench and the RAL reset test)
-toggle u_apb irq\[ # peripheral interrupts are IP pins (closed by each IP's own bench); register blocks and APB VIP slots tie theirs to 0
 toggle u_apb gpio_(gpio)(\[|:) # GPIO pins: IP function, closed at 100% by its own bench in open-ip-portfolio
 toggle u_apb uart_(rxd|txd)(\[|:) # UART pins: IP function, closed at 100% by its own bench in open-ip-portfolio
 branch u_apb cond_(then|else) \S*chi_mesh_soc_apb_subsys\.sv:\d+$ # device-model pin hookups (open-drain lines): IP function, see the IP pin waivers
