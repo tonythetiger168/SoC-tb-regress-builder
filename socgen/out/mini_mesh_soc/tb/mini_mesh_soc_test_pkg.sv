@@ -406,7 +406,7 @@ package mini_mesh_soc_test_pkg;
       // APB VIP completers: multi-beat bursts with random data, so every word
       // of the peripheral port's read chunk carries data
       for (int i = 0; i < NAPB_VIP; i++)
-        for (int k = 0; k < 8; k++) begin
+        for (int k = 0; k < 16; k++) begin
           run_item(first_vip(), 1, apb_vip_base(i) + 32'h100, 8, 2, AXI4_INCR);
           run_item(first_vip(), 0, apb_vip_base(i) + 32'h100, 8, 2, AXI4_INCR);
         end
@@ -606,6 +606,98 @@ package mini_mesh_soc_test_pkg;
               end
             join_none
           end
+        wait fork;
+      end
+      // link fill: every full AXI4 master at once sends one port a 64-beat
+      // read (8 request flits in 8 cycles) and 8 single-beat writes (one
+      // flit per W beat), and 8 single reads to the next port, so two
+      // masters' flit trains meet at one router output and its inputs fill
+      // up (the masters' 16 chunks in flight are just enough for 8 queued)
+      begin
+        logic [31:0] apb = NAPB_VIP ? apb_vip_base(0) + 32'h200 : empty_slot();
+        for (int si = 0; si < NS; si++) begin
+          for (int i = 0; i < ms.size(); i++) begin
+            automatic int mi = ms[i], s = si, ii = i, t = (si + 1) % NS;
+            if (M_PROTO[mi] != "axi4") continue;
+            if (S_KIND[t] == "apb_bridge") t = (t + 1) % NS;
+            fork
+              if (S_KIND[s] == "apb_bridge") run_item(mi, 0, apb + 32'h200, 64, 2, AXI4_INCR);
+              else run_item(mi, 0, (PATH_ADDR[mi][s] & ~32'hFFF) | 32'hC00, 64, 2, AXI4_INCR);
+            join_none
+            for (int k = 0; k < 8; k++) begin
+              automatic int kk = k;
+              fork
+                if (S_KIND[s] == "apb_bridge") run_item(mi, 1, apb + 32'h40 * (ii + 1) + 4 * kk, 1, 2, AXI4_INCR);
+                else run_item(mi, 1, (PATH_ADDR[mi][s] & ~32'h3F) + 4 * kk, 1, 2, AXI4_INCR);
+                run_item(mi, 0, ((PATH_ADDR[mi][t] & ~32'hFFF) | 32'hC00) + 4 * kk, 1, 2, AXI4_INCR);
+              join_none
+            end
+          end
+          wait fork;
+        end
+      end
+      // APB port: two-chunk writes from every master at once (MAXB bursts x 2
+      // chunks each), so the slave NI's write queue holds more than 16 chunks
+      if (NAPB_VIP) begin
+        for (int i = 0; i < ms.size(); i++)
+          for (int k = 0; k < 4; k++) begin
+            automatic int mi = ms[i], ii = i, kk = k;
+            fork
+              run_item(mi, 1, apb_vip_base(0) + 32'h400 + 32'h100 * ii + 32'h40 * kk,
+                       M_PROTO[mi] == "axi4" ? 16 : 1, 2, AXI4_INCR);
+            join_none
+          end
+        wait fork;
+      end
+      // router fill: masters split in two groups, each group hammering the
+      // slave ports on one router (single reads and writes, zero latency), so
+      // the response flits of one router's slaves leave it back to back and
+      // meet the other group's traffic on the way
+      for (int ra = 0; ra < noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y; ra++)
+        for (int rb = 0; rb < noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y; rb++)
+          for (int par = 0; par < 2; par++) begin
+            for (int i = 0; i < ms.size(); i++) begin
+              int r = (i % 2 == par) ? ra : rb;
+              int ss[$];
+              for (int x = 0; x < NS; x++)
+                if (S_KIND[x] != "apb_bridge" && noc_cfg_pkg::EP_Y[NM + x] * noc_cfg_pkg::MESH_X +
+                    noc_cfg_pkg::EP_X[NM + x] == r) ss.push_back(x);
+              if (ss.size() == 0) continue;
+              for (int k = 0; k < 12; k++) begin
+                automatic int mi = ms[i], kk = k, s = ss[k % ss.size()];
+                if (M_PROTO[mi] != "axi4" && k > 1) break;
+                fork
+                  if (kk < 8) run_item(mi, 0, ((PATH_ADDR[mi][s] & ~32'hFFF) | 32'hC00) + 4 * kk, 1, 2, AXI4_INCR);
+                  else run_item(mi, 1, (PATH_ADDR[mi][s] & ~32'h3F) + 4 * kk, 1, 2, AXI4_INCR);
+                join_none
+              end
+            end
+            wait fork;
+          end
+      // random link fill: random target pairs, burst mixes and start skews,
+      // so the flit trains of different masters line up at some router
+      for (int round = 0; round < 800; round++) begin
+        int s1 = $urandom_range(NS - 1), s2 = $urandom_range(NS - 1);
+        if (S_KIND[s1] == "apb_bridge") s1 = (s1 + 1) % NS;
+        if (S_KIND[s2] == "apb_bridge") s2 = (s2 + 1) % NS;
+        for (int i = 0; i < ms.size(); i++) begin
+          automatic int mi = ms[i], d = $urandom_range(8), s = $urandom_range(1) ? s1 : s2;
+          automatic int nr = $urandom_range(2), nw = $urandom_range(8), n1 = $urandom_range(8) * $urandom_range(1);
+          if (M_PROTO[mi] != "axi4") begin nr = 0; nw = nw % 2; n1 = n1 % 2; end
+          for (int k = 0; k < nr + nw + n1; k++) begin
+            automatic int kk = k;
+            fork begin
+              #(d * TCK * 1ns);
+              if (kk >= nr + nw) begin
+                int t = (s + 1 + kk) % NS;
+                if (S_KIND[t] == "apb_bridge") t = (t + 1) % NS;
+                run_item(mi, 0, ((PATH_ADDR[mi][t] & ~32'hFFF) | 32'hC00) + 4 * kk, 1, 2, AXI4_INCR);
+              end
+              else if (kk < nr) run_item(mi, 0, ((PATH_ADDR[mi][s] & ~32'hFFF) | 32'hC00) + 32'h100 * kk, 64, 2, AXI4_INCR);
+              else run_item(mi, 1, (PATH_ADDR[mi][s] & ~32'h3F) + 4 * (kk - nr), 1, 2, AXI4_INCR);
+            end join_none
+          end
+        end
         wait fork;
       end
       foreach (env.cfg.s_cfg[i]) env.cfg.s_cfg[i].access_latency = acc[i];
