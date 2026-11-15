@@ -296,6 +296,9 @@ def generate(m, out, ip_root, spec_path, write_repo_files=True, vip_root=None):
                     f.write(f"{m.name} {m.name}_{x.test}_test {x.seeds}"
                             f"{(' ' + x.plusargs) if x.plusargs else ''}\n")
             written.append(p)
+        ext_src = sorted({f for x in m.masters if x.kind == "rtl"
+                          for f in ([x.rtl.filelist] if x.rtl.filelist else []) + x.rtl.files
+                          if f.startswith("ext/")})
         p = os.path.join(ROOT, "regress", "suites", f"{m.name}.yaml")
         first = next(iter(m.lists))
         lists = "".join(f"  {'default' if ln == first else ln}: regress/{m.name}_{ln}.txt\n" for ln in m.lists)
@@ -306,7 +309,10 @@ def generate(m, out, ip_root, spec_path, write_repo_files=True, vip_root=None):
                     f"list:\n{lists}"
                     f"cov_include: ['{rel_out}/rtl/*']\n"
                     + (f"requires: [{ORCA_RTL[-1]}]\nfallback: {{filelist: {rel_out}/sim/files_open.f}}\n"
-                       if orca else ""))
+                       if orca else
+                       # RTL masters from the private repos (fetched into ext/): the bench was
+                       # generated with them, so without them the suite is reported as not run
+                       f"requires: [{', '.join(ext_src)}]\n" if ext_src else ""))
         written.append(p)
     return written
 
@@ -523,6 +529,15 @@ def _mesh_cov_waivers(m):
                 elif all(v >> b & 1 for v in rrv):
                     T(R, f"rr\\[{p}\\]\\[{b}\\]:1->0", "noc_router_open\\.sv$",
                       f"router {n} output {p}: round-robin pointer takes {sorted(rrv)} only")
+        # an input whose flits all eject here, into a local output nothing else feeds:
+        # the ejection port is always ready, so the FIFO drains a flit every cycle
+        # one arrives and never holds two
+        for p in range(4):
+            outs = {o for (dd, r, i, o) in hops if r == n and i == p}
+            if outs == {4} and {i for (dd, r, i, o) in hops if r == n and o == 4} == {p}:
+                T(R, f"g_in\\[{p}\\]\\.cnt\\[[1-9]\\]", "noc_router_open\\.sv$",
+                  f"router {n} input {p} only feeds the local output, which no other input uses and whose "
+                  "ejection is always ready: the FIFO never holds more than one flit")
         # dir_of() arms and output muxes that need a neighbour on that side
         arm = {2: "> X_POS) r = 2", 3: "< X_POS) r = 3", 0: "> Y_POS) r = 0", 1: "< Y_POS) r = 1"}
         mux = {d: f"assign {dname[d]}_tx_valid" for d in range(4)}

@@ -396,7 +396,7 @@ package tv8k_soc_mesh_test_pkg;
         for (int k = 0; k < 8; k++) run_item(mi, 0, a + 1 + 2 * (k % 2), 1, 0, AXI4_INCR);
         for (int k = 0; k < 4; k++) run_item(mi, 0, a + 32'h2, 1, 1, AXI4_INCR);
         for (int k = 0; k < 4; k++) run_item(mi, 0, a, 1, 2, AXI4_INCR);
-        if (!ahb) for (int k = 0; k < 4; k++) run_item(mi, 1, a + 32'h100, 16, 2, AXI4_INCR, 1);
+        if (!ahb) for (int k = 0; k < 4; k++) run_item(mi, 1, a + 32'h100, 16, 2, AXI4_INCR, 2 + k);
         if (M_PROTO[mi] == "axi4") begin
           for (int k = 0; k < 4; k++) run_item(mi, 0, a, 256, 2, AXI4_INCR);
           for (int k = 0; k < 4; k++) run_item(mi, 0, a, 1, 2, AXI4_INCR);
@@ -437,10 +437,13 @@ package tv8k_soc_mesh_test_pkg;
     endfunction
 
     task run_item(int mi, bit wr, logic [31:0] a, int beats, bit [2:0] size, axi4_burst_e burst,
-                  bit partial = 0);
+                  int partial = 0);
       axi4_item t = axi4_api::make(wr, a, beats, size, burst, 8'($urandom_range((1 << ID_WIDTH) - 1, 0)));
       t.prot = 3'($urandom);
-      if (partial) foreach (t.strb[i]) t.strb[i] = t.lanes(i) & 4'($urandom_range(14, 1));
+      // partial 1: random strobes; partial 2+k: beat i drops byte (i + k) % 4, so
+      // passes k = 0..3 set and clear every byte lane of every chunk word
+      if (partial == 1) foreach (t.strb[i]) t.strb[i] = t.lanes(i) & 4'($urandom_range(14, 1));
+      else if (partial > 1) foreach (t.strb[i]) t.strb[i] = t.lanes(i) & ~(4'h1 << ((i + partial - 2) % 4));
       axi4_api::run(env.m_agent[mi].sqr, t);
     endtask
 
