@@ -110,8 +110,7 @@ module noc_hnf
   wire         can_push = (oq_cnt < 3'(OQ));
 
   assign inj_valid = (oq_cnt != 0);
-  assign inj_flit  = mk_flit(oq[oq_rp], SELF,
-                             (oq[oq_rp].op == OP_RD || oq[oq_rp].op == OP_WR || oq[oq_rp].op == OP_CSNP) ? VC_REQ : VC_RSP);
+  assign inj_flit  = mk_flit(oq[oq_rp], SELF);
   assign ej_ready  = 1'b1;
 
   pkt_t ej;

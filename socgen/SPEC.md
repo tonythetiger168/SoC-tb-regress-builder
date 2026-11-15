@@ -39,7 +39,7 @@ mesh, 32 LPDDR5 ports) and `specs/mini_soc.yaml` (small, for CI).
 | `model` | `behavioral` | `behavioral`: the TB's NoC component routes the traffic. `rtl`: tb_top instantiates `rtl_module` and the component is not built. `mesh`: socgen generates the NoC RTL (`<soc>_noc`, see "Generated NoC" below) and tb_top instantiates it. |
 | `rtl_module` | | DUT module name for `model: rtl` |
 | `router` | `orca` | `model: mesh`: `orca` = xuanji-core `orca_noc_router` (private, fetched into `ext/` by `scripts/fetch_private_ip.sh`; 2-bit coordinates, so at most 4x4); without the fetch, or with `open`, the open `rtl/noc/noc_router_open.sv` (same ports and routing, no VCs, any mesh size) |
-| `buf_depth`, `num_vc` | 8, 4 | `model: mesh`: router input FIFO depth and orca virtual channels |
+| `buf_depth`, `num_vc` | 8, 4 | `model: mesh`: router input FIFO depth and orca virtual channels. `num_vc` must be 4: each packet travels on the VC of its channel, VC0 = requests (AMBA read / write chunks, CHI REQ), VC1 = responses (AMBA write responses, CHI RSP), VC2 = CHI SNP, VC3 = data (AMBA read data, CHI DAT), so a snoop or a response is never stuck behind a request. `noc_router_open` has no VCs (one FIFO per input) |
 | `ni` | | `model: mesh`: `max_bursts` (4, AXI bursts per direction a master NI accepts), `max_chunks` (8, 32-byte chunks per direction in flight per master), `slave_outstanding` (4, bursts a slave NI keeps open at its slave). Powers of two, 2..32 |
 
 With `model: mesh` the `timing` key is not used: the ideal latency tables come

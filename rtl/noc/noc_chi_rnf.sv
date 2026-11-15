@@ -508,4 +508,16 @@ module noc_chi_rnf
       endcase
     end
   end
+
+`ifndef SYNTHESIS
+  // DCT SnpUniqueFwd: the owner gives the line up (I) and forwards UD_PD when it
+  // was dirty, UC when clean; the requester fills in the forwarded state
+  a_ufwd_owner: assert property (@(posedge clk) disable iff (!rst_n)
+    sst == S_IDLE && snp_pop && sh && sn.opcode == SNP_UNIQUEFWD |=>
+      cs[s_idx] == CS_I && s_fresp == ($past(sud) ? RESP_UD_PD : RESP_UC));
+  c_ufwd_dirty: cover property (@(posedge clk) disable iff (!rst_n)
+    sst == S_IDLE && snp_pop && sn.opcode == SNP_UNIQUEFWD && sud);
+  c_ufwd_clean: cover property (@(posedge clk) disable iff (!rst_n)
+    sst == S_IDLE && snp_pop && sn.opcode == SNP_UNIQUEFWD && sh && !sud);
+`endif
 endmodule

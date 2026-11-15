@@ -241,6 +241,11 @@ endmodule
         self.assertRaisesRegex(SpecError, "out and oe go together", self._dev_spec,
                                {"model": "x", "files": ["x.sv"], "inout": [{"pin": "dat", "out": "q"}]})
 
+    def test_mesh_needs_four_vcs(self):
+        r = raw("mini_mesh_soc.yaml")
+        r["noc"]["num_vc"] = 2
+        self.assertRaisesRegex(SpecError, "noc.num_vc: 4", spec.elaborate, r)
+
     def test_periph_slave_needs_ip_peripheral(self):
         r = raw("mini_soc.yaml")
         r["slaves"].insert(0, {"name": "xip", "kind": "periph", "periph": "nope", "base": 0x3000_0000,

@@ -381,7 +381,7 @@ module noc_ni_mst
   // ===========================================================================
   assign inj_sel_rd = rq_v && (inj_pref_rd || !wq_v);
   assign inj_valid  = rq_v || wq_v;
-  assign inj_flit   = mk_flit(inj_sel_rd ? rq_pkt : wq_pkt, SELF, VC_REQ);
+  assign inj_flit   = mk_flit(inj_sel_rd ? rq_pkt : wq_pkt, SELF);
   always_ff @(posedge clk or negedge rst_n)
     if (!rst_n) inj_pref_rd <= 1'b1;
     else if (inj_valid && inj_ready) inj_pref_rd <= !inj_sel_rd;

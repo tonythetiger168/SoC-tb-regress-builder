@@ -52,8 +52,7 @@ module noc_d2d_gw
   assign tx_valid  = (tx_cnt != 0);
   assign tx_data   = 512'(txq[tx_rp]);
   assign inj_valid = (rx_cnt != 0);
-  assign inj_flit  = mk_flit(rxq[rx_rp], SELF,
-                             (rxq[rx_rp].op == OP_RD || rxq[rx_rp].op == OP_WR) ? VC_REQ : VC_RSP);
+  assign inj_flit  = mk_flit(rxq[rx_rp], SELF);
   assign tx_level  = tx_cnt;
   assign rx_level  = rx_cnt;
 

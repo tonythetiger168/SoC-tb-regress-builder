@@ -8,8 +8,8 @@ toggle \S+ out_r\[4\]:1->0\S* \S*noc_router_open\.sv$ # local output: every NI e
 branch \.u_mesh(_d\S+)? if \S*rtl/noc/noc_mesh\.sv:117$ # no NI ever deasserts ej_ready
 line \.u_mesh(_d\S+)? \S+ \S*rtl/noc/noc_mesh\.sv:(47|48|49|50|51|52|53|54)$ # nb(): elaboration-time neighbour function (generate localparams), never called at run time
 branch \.u_mesh(_d\S+)? \S+ \S*rtl/noc/noc_mesh\.sv:(47|48|49|50|51|52|53|54)$ # nb(): elaboration-time neighbour function
-line noc_cfg_pkg \S+ \S*/noc_cfg_pkg\.sv:(59|60|61|62|63|64|65|66|67|68|69|70|71|72|73|74|75|76)$ # ep_name() names endpoints in messages only
-line noc_cfg_pkg \S+ \S*/noc_cfg_pkg\.sv:(104|105|106|107|108)$ # hn_ep(): CHI home lookup, no CHI home nodes here
+line noc_cfg_pkg \S+ \S*/noc_cfg_pkg\.sv:(63|64|65|66|67|68|69|70|71|72|73|74|75|76|77|78|79|80)$ # ep_name() names endpoints in messages only
+line noc_cfg_pkg \S+ \S*/noc_cfg_pkg\.sv:(108|109|110|111|112)$ # hn_ep(): CHI home lookup, no CHI home nodes here
 line \S+ case \S*rtl/noc/noc_ahb2axi[.]sv:121$ # FSM default arm: every state encoding in use is decoded
 line \S+ case \S*rtl/noc/noc_axi2ahb[.]sv:138$ # FSM default arm: every state encoding in use is decoded
 line \S+ case \S*rtl/noc/noc_axi2lite[.]sv:147$ # FSM default arm: every state encoding in use is decoded
@@ -124,8 +124,8 @@ branch \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]s
 toggle \.u_mesh_d0 g_r\[3\]\.pick\[3\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 node mux picks among [10, 11, 12] only
 toggle \.u_mesh_d0 g_r\[3\]\.rr\[3\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 node mux pointer takes [11, 12] only
 toggle \.u_mesh_d1 g_r\[3\]\.rr\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 node mux pointer takes [4, 6, 8] only
-branch \.u_gw\d+ if \S*rtl/noc/noc_d2d_gw[.]sv:72$ # overflow check: the queues hold every flit all masters can have in flight
-branch \.u_gw\d+ if \S*rtl/noc/noc_d2d_gw[.]sv:79$ # overflow check: the queues hold every flit all masters can have in flight
+branch \.u_gw\d+ if \S*rtl/noc/noc_d2d_gw[.]sv:71$ # overflow check: the queues hold every flit all masters can have in flight
+branch \.u_gw\d+ if \S*rtl/noc/noc_d2d_gw[.]sv:78$ # overflow check: the queues hold every flit all masters can have in flight
 toggle \.u_mesh_d0 (ej_valid|inj_ready)\[(2|3|4|5|6|7|9|12)\]\S* \S*rtl/noc/noc_mesh\.sv$ # endpoints on another die are tied off in die 0's mesh
 toggle \.u_mesh_d1 (ej_valid|inj_ready)\[(0|1|8|10|11)\]\S* \S*rtl/noc/noc_mesh\.sv$ # endpoints on another die are tied off in die 1's mesh
 branch \.u_noc if \S*/chiplet_soc_noc[.]sv:431$ # d2d_error: no gateway overflow (queues sized for every flit in flight) and no unrecoverable link error (UCIe Retry recovers the injected errors; link failure is UCIe_top's own function)

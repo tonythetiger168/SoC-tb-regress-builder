@@ -83,7 +83,7 @@ module noc_ni_chi
   end
 
   assign inj_valid   = txdat_valid || txrsp_valid || txreq_valid;
-  assign inj_flit    = mk_flit(tp, SELF, (tp.op == OP_CREQ) ? VC_REQ : VC_RSP);
+  assign inj_flit    = mk_flit(tp, SELF);
   assign txdat_ready = inj_ready;
   assign txrsp_ready = inj_ready && !txdat_valid;
   assign txreq_ready = inj_ready && !txdat_valid && !txrsp_valid;

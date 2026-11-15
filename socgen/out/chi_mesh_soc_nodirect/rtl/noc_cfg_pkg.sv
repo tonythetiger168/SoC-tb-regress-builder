@@ -33,8 +33,12 @@ package noc_cfg_pkg;
   } noc_flit_t;
   localparam int FLIT_W = $bits(noc_flit_t);
 
-  localparam logic [1:0] VC_REQ = 2'd0;
-  localparam logic [1:0] VC_RSP = 2'd1;
+  // virtual channels (one per CHI channel, so a snoop or a response is never
+  // stuck behind a request: the home can always make progress)
+  localparam logic [1:0] VC_REQ = 2'd0;   // AMBA read / write chunks, CHI REQ
+  localparam logic [1:0] VC_RSP = 2'd1;   // AMBA write responses, CHI RSP
+  localparam logic [1:0] VC_SNP = 2'd2;   // CHI SNP
+  localparam logic [1:0] VC_DAT = 2'd3;   // AMBA read data, CHI DAT
 
   // ---------------- endpoints ----------------
   localparam int NM  = 4;
@@ -201,7 +205,19 @@ package noc_cfg_pkg;
   // RespErr
   localparam logic [1:0] RESPERR_OK = 2'b00, RESPERR_DERR = 2'b10, RESPERR_NDERR = 2'b11;
 
-  function automatic noc_flit_t mk_flit(pkt_t p, int src, logic [1:0] vc);
+  // the virtual channel of a packet follows from its opcode
+  function automatic logic [1:0] vc_of(op_e op);
+    logic [1:0] v;
+    unique case (op)
+      OP_RD, OP_WR, OP_CREQ: v = VC_REQ;
+      OP_WRSP, OP_CRSP:      v = VC_RSP;
+      OP_CSNP:               v = VC_SNP;
+      default:               v = VC_DAT;    // OP_RDATA, OP_CDAT
+    endcase
+    return v;
+  endfunction
+
+  function automatic noc_flit_t mk_flit(pkt_t p, int src);
     noc_flit_t f;
     f = '0;
     f.payload = PAYLOAD_W'(p);
@@ -209,7 +225,7 @@ package noc_cfg_pkg;
     f.dest_y  = YB'(EP_Y[local_ep(int'(p.dst_ep), EP_DIE[src])]);
     f.src_x   = XB'(EP_X[src]);
     f.src_y   = YB'(EP_Y[src]);
-    f.vc_id   = vc;
+    f.vc_id   = vc_of(p.op);
     f.ftype   = FT_SINGLE;
     f.valid   = 1'b1;
     return f;

@@ -157,6 +157,9 @@ def elaborate(raw, path="<spec>"):
                 ni=num(t.get("ni_cycles", 1), "ni_cycles"),
                 router=num(t.get("router_cycles", 1), "router_cycles"),
                 link=num(t.get("link_cycles", 1), "link_cycles"))
+    if model == "mesh" and m.noc.num_vc != 4:
+        # the generated NoC puts each CHI channel (REQ, RSP, SNP, DAT) on its own VC
+        raise SpecError(f"noc.num_vc: 4 with noc.model: mesh (REQ, RSP, SNP and DAT each have a VC), got {m.noc.num_vc}")
 
     # ---- chiplet: several dies, one mesh each, joined by a UCIe die-to-die link ----
     ch = raw.get("chiplet")

@@ -92,6 +92,12 @@ module chi_chiplet_soc_tb_top;
   assign m_if[M_CPU1].rid[7:ID_WIDTH] = '0;
   assign m_if[M_NPU].bid[7:ID_WIDTH] = '0;
   assign m_if[M_NPU].rid[7:ID_WIDTH] = '0;
+  // ---------------- CHI coherence invariant (single writer, many readers) ----------------
+  for (genvar i = 0; i < noc_cfg_pkg::CHI_LINES; i++) begin : g_swmr
+    a_swmr: assert property (@(posedge aclk) disable iff (!aresetn) !(
+      (u_cpu0_shim.cs[i] != 2'd0 && u_cpu1_shim.cs[i] != 2'd0 && u_cpu0_shim.ctag[i] == u_cpu1_shim.ctag[i] && (u_cpu0_shim.cs[i][1] || u_cpu1_shim.cs[i][1]))))
+      else $error("coherence: line entry %0d is unique (UC / UD) in one RN-F and valid in another", i);
+  end
   assign s_if[S_DDR0].awid[7:ID_WIDTH] = '0;
   assign s_if[S_DDR0].arid[7:ID_WIDTH] = '0;
   assign s_if[S_DDR0].awlock = 1'b0;

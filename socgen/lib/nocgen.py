@@ -153,8 +153,12 @@ package noc_cfg_pkg;
   }} noc_flit_t;
   localparam int FLIT_W = $bits(noc_flit_t);
 
-  localparam logic [1:0] VC_REQ = 2'd0;
-  localparam logic [1:0] VC_RSP = 2'd1;
+  // virtual channels (one per CHI channel, so a snoop or a response is never
+  // stuck behind a request: the home can always make progress)
+  localparam logic [1:0] VC_REQ = 2'd0;   // AMBA read / write chunks, CHI REQ
+  localparam logic [1:0] VC_RSP = 2'd1;   // AMBA write responses, CHI RSP
+  localparam logic [1:0] VC_SNP = 2'd2;   // CHI SNP
+  localparam logic [1:0] VC_DAT = 2'd3;   // AMBA read data, CHI DAT
 
   // ---------------- endpoints ----------------
   localparam int NM  = {p['nm']};
@@ -311,7 +315,19 @@ package noc_cfg_pkg;
   // RespErr
   localparam logic [1:0] RESPERR_OK = 2'b00, RESPERR_DERR = 2'b10, RESPERR_NDERR = 2'b11;
 
-  function automatic noc_flit_t mk_flit(pkt_t p, int src, logic [1:0] vc);
+  // the virtual channel of a packet follows from its opcode
+  function automatic logic [1:0] vc_of(op_e op);
+    logic [1:0] v;
+    unique case (op)
+      OP_RD, OP_WR, OP_CREQ: v = VC_REQ;
+      OP_WRSP, OP_CRSP:      v = VC_RSP;
+      OP_CSNP:               v = VC_SNP;
+      default:               v = VC_DAT;    // OP_RDATA, OP_CDAT
+    endcase
+    return v;
+  endfunction
+
+  function automatic noc_flit_t mk_flit(pkt_t p, int src);
     noc_flit_t f;
     f = '0;
     f.payload = PAYLOAD_W'(p);
@@ -319,7 +335,7 @@ package noc_cfg_pkg;
     f.dest_y  = YB'(EP_Y[local_ep(int'(p.dst_ep), EP_DIE[src])]);
     f.src_x   = XB'(EP_X[src]);
     f.src_y   = YB'(EP_Y[src]);
-    f.vc_id   = vc;
+    f.vc_id   = vc_of(p.op);
     f.ftype   = FT_SINGLE;
     f.valid   = 1'b1;
     return f;
@@ -583,6 +599,23 @@ def tb_hookup(m):
         L += [f"  assign {M}.bid[7:ID_WIDTH] = '0;", f"  assign {M}.rid[7:ID_WIDTH] = '0;"]
         for n, _, _ in sigs:
             conns.append(f".{x.name}_{n}({sh}_{n})")
+    rnf = [x.name for x in m.masters if x.protocol == "chi"]
+    if len(rnf) > 1:
+        # coherence invariant (single writer, many readers) on the RN-F caches: a
+        # line one RN-F holds UC / UD is held by no other RN-F. The caches are
+        # direct-mapped with the same index, so compare the same entry pairwise.
+        # Catches a wrong final state after a snoop (SnpUnique, SnpUniqueFwd / DCT).
+        pairs = [(a, b) for i, a in enumerate(rnf) for b in rnf[i + 1:]]
+        def both(a, b, i):
+            A, B = f"u_{a}_shim", f"u_{b}_shim"
+            return (f"({A}.cs[{i}] != 2'd0 && {B}.cs[{i}] != 2'd0 && {A}.ctag[{i}] == {B}.ctag[{i}] && "
+                    f"({A}.cs[{i}][1] || {B}.cs[{i}][1]))")
+        L.append("  // ---------------- CHI coherence invariant (single writer, many readers) ----------------")
+        L.append("  for (genvar i = 0; i < noc_cfg_pkg::CHI_LINES; i++) begin : g_swmr")
+        L.append(f"    a_swmr: assert property (@(posedge {m.clock.name}) disable iff (!aresetn) !(")
+        L.append("      " + " ||\n      ".join(both(a, b, "i") for a, b in pairs) + "))")
+        L.append(f"      else $error(\"coherence: line entry %0d is unique (UC / UD) in one RN-F and valid in another\", i);")
+        L.append("  end")
     for t in m.targets:
         S = f"s_if[S_{t.name.upper()}]"
         if t.protocol == "axi4":
