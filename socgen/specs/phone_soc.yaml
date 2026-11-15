@@ -117,12 +117,14 @@ regress:
       - {test: ral,          seeds: 1}
       - {test: path_latency, seeds: 1}
       - {test: traffic,      seeds: 3}
+      - {test: cov,          seeds: 1}
     nightly:
       - {test: smoke,        seeds: 1}
       - {test: ral,          seeds: 2}
       - {test: path_latency, seeds: 1}
       - {test: traffic,      seeds: 10, plusargs: "+SOC_ITEMS=400"}
       - {test: traffic,      seeds: 5,  plusargs: "+SOC_ITEMS=400 +SOC_TIMING=2"}
+      - {test: cov,          seeds: 2}
 
 report:
   latency:

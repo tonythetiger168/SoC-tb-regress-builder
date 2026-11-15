@@ -171,6 +171,7 @@ package ipcam_soc_env_pkg;
     bit  busy [2][NS];                // [0] read, [1] write
     bit  pend [2][NS][NM];
     longint unsigned n_rd [NM], n_wr [NM], bytes [NM];
+    bit  ready_after_valid;           // READY to masters (AR/AW/W) and slaves (R/B) only after VALID
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -258,6 +259,7 @@ package ipcam_soc_env_pkg;
         logic [7:0] id, len; logic [31:0] addr; logic [2:0] size, prot; logic [1:0] burst;
         logic [3:0] cache;
         int si, nb, got;
+        if (ready_after_valid) begin clk(); while (!m_vif[mi].arvalid) clk(); end
         m_vif[mi].arready <= 1'b1;
         clk();
         while (!m_vif[mi].arvalid) clk();
@@ -282,6 +284,7 @@ package ipcam_soc_env_pkg;
         clk();
         while (!s_vif[si].arready) clk();
         s_vif[si].arvalid <= 1'b0;
+        if (ready_after_valid) begin clk(); while (!s_vif[si].rvalid) clk(); end
         s_vif[si].rready <= 1'b1;
         got = 0;
         while (got < nb) begin
@@ -321,12 +324,14 @@ package ipcam_soc_env_pkg;
         bit last;
         int si, nb;
         // AW, then the W beats (the master VIP drives both at once)
+        if (ready_after_valid) begin clk(); while (!m_vif[mi].awvalid) clk(); end
         m_vif[mi].awready <= 1'b1;
         clk();
         while (!m_vif[mi].awvalid) clk();
         id = m_vif[mi].awid; addr = m_vif[mi].awaddr; len = m_vif[mi].awlen; size = m_vif[mi].awsize;
         burst = m_vif[mi].awburst; prot = m_vif[mi].awprot; cache = m_vif[mi].awcache;
         m_vif[mi].awready <= 1'b0;
+        if (ready_after_valid) begin clk(); while (!m_vif[mi].wvalid) clk(); end
         m_vif[mi].wready <= 1'b1;
         last = 0;
         wd.delete(); ws.delete();
@@ -363,6 +368,7 @@ package ipcam_soc_env_pkg;
             while (!s_vif[si].wready) clk();
           end
           s_vif[si].wvalid <= 1'b0; s_vif[si].wlast <= 1'b0;
+          if (ready_after_valid) begin clk(); while (!s_vif[si].bvalid) clk(); end
           s_vif[si].bready <= 1'b1;
           clk();
           while (!s_vif[si].bvalid) clk();

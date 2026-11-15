@@ -6,3 +6,4 @@ mini_soc mini_soc_traffic_test 2
 mini_soc mini_soc_traffic_test 1 +SOC_TIMING=2
 mini_soc mini_soc_scenario_test 1 +SCENARIO=display_only
 mini_soc mini_soc_scenario_test 1 +SCENARIO=blit
+mini_soc mini_soc_cov_test 1
