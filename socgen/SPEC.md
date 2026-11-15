@@ -144,8 +144,15 @@ the model pulls `p` low, and `p_m_lo` gets `~p`. Otherwise `p` keeps its pull-up
 
 `ral_master` (master whose sequencer runs the RAL frontdoor, default the
 first master), and `lists.<listname>[]` of `test`, `seeds`, `plusargs`.
-Tests: `smoke`, `ral`, `path_latency`, `traffic`. Each list is written to
-`regress/<soc>_<listname>.txt` in the format `regress/regress.py` reads.
+Tests: `smoke`, `ral`, `path_latency`, `traffic`, `scenario`, `cov`. Each list
+is written to `regress/<soc>_<listname>.txt` in the format `regress/regress.py`
+reads. `cov` is the coverage-closure test: every master drives every burst
+shape (FIXED, WRAP, narrow, unaligned, partial strobes, 64-beat) to one
+target in turn, every RTL slave sees an address-bit walk and 256-beat bursts,
+the APB port sees 256-beat and racing bursts, the RAL runs a bit-bash plus a
+read of every register, and the NoC and slave VIPs raise READY only after
+VALID so the handshake-wait covers fire. Run it with `make cov` (see the
+README).
 
 ## `report.latency`
 
@@ -168,6 +175,7 @@ Tests: `smoke`, `ral`, `path_latency`, `traffic`. Each list is written to
 | `sim/files.f`, `socgen.mk` | file list; `make build TB=<soc>` works from the repo root |
 | `regress/<soc>_<list>.txt` | regression lists |
 | `doc/<soc>.md`, `doc/<soc>_memmap.h`, `doc/<soc>_paths.csv` | address map, mesh placement, ideal latency per path, C header |
+| `doc/<soc>_cov_waivers.txt` | coverage points that the SoC cannot reach by construction (constant APB-window address bits, unused ID bits, OKAY/SLVERR-only bridge responses, register bits a field map never drives, IP pins left to the IP's own bench), one regex per line with its reason; `scripts/cov/run_cov.sh` reads it |
 
 ## Path latency report
 

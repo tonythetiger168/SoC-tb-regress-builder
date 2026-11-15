@@ -187,6 +187,7 @@ package phone_soc_env_pkg;
     bit  busy [2][NS];                // [0] read, [1] write
     bit  pend [2][NS][NM];
     longint unsigned n_rd [NM], n_wr [NM], bytes [NM];
+    bit  ready_after_valid;           // READY to masters (AR/AW/W) and slaves (R/B) only after VALID
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -274,6 +275,7 @@ package phone_soc_env_pkg;
         logic [7:0] id, len; logic [31:0] addr; logic [2:0] size, prot; logic [1:0] burst;
         logic [3:0] cache;
         int si, nb, got;
+        if (ready_after_valid) begin clk(); while (!m_vif[mi].arvalid) clk(); end
         m_vif[mi].arready <= 1'b1;
         clk();
         while (!m_vif[mi].arvalid) clk();
@@ -291,13 +293,14 @@ package phone_soc_env_pkg;
         end
         clk(REQ_LAT[mi][si]);
         acquire(0, si, mi);
-        if (S_KIND[si] != "apb_bridge") clk(S_ACCESS[si]);
+        if (S_KIND[si] != "apb_bridge" && S_KIND[si] != "periph") clk(S_ACCESS[si]);   // periph: the IP takes its own time
         s_vif[si].arid <= id; s_vif[si].araddr <= addr; s_vif[si].arlen <= len; s_vif[si].arsize <= size;
         s_vif[si].arburst <= burst; s_vif[si].arprot <= prot; s_vif[si].arcache <= cache;
         s_vif[si].arlock <= 1'b0; s_vif[si].arvalid <= 1'b1;
         clk();
         while (!s_vif[si].arready) clk();
         s_vif[si].arvalid <= 1'b0;
+        if (ready_after_valid) begin clk(); while (!s_vif[si].rvalid) clk(); end
         s_vif[si].rready <= 1'b1;
         got = 0;
         while (got < nb) begin
@@ -337,12 +340,14 @@ package phone_soc_env_pkg;
         bit last;
         int si, nb;
         // AW, then the W beats (the master VIP drives both at once)
+        if (ready_after_valid) begin clk(); while (!m_vif[mi].awvalid) clk(); end
         m_vif[mi].awready <= 1'b1;
         clk();
         while (!m_vif[mi].awvalid) clk();
         id = m_vif[mi].awid; addr = m_vif[mi].awaddr; len = m_vif[mi].awlen; size = m_vif[mi].awsize;
         burst = m_vif[mi].awburst; prot = m_vif[mi].awprot; cache = m_vif[mi].awcache;
         m_vif[mi].awready <= 1'b0;
+        if (ready_after_valid) begin clk(); while (!m_vif[mi].wvalid) clk(); end
         m_vif[mi].wready <= 1'b1;
         last = 0;
         wd.delete(); ws.delete();
@@ -365,7 +370,7 @@ package phone_soc_env_pkg;
         end else begin
           clk(REQ_LAT[mi][si]);
           acquire(1, si, mi);
-          if (S_KIND[si] != "apb_bridge") clk(S_ACCESS[si]);
+          if (S_KIND[si] != "apb_bridge" && S_KIND[si] != "periph") clk(S_ACCESS[si]);   // periph: the IP takes its own time
           s_vif[si].awid <= id; s_vif[si].awaddr <= addr; s_vif[si].awlen <= len; s_vif[si].awsize <= size;
           s_vif[si].awburst <= burst; s_vif[si].awprot <= prot; s_vif[si].awcache <= cache;
           s_vif[si].awlock <= 1'b0; s_vif[si].awvalid <= 1'b1;
@@ -379,6 +384,7 @@ package phone_soc_env_pkg;
             while (!s_vif[si].wready) clk();
           end
           s_vif[si].wvalid <= 1'b0; s_vif[si].wlast <= 1'b0;
+          if (ready_after_valid) begin clk(); while (!s_vif[si].bvalid) clk(); end
           s_vif[si].bready <= 1'b1;
           clk();
           while (!s_vif[si].bvalid) clk();
@@ -439,7 +445,7 @@ package phone_soc_env_pkg;
         end
         return;
       end
-      if (S_KIND[si] == "rtl") begin      // RTL slave: no reference model here
+      if (S_KIND[si] == "rtl" || S_KIND[si] == "periph") begin   // RTL slave: no reference model here
         n_checks++;
         return;
       end
@@ -511,7 +517,7 @@ package phone_soc_env_pkg;
       t_last = t.t_end;
       $display("LAT %s %s %s %0d", M_NAME[t.port], s, t.write ? "W" : "R", cyc);
       if (cfg.zero_load_check && si != S_DEF) begin
-        int lo = REQ_LAT[t.port][si] + RSP_LAT[t.port][si] + (S_KIND[si] == "apb_bridge" ? 0 : S_ACCESS[si]);
+        int lo = REQ_LAT[t.port][si] + RSP_LAT[t.port][si] + ((S_KIND[si] == "apb_bridge" || S_KIND[si] == "periph") ? 0 : S_ACCESS[si]);
         int hi = IDEAL_LAT[t.port][si] + cfg.zero_load_slack + (t.write ? 2 : 1) * int'(t.len);
         if (cyc < lo)
           `uvm_error("LAT", $sformatf("%s -> %s %s: %0d cycles is below the NoC minimum %0d",
