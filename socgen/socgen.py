@@ -407,33 +407,46 @@ def _rtl_line(f, text, nth=0):
 
 
 def _mesh_flows(m):
-    """(router, in port, out port) hops of every flit the AMBA mesh carries:
-    master -> slave requests and slave -> master responses, XY routed.
-    Ports: 0 N (y+1), 1 S, 2 E (x+1), 3 W, 4 local (noc_router_open)."""
-    nodes = [tuple(x.node[:2]) for x in m.masters] + [tuple(t.node[:2]) for t in m.targets]
-    nm = len(m.masters)
-    pairs = [(a, b) for a in range(nm) for b in range(nm, len(nodes))]
-    pairs += [(b, a) for a, b in pairs]
+    """(die, router, in port, out port) hops of every flit the AMBA mesh
+    carries: master -> slave requests and slave -> master responses, XY
+    routed; a flit for the other die goes to this die's gateway and leaves the
+    other die's gateway. Ports: 0 N (y+1), 1 S, 2 E (x+1), 3 W, 4 local."""
+    nodes = [(x.die if m.chiplet.dies > 1 else 0, x.node[0], x.node[1]) for x in m.masters]
+    nodes += [(t.die if m.chiplet.dies > 1 else 0, t.node[0], t.node[1]) for t in m.targets]
+    gws = [(d, g[0], g[1]) for d, g in enumerate(m.chiplet.gateways)] if m.chiplet.dies > 1 else []
+    nodes += gws
+    nm, ns = len(m.masters), len(m.targets)
     hops = set()
-    for a, b in pairs:
-        (x, y), (dx, dy) = nodes[a], nodes[b]
+
+    def route(die, x, y, dx, dy):
         inp = 4
         while True:
             out = 2 if dx > x else 3 if dx < x else 0 if dy > y else 1 if dy < y else 4
-            hops.add((y * m.noc.cols + x, inp, out))
+            hops.add((die, y * m.noc.cols + x, inp, out))
             if out == 4:
-                break
+                return
             x, y = {2: (x + 1, y), 3: (x - 1, y), 0: (x, y + 1), 1: (x, y - 1)}[out]
             inp = {2: 3, 3: 2, 0: 1, 1: 0}[out]          # entering from the opposite side
+    pairs = [(a, b) for a in range(nm) for b in range(nm, nm + ns)]
+    for a, b in pairs + [(b, a) for a, b in pairs]:
+        (da, xa, ya), (db, xb, yb) = nodes[a], nodes[b]
+        if da == db:
+            route(da, xa, ya, xb, yb)
+        else:
+            route(da, xa, ya, gws[da][1], gws[da][2])
+            route(db, gws[db][1], gws[db][2], xb, yb)
     return nodes, hops
 
 
 def _mesh_cov_waivers(m):
     """noc.model mesh (rtl/noc/ NIs, adapters, open router): what the generated
-    AMBA NoC structurally cannot do in this SoC. CHI meshes are not covered here."""
+    AMBA NoC structurally cannot do in this SoC. CHI meshes are not covered here,
+    and chiplet (multi-die) benches are closed by the NoC generator work: the
+    die/gateway rules below are kept for it but stay off until it enables them."""
     L = []
     if m.chi.rn or m.chiplet.dies > 1:
         return L
+    MESH = "\\.u_mesh(_d\\S+)?"
     nm = len(m.masters)
     ni = m.noc_ni
     lg = lambda n: max(1, (n - 1).bit_length())           # noqa: E731  clog2
@@ -444,20 +457,23 @@ def _mesh_cov_waivers(m):
     # ---- whole NoC ----
     T(ALL, "rst_n:1->0", "rtl/noc/noc_\\w+\\.sv$|" + NOC, "power-on reset only: the benches do not reset mid-run")
     T(ALL, "(ej_ready(\\[\\d+\\])?|l_tx_r\\[\\d+\\]|local_tx_ready):1->0",
-      "rtl/noc/noc_(ni_slv|ni_mst|mesh|router_open)\\.sv$|" + NOC,
+      "rtl/noc/noc_(ni_slv|ni_mst|mesh|router_open|d2d_gw)\\.sv$|" + NOC,
       "every NI ejects at once (master NI: a response slot per chunk in flight; slave NI: request queues "
       "sized for every chunk all masters can have in flight), so the local output is always ready")
     T(ALL, "out_r\\[4\\]:1->0", "noc_router_open\\.sv$", "local output: every NI ejects at once (see ej_ready)")
-    L.append(f"branch \\.u_mesh if \\S*rtl/noc/noc_mesh\\.sv:{_rtl_line('noc_mesh.sv', '!ej_ready[e]) l_tx_r')}$ "
+    L.append(f"branch {MESH} if \\S*rtl/noc/noc_mesh\\.sv:{_rtl_line('noc_mesh.sv', '!ej_ready[e]) l_tx_r')}$ "
              "# no NI ever deasserts ej_ready")
     nb0 = _rtl_line("noc_mesh.sv", "function automatic int nb(")
-    L.append(f"line \\.u_mesh \\S+ \\S*rtl/noc/noc_mesh\\.sv:({rng(nb0, nb0 + 8)})$ "
+    L.append(f"line {MESH} \\S+ \\S*rtl/noc/noc_mesh\\.sv:({rng(nb0, nb0 + 8)})$ "
              "# nb(): elaboration-time neighbour function (generate localparams), never called at run time")
-    L.append(f"branch \\.u_mesh \\S+ \\S*rtl/noc/noc_mesh\\.sv:({rng(nb0, nb0 + 8)})$ "
+    L.append(f"branch {MESH} \\S+ \\S*rtl/noc/noc_mesh\\.sv:({rng(nb0, nb0 + 8)})$ "
              "# nb(): elaboration-time neighbour function")
-    L.append("line noc_cfg_pkg \\S+ \\S*/noc_cfg_pkg\\.sv:\\d+$ "
-             "# noc_cfg_pkg functions: ep_name() is for messages only, hn_ep()/coherent() are CHI-only; "
-             "the run-time decode lives in the NIs (covered there)")
+    pkg = nocgen.cfg_pkg(m).split("\n")
+    for fn, why in (("ep_name(", "ep_name() names endpoints in messages only"),
+                    ("hn_ep(", "hn_ep(): CHI home lookup, no CHI home nodes here")):
+        a = next(i for i, ln in enumerate(pkg) if "function automatic" in ln and fn in ln) + 1
+        b = next(i for i in range(a, len(pkg)) if "endfunction" in pkg[i]) + 1
+        L.append(f"line noc_cfg_pkg \\S+ \\S*/noc_cfg_pkg\\.sv:({rng(a, b + 1)})$ # {why}")
     for f, txt in (("noc_ahb2axi.sv", "default: st <= IDLE;"), ("noc_axi2ahb.sv", "default: st <= IDLE;"),
                    ("noc_axi2lite.sv", "default: st <= IDLE;"), ("noc_apb2axi.sv", "default: st <= IDLE;")):
         L.append(f"line \\S+ case \\S*rtl/noc/{f.replace('.', '[.]')}:{_rtl_line(f, txt)}$ "
@@ -473,17 +489,17 @@ def _mesh_cov_waivers(m):
     for n in range(X * Y):
         x, y = n % X, n // X
         edge = [d for d, ok in enumerate((y + 1 < Y, y > 0, x + 1 < X, x > 0)) if not ok]
-        R = f"\\.u_mesh\\.g_r\\[{n}\\]\\.u_rt"
+        R = f"{MESH}\\.g_r\\[{n}\\]\\.u_rt"          # the dies' routers n share one coverage scope
         for d in edge:
-            T("\\.u_mesh", f"(rx_v|tx_v|tx_r|rx_r)\\[{n}\\]\\[{d}\\]", "rtl/noc/noc_mesh\\.sv$",
+            T(MESH, f"(rx_v|tx_v|tx_r|rx_r)\\[{n}\\]\\[{d}\\]", "rtl/noc/noc_mesh\\.sv$",
               f"router {n} [{x}, {y}] {dname[d]} side is the mesh edge (tied off)")
             T(R, f"({dname[d]}_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\\[{d}\\]|"
                  f"g_in\\[{d}\\]\\.\\w+|rr\\[{d}\\]|win\\[{d}\\])", "noc_router_open\\.sv$",
               f"router {n} [{x}, {y}] {dname[d]} port is on the mesh edge: nothing enters or leaves there")
         T(R, "test_en", "noc_router_open\\.sv$", "test_en is tied to 0")
         # inputs / outputs no flit of this SoC uses (XY routing, endpoint placement)
-        used_in = {i for (r, i, o) in hops if r == n}
-        used_out = {o for (r, i, o) in hops if r == n}
+        used_in = {i for (dd, r, i, o) in hops if r == n}
+        used_out = {o for (dd, r, i, o) in hops if r == n}
         for p in range(5):
             if p in edge:
                 continue
@@ -494,7 +510,7 @@ def _mesh_cov_waivers(m):
                 T(R, f"((ov|out_r)\\[{p}\\]|rr\\[{p}\\]|win\\[{p}\\])", "noc_router_open\\.sv$",
                   f"router {n} output {p}: no XY route of this SoC leaves here")
                 continue
-            ins = sorted({i for (r, i, o) in hops if r == n and o == p})
+            ins = sorted({i for (dd, r, i, o) in hops if r == n and o == p})
             rrv = {(i + 1) % 5 for i in ins}
             for b in range(3):
                 if not any(i >> b & 1 for i in ins):
@@ -514,21 +530,44 @@ def _mesh_cov_waivers(m):
                      f"# router {n} [{x}, {y}]: no destination lies {dname[d]} of the mesh edge")
             L.append(f"branch {R} cond_then \\S*rtl/noc/noc_router_open[.]sv:"
                      f"{_rtl_line('noc_router_open.sv', mux[d])}$ # router {n}: {dname[d]} output on the mesh edge")
-        # node mux: the endpoints on this router
-        here = [e for e, nd in enumerate(nodes) if nd == (x, y)]
-        nep = len(nodes)
-        rrv = {(e + 1) % nep for e in here}
-        pick = set(here) | rrv | {0}
-        for b in range(lg(nep)):
-            if not any(v >> b & 1 for v in pick):
-                T("\\.u_mesh", f"g_r\\[{n}\\]\\.pick\\[{b}\\]", "rtl/noc/noc_mesh\\.sv$",
-                  f"router {n} node mux: endpoints {here} only")
-            if not any(v >> b & 1 for v in rrv):
-                T("\\.u_mesh", f"g_r\\[{n}\\]\\.rr\\[{b}\\]", "rtl/noc/noc_mesh\\.sv$",
-                  f"router {n} node mux pointer takes {sorted(rrv)} only")
-            elif all(v >> b & 1 for v in rrv):
-                T("\\.u_mesh", f"g_r\\[{n}\\]\\.rr\\[{b}\\]:1->0", "rtl/noc/noc_mesh\\.sv$",
-                  f"router {n} node mux pointer takes {sorted(rrv)} only")
+        # node mux: the endpoints on this router (per die)
+        for die in range(max(1, m.chiplet.dies)):
+            H = "\\.u_mesh" if m.chiplet.dies < 2 else f"\\.u_mesh_d{die}"
+            here = [e for e, nd in enumerate(nodes) if nd == (die, x, y)]
+            nep = len(nodes)
+            rrv = {(e + 1) % nep for e in here}
+            pick = set(here) | rrv               # (0 before the first injection)
+            for b in range(lg(nep)):
+                if not any(v >> b & 1 for v in pick):
+                    T(H, f"g_r\\[{n}\\]\\.pick\\[{b}\\]", "rtl/noc/noc_mesh\\.sv$",
+                      f"router {n} node mux: endpoints {here} only")
+                elif all(v >> b & 1 for v in pick):
+                    T(H, f"g_r\\[{n}\\]\\.pick\\[{b}\\]:1->0", "rtl/noc/noc_mesh\\.sv$",
+                      f"router {n} node mux picks among {sorted(pick)} only")
+                if not any(v >> b & 1 for v in rrv):
+                    T(H, f"g_r\\[{n}\\]\\.rr\\[{b}\\]", "rtl/noc/noc_mesh\\.sv$",
+                      f"router {n} node mux pointer takes {sorted(rrv)} only")
+                elif all(v >> b & 1 for v in rrv):
+                    T(H, f"g_r\\[{n}\\]\\.rr\\[{b}\\]:1->0", "rtl/noc/noc_mesh\\.sv$",
+                      f"router {n} node mux pointer takes {sorted(rrv)} only")
+    if m.chiplet.dies > 1:
+        for t in ("if (tx_cnt == (QB+1)'(QD) && !tx_pop)", "if (rx_cnt == (QB+1)'(QD) && !rx_pop)"):
+            L.append(f"branch \\.u_gw\\d+ if \\S*rtl/noc/noc_d2d_gw[.]sv:{_rtl_line('noc_d2d_gw.sv', t)}$ "
+                     "# overflow check: the queues hold every flit all masters can have in flight")
+        for die in range(m.chiplet.dies):
+            other = [e for e, nd in enumerate(nodes) if nd[0] != die]
+            T(f"\\.u_mesh_d{die}", f"(ej_valid|inj_ready)\\[({'|'.join(map(str, other))})\\]",
+              "rtl/noc/noc_mesh\\.sv$", f"endpoints on another die are tied off in die {die}'s mesh")
+        L.append(f"branch \\.u_noc if \\S*/{m.name}_noc[.]sv:"
+                 f"{next(i for i, ln in enumerate(nocgen.noc_module(m).split(chr(10))) if 'gw_ovf[0] || gw_ovf[1]' in ln) + 1}$ "
+                 "# d2d_error: no gateway overflow (queues sized for every flit in flight) and no unrecoverable "
+                 "link error (UCIe Retry recovers the injected errors; link failure is UCIe_top's own function)")
+        T("\\.u_gw\\d+", "overflow", "noc_d2d_gw\\.sv$", "the queues hold every flit all masters can have in flight")
+        T("\\.u_phy", "([ab]_sb_(tx|rx)_msg|abs_m\\[\\d+\\]|bas_m\\[\\d+\\])\\[", "noc_d2d_phy\\.sv$",
+          "sideband messages are UCIe_top's link-management codes (IP function, closed by its own bench); "
+          "the PHY model only delays them")
+        T("\\.u_phy", f"n_err\\[({rng(12, 32)})\\]", "noc_d2d_phy\\.sv$",
+          "error-injection counter: bits 12 and up need more than 4096 corrupted flits, beyond a bench run")
     # ---- master NIs (noc_ni_mst, DW = 32) and their adapters ----
     one = [x for x in m.masters if x.protocol in ("axi4lite", "ahb")]
     BR = "(rb\\[\\d+\\]|rh|wh|whb\\.b)"
@@ -546,6 +585,11 @@ def _mesh_cov_waivers(m):
                    f"wc_(data|strb)\\[[1-7]\\]|whb\\.(nchunk|nrsp)\\[[1-7]\\]|(rb_cnt|wb_cnt|wb_pend|rs_cnt|w_infl)\\[[1-9]\\]|"
                    f"s_a[rw]ready:1->0|(r_slot_end|rh_last|wh_lastc):1->0)")
             T(N, pts, "noc_ni_mst\\.sv$", why)
+            T(f"\\.u_{x.name}_ahb", "m_a[rw]ready:1->0", "rtl/noc/noc_ahb2axi\\.sv$", why)
+            if x.protocol == "ahb":
+                L.append(f"branch \\.u_{x.name}_ahb else \\S*rtl/noc/noc_ahb2axi[.]sv:"
+                         f"{_rtl_line('noc_ahb2axi.sv', 'RA: if (m_arready)')}$ # {why}: the master NI always has a "
+                         "free read-burst slot, so ARREADY is high")
             T("\\.u_noc", f"{x.name}_ax_(a[rw](id|len)\\[|[br]id\\[|a[rw]burst\\[1\\]|a[rw]burst\\[0\\]:1->0|"
                           f"wlast:1->0|a[rw]ready:1->0)", NOC, why)
             for f, txt, kind in (("noc_ni_mst.sv", "default: r = (i == 0) ? b.addr", "cond_else"),
@@ -631,12 +675,53 @@ def _mesh_cov_waivers(m):
             why = "answers OKAY / SLVERR only (AHB / APB have one error response)"
             T(N, "(m_[br]resp\\[0\\]|r_resp\\[\\d+\\]\\[0\\])", "noc_ni_slv\\.sv$", why)
             T("\\.u_noc", f"{t.name}_(ax_)?[br]resp\\[0\\]", NOC, why)
+        if t.protocol in ("ahb", "axi4lite"):
+            # the NoC-side adapter, fed by the slave NI only (a separate coverage
+            # scope unless Verilator merges it with a test shim of the same module)
+            A = f"\\.u_{t.name}_{'ahb' if t.protocol == 'ahb' else 'lite'}"
+            af = "noc_axi2ahb" if t.protocol == "ahb" else "noc_axi2lite"
+            why = "fed by the slave NI: ID 0, at most 8 beats, FIXED / INCR"
+            T(A, "(s_a[rw]id\\[|s_[br]id\\[|id_q\\[|(s_a[rw]len|len_q|beat_q)\\[[3-7]\\]|(s_a[rw]burst|burst_q)\\[1\\])",
+              f"rtl/noc/{af}\\.sv$", why)
+            if w < 32:
+                T(A, f"(s_a[rw]addr|m_a[rw]addr|addr_q|start_q|haddr)\\[({rng(w, 32)})\\]", f"rtl/noc/{af}\\.sv$",
+                  f"window 0x{t.base:08X} / 0x{t.size:X}: address bits {w}..31 are constant")
+            wl = _rtl_line(f"{af}.sv", chr(39).join(["2", "b10: begin"]))
+            L.append(f"line {A} \\S+ \\S*rtl/noc/{af}[.]sv:({wl}|{wl + 4})$ # {why}: no WRAP bursts")
+            L.append(f"branch {A} \\S+ \\S*rtl/noc/{af}[.]sv:{wl + 4}$ # {why}: no WRAP bursts")
+            wd = _rtl_line(f"{af}.sv", "WDATA: if (s_wvalid)")
+            L.append(f"branch {A} else \\S*rtl/noc/{af}[.]sv:{wd}$ # the slave NI drives W the cycle after the AW "
+                     "handshake, so W is always valid in WDATA")
         if t.kind == "apb_bridge":
             T("\\.u_apb", "((awid|arid|bid|rid)\\[|a[rw]len\\[[3-7]\\]|a[rw]burst\\[1\\])", "\\.sv$",
               "the slave NI issues ID 0, at most 8 beats, FIXED / INCR")
         if t.protocol == "ahb":
             T("\\.u_noc", f"{t.name}_(hburst\\[|hprot\\[[23]\\]|htrans\\[0\\]|hsel:1->0|hsize\\[2\\])", NOC,
               "noc_axi2ahb issues SINGLE NONSEQ transfers, HPROT[3:2] = 0, HSIZE <= 2; HSEL tied high")
+    # ---- not reached (Tony, 2026-11-15: waive with the analysis, not as proven unreachable) ----
+    # Every master NI has at most MAXB bursts / MAXO chunks per direction in
+    # flight, and every NI ejects at once, so a router input FIFO (or a
+    # gateway queue, or a slave NI's response injection) only backs up when
+    # several masters' flit trains reach one output in the same few cycles.
+    # The cov test's hot-spot, stream, link-fill and router-fill phases get the
+    # FIFOs to 4..7 entries but not to all of them full on every link.
+    NR = ("NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output "
+          f"within a few cycles while each master NI holds at most {ni.maxb} bursts / {ni.maxo} chunks in flight; "
+          "the cov test's stress phases fill these buffers part way")
+    T(MESH + "\\.g_r\\[\\d+\\]\\.u_rt", "(in_r\\[\\d\\]:1->0|out_r\\[[0-3]\\]:1->0|"
+      "(north|south|east|west|local)_(rx|tx)_ready:1->0|g_in\\[\\d\\]\\.cnt\\[[2-9]\\])", "noc_router_open\\.sv$", NR)
+    T(MESH, "((rx_r|tx_r)\\[\\d+\\]\\[\\d\\]|l_rx_r\\[\\d+\\]):1->0", "rtl/noc/noc_mesh\\.sv$", NR)
+    if m.chiplet.dies > 1:
+        T("\\.u_gw\\d+", "(tx|rx)_(cnt|level)\\[[2-9]\\]", "noc_d2d_gw\\.sv$", NR)
+    for j, t in enumerate(m.targets):
+        L.append(f"user \\.g_s\\[{j}\\]\\.u_sva\\.c_[rb]_wait # {NR} (the slave NI holds READY low only while "
+                 "its previous response flit waits for injection)")
+        if t.protocol in ("ahb", "axi4lite"):
+            A = f"\\.u_{t.name}_{'ahb' if t.protocol == 'ahb' else 'lite'}"
+            af = "noc_axi2ahb" if t.protocol == "ahb" else "noc_axi2lite"
+            for txt in ("BRESP: if (s_bready)", "RDATA: if (s_rready)"):
+                L.append(f"branch {A} else \\S*rtl/noc/{af}[.]sv:{_rtl_line(f'{af}.sv', txt)}$ # {NR} "
+                         "(the slave NI's READY is low only while a response flit waits for injection)")
     # SVA cover properties on the slave VIP ports
     for j, t in enumerate(m.targets):
         g = f"\\.g_s\\[{j}\\]\\.u_sva\\."
