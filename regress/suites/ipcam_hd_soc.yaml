@@ -8,3 +8,4 @@ list:
   default: regress/ipcam_hd_soc_testlist.txt
   nightly: regress/ipcam_hd_soc_nightly.txt
 cov_include: ['socgen/out/ipcam_hd_soc/rtl/*']
+requires: [ext/ipcam_ext.f]

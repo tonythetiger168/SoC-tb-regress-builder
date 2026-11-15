@@ -83,6 +83,7 @@ module phone_soc_tb_top;
     .apb_ext_pslverr(apb_apb_ext_if.pslverr),
     .irq(apb_irq)
   );
+
   apb_sva #(.NAME("apb_apb_ext")) u_apb_apb_ext_sva (apb_apb_ext_if);
   initial uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top.env.apb_apb_ext.*", "vif", apb_apb_ext_if);
 

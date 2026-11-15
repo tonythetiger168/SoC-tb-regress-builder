@@ -2,6 +2,619 @@
 # (scripts/cov/score_cov.py; <metric> <regex> # reason)
 line tv8k_soc_mesh_pkg  # package functions are called only by testbench classes (no hardware)
 branch tv8k_soc_mesh_pkg  # package functions are called only by testbench classes (no hardware)
+toggle \S+ rst_n:1->0\S* \S*rtl/noc/noc_\w+\.sv$|tv8k_soc_mesh_noc\.sv$ # power-on reset only: the benches do not reset mid-run
+toggle \S+ (ej_ready(\[\d+\])?|l_tx_r\[\d+\]|local_tx_ready):1->0\S* \S*rtl/noc/noc_(ni_slv|ni_mst|mesh|router_open|d2d_gw)\.sv$|tv8k_soc_mesh_noc\.sv$ # every NI ejects at once (master NI: a response slot per chunk in flight; slave NI: request queues sized for every chunk all masters can have in flight), so the local output is always ready
+toggle \S+ out_r\[4\]:1->0\S* \S*noc_router_open\.sv$ # local output: every NI ejects at once (see ej_ready)
+branch \.u_mesh(_d\S+)? if \S*rtl/noc/noc_mesh\.sv:117$ # no NI ever deasserts ej_ready
+line \.u_mesh(_d\S+)? \S+ \S*rtl/noc/noc_mesh\.sv:(47|48|49|50|51|52|53|54)$ # nb(): elaboration-time neighbour function (generate localparams), never called at run time
+branch \.u_mesh(_d\S+)? \S+ \S*rtl/noc/noc_mesh\.sv:(47|48|49|50|51|52|53|54)$ # nb(): elaboration-time neighbour function
+line noc_cfg_pkg \S+ \S*/noc_cfg_pkg\.sv:(59|60|61|62|63|64|65|66|67|68|69|70|71|72|73|74|75|76|77|78|79|80|81|82|83|84|85)$ # ep_name() names endpoints in messages only
+line noc_cfg_pkg \S+ \S*/noc_cfg_pkg\.sv:(112|113|114|115|116)$ # hn_ep(): CHI home lookup, no CHI home nodes here
+line \S+ case \S*rtl/noc/noc_ahb2axi[.]sv:121$ # FSM default arm: every state encoding in use is decoded
+line \S+ case \S*rtl/noc/noc_axi2ahb[.]sv:138$ # FSM default arm: every state encoding in use is decoded
+line \S+ case \S*rtl/noc/noc_axi2lite[.]sv:147$ # FSM default arm: every state encoding in use is decoded
+line \S+ case \S*rtl/noc/noc_apb2axi[.]sv:83$ # FSM default arm: every state encoding in use is decoded
+branch \S+ else \S*rtl/noc/noc_axi2ahb[.]sv:115$ # HREADY is high in the address phase: this master never pipelines (address phase only after the previous data phase completed), and an AHB slave inserts wait states only in a data phase
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[0\]\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 [0, 0] south side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt (south_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[1\]|g_in\[1\]\.\w+|rr\[1\]|win\[1\])\S* \S*noc_router_open\.sv$ # router 0 [0, 0] south port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[0\]\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 [0, 0] west side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt (west_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[3\]|g_in\[3\]\.\w+|rr\[3\]|win\[3\])\S* \S*noc_router_open\.sv$ # router 0 [0, 0] west port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[0\]\[0\]\S* \S*noc_router_open\.sv$ # router 0 output 0 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[0\]\[2\]\S* \S*noc_router_open\.sv$ # router 0 output 0: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 0 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 0 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 0 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 0 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[2\]\[2\]\S* \S*noc_router_open\.sv$ # router 0 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[4\]\[0\]\S* \S*noc_router_open\.sv$ # router 0 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[4\]\[0\]:1->0\S* \S*noc_router_open\.sv$ # router 0 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 0 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 0 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 0 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 0 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt g_in\[0\]\.cnt\[[1-9]\]\S* \S*noc_router_open\.sv$ # router 0 input 0 only feeds the local output, which no other input uses and whose ejection is always ready: the FIFO never holds more than one flit
+line \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:54$ # router 0 [0, 0]: no destination lies south of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:102$ # router 0: south output on the mesh edge
+line \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:52$ # router 0 [0, 0]: no destination lies west of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:104$ # router 0: west output on the mesh edge
+toggle \.u_mesh g_r\[0\]\.rr\[0\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux pointer takes [13] only
+toggle \.u_mesh g_r\[0\]\.pick\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux: endpoints [12] only
+toggle \.u_mesh g_r\[0\]\.rr\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux pointer takes [13] only
+toggle \.u_mesh g_r\[0\]\.pick\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux picks among [12, 13] only
+toggle \.u_mesh g_r\[0\]\.rr\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux pointer takes [13] only
+toggle \.u_mesh g_r\[0\]\.pick\[3\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux picks among [12, 13] only
+toggle \.u_mesh g_r\[0\]\.rr\[3\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux pointer takes [13] only
+toggle \.u_mesh g_r\[0\]\.pick\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux: endpoints [12] only
+toggle \.u_mesh g_r\[0\]\.rr\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux pointer takes [13] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[1\]\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 [1, 0] south side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt (south_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[1\]|g_in\[1\]\.\w+|rr\[1\]|win\[1\])\S* \S*noc_router_open\.sv$ # router 1 [1, 0] south port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 1 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 1 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 1 output 3 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 1 output 3: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt win\[4\]\[0\]\S* \S*noc_router_open\.sv$ # router 1 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[4\]\[0\]:1->0\S* \S*noc_router_open\.sv$ # router 1 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt win\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 1 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 1 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 1 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 1 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt g_in\[0\]\.cnt\[[1-9]\]\S* \S*noc_router_open\.sv$ # router 1 input 0 only feeds the local output, which no other input uses and whose ejection is always ready: the FIFO never holds more than one flit
+line \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:54$ # router 1 [1, 0]: no destination lies south of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:102$ # router 1: south output on the mesh edge
+toggle \.u_mesh g_r\[1\]\.rr\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 node mux pointer takes [14] only
+toggle \.u_mesh g_r\[1\]\.rr\[1\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 node mux pointer takes [14] only
+toggle \.u_mesh g_r\[1\]\.pick\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 node mux picks among [13, 14] only
+toggle \.u_mesh g_r\[1\]\.rr\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 node mux pointer takes [14] only
+toggle \.u_mesh g_r\[1\]\.pick\[3\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 node mux picks among [13, 14] only
+toggle \.u_mesh g_r\[1\]\.rr\[3\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 node mux pointer takes [14] only
+toggle \.u_mesh g_r\[1\]\.pick\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 node mux: endpoints [13] only
+toggle \.u_mesh g_r\[1\]\.rr\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 node mux pointer takes [14] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[2\]\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 [2, 0] south side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt (south_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[1\]|g_in\[1\]\.\w+|rr\[1\]|win\[1\])\S* \S*noc_router_open\.sv$ # router 2 [2, 0] south port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 2 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 2 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 2 output 3 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 2 output 3: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt win\[4\]\[0\]\S* \S*noc_router_open\.sv$ # router 2 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[4\]\[0\]:1->0\S* \S*noc_router_open\.sv$ # router 2 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt win\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 2 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 2 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 2 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 2 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt g_in\[0\]\.cnt\[[1-9]\]\S* \S*noc_router_open\.sv$ # router 2 input 0 only feeds the local output, which no other input uses and whose ejection is always ready: the FIFO never holds more than one flit
+line \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:54$ # router 2 [2, 0]: no destination lies south of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:102$ # router 2: south output on the mesh edge
+toggle \.u_mesh g_r\[2\]\.rr\[0\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 node mux pointer takes [15] only
+toggle \.u_mesh g_r\[2\]\.pick\[1\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 node mux picks among [14, 15] only
+toggle \.u_mesh g_r\[2\]\.rr\[1\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 node mux pointer takes [15] only
+toggle \.u_mesh g_r\[2\]\.pick\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 node mux picks among [14, 15] only
+toggle \.u_mesh g_r\[2\]\.rr\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 node mux pointer takes [15] only
+toggle \.u_mesh g_r\[2\]\.pick\[3\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 node mux picks among [14, 15] only
+toggle \.u_mesh g_r\[2\]\.rr\[3\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 node mux pointer takes [15] only
+toggle \.u_mesh g_r\[2\]\.pick\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 node mux: endpoints [14] only
+toggle \.u_mesh g_r\[2\]\.rr\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 node mux pointer takes [15] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[3\]\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 [3, 0] south side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt (south_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[1\]|g_in\[1\]\.\w+|rr\[1\]|win\[1\])\S* \S*noc_router_open\.sv$ # router 3 [3, 0] south port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[3\]\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 [3, 0] east side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt (east_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[2\]|g_in\[2\]\.\w+|rr\[2\]|win\[2\])\S* \S*noc_router_open\.sv$ # router 3 [3, 0] east port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[0\]\[0\]\S* \S*noc_router_open\.sv$ # router 3 output 0: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[0\]\[1\]\S* \S*noc_router_open\.sv$ # router 3 output 0: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 3 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 3 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt win\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 3 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 3 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 3 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt win\[4\]\[0\]\S* \S*noc_router_open\.sv$ # router 3 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[4\]\[0\]:1->0\S* \S*noc_router_open\.sv$ # router 3 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt win\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 3 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 3 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 3 output 4 is fed by inputs [0] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 3 output 4: round-robin pointer takes [1] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt g_in\[0\]\.cnt\[[1-9]\]\S* \S*noc_router_open\.sv$ # router 3 input 0 only feeds the local output, which no other input uses and whose ejection is always ready: the FIFO never holds more than one flit
+line \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:54$ # router 3 [3, 0]: no destination lies south of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:102$ # router 3: south output on the mesh edge
+line \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:51$ # router 3 [3, 0]: no destination lies east of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:103$ # router 3: east output on the mesh edge
+toggle \.u_mesh g_r\[3\]\.rr\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 node mux pointer takes [16] only
+toggle \.u_mesh g_r\[3\]\.rr\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 node mux pointer takes [16] only
+toggle \.u_mesh g_r\[3\]\.rr\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 node mux pointer takes [16] only
+toggle \.u_mesh g_r\[3\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 node mux pointer takes [16] only
+toggle \.u_mesh g_r\[3\]\.rr\[4\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 node mux pointer takes [16] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[4\]\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 4 [0, 1] west side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt (west_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[3\]|g_in\[3\]\.\w+|rr\[3\]|win\[3\])\S* \S*noc_router_open\.sv$ # router 4 [0, 1] west port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt rr\[0\]\[2\]\S* \S*noc_router_open\.sv$ # router 4 output 0: round-robin pointer takes [0, 2, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt win\[1\]\[0\]\S* \S*noc_router_open\.sv$ # router 4 output 1 is fed by inputs [0, 2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt rr\[1\]\[2\]\S* \S*noc_router_open\.sv$ # router 4 output 1: round-robin pointer takes [0, 1, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt win\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 4 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 4 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt win\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 4 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 4 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt rr\[2\]\[2\]\S* \S*noc_router_open\.sv$ # router 4 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 4 output 4 is fed by inputs [0, 1, 2] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 4 output 4: round-robin pointer takes [1, 2, 3] only
+line \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:52$ # router 4 [0, 1]: no destination lies west of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[4\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:104$ # router 4: west output on the mesh edge
+toggle \.u_mesh g_r\[4\]\.rr\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 4 node mux pointer takes [8, 9] only
+toggle \.u_mesh g_r\[4\]\.rr\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 4 node mux pointer takes [8, 9] only
+toggle \.u_mesh g_r\[4\]\.rr\[3\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 4 node mux pointer takes [8, 9] only
+toggle \.u_mesh g_r\[4\]\.pick\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 4 node mux: endpoints [7, 8] only
+toggle \.u_mesh g_r\[4\]\.rr\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 4 node mux pointer takes [8, 9] only
+toggle \.u_mesh(_d\S+)?\.g_r\[5\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[5\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 5 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[5\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 5 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[5\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 5 output 3 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[5\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 5 output 3: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[6\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[6\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 6 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[6\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 6 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[6\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 6 output 3 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[6\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 6 output 3: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[6\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 6 output 4 is fed by inputs [0, 1, 3] only (XY routes of this SoC)
+toggle \.u_mesh g_r\[6\]\.rr\[1\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 6 node mux pointer takes [2, 11] only
+toggle \.u_mesh g_r\[6\]\.pick\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 6 node mux: endpoints [1, 10] only
+toggle \.u_mesh g_r\[6\]\.rr\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 6 node mux pointer takes [2, 11] only
+toggle \.u_mesh g_r\[6\]\.pick\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 6 node mux: endpoints [1, 10] only
+toggle \.u_mesh g_r\[6\]\.rr\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 6 node mux pointer takes [2, 11] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[7\]\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 7 [3, 1] east side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt (east_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[2\]|g_in\[2\]\.\w+|rr\[2\]|win\[2\])\S* \S*noc_router_open\.sv$ # router 7 [3, 1] east port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt rr\[0\]\[0\]\S* \S*noc_router_open\.sv$ # router 7 output 0: round-robin pointer takes [0, 2, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt rr\[1\]\[1\]\S* \S*noc_router_open\.sv$ # router 7 output 1: round-robin pointer takes [0, 1, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 7 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt rr\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 7 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt win\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 7 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt rr\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 7 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 7 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 7 output 4 is fed by inputs [0, 1, 3] only (XY routes of this SoC)
+line \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:51$ # router 7 [3, 1]: no destination lies east of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[7\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:103$ # router 7: east output on the mesh edge
+toggle \.u_mesh g_r\[7\]\.rr\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 7 node mux pointer takes [6, 12] only
+toggle \.u_mesh g_r\[7\]\.rr\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 7 node mux pointer takes [6, 12] only
+toggle \.u_mesh g_r\[7\]\.pick\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 7 node mux: endpoints [5, 11] only
+toggle \.u_mesh g_r\[7\]\.rr\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 7 node mux pointer takes [6, 12] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[8\]\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 8 [0, 2] west side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt (west_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[3\]|g_in\[3\]\.\w+|rr\[3\]|win\[3\])\S* \S*noc_router_open\.sv$ # router 8 [0, 2] west port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt rr\[0\]\[2\]\S* \S*noc_router_open\.sv$ # router 8 output 0: round-robin pointer takes [0, 2, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt win\[1\]\[0\]\S* \S*noc_router_open\.sv$ # router 8 output 1 is fed by inputs [0, 2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt rr\[1\]\[2\]\S* \S*noc_router_open\.sv$ # router 8 output 1: round-robin pointer takes [0, 1, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt win\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 8 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 8 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt win\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 8 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 8 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt rr\[2\]\[2\]\S* \S*noc_router_open\.sv$ # router 8 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 8 output 4: round-robin pointer takes [0, 1, 2, 3] only
+line \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:52$ # router 8 [0, 2]: no destination lies west of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[8\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:104$ # router 8: west output on the mesh edge
+toggle \.u_mesh g_r\[8\]\.pick\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 8 node mux: endpoints [6, 21] only
+toggle \.u_mesh g_r\[8\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 8 node mux pointer takes [0, 7] only
+toggle \.u_mesh g_r\[8\]\.rr\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 8 node mux pointer takes [0, 7] only
+toggle \.u_mesh(_d\S+)?\.g_r\[9\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[9\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 9 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[9\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 9 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[9\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 9 output 3 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[9\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 9 output 3: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[9\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 9 output 4 is fed by inputs [0, 1, 3] only (XY routes of this SoC)
+toggle \.u_mesh g_r\[9\]\.rr\[0\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 9 node mux pointer takes [3] only
+toggle \.u_mesh g_r\[9\]\.pick\[1\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 9 node mux picks among [2, 3] only
+toggle \.u_mesh g_r\[9\]\.rr\[1\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 9 node mux pointer takes [3] only
+toggle \.u_mesh g_r\[9\]\.pick\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 9 node mux: endpoints [2] only
+toggle \.u_mesh g_r\[9\]\.rr\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 9 node mux pointer takes [3] only
+toggle \.u_mesh g_r\[9\]\.pick\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 9 node mux: endpoints [2] only
+toggle \.u_mesh g_r\[9\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 9 node mux pointer takes [3] only
+toggle \.u_mesh g_r\[9\]\.pick\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 9 node mux: endpoints [2] only
+toggle \.u_mesh g_r\[9\]\.rr\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 9 node mux pointer takes [3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[10\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[10\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 10 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[10\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 10 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[10\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 10 output 3 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[10\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 10 output 3: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[10\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 10 output 4 is fed by inputs [0, 1, 3] only (XY routes of this SoC)
+toggle \.u_mesh g_r\[10\]\.rr\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 10 node mux pointer takes [4] only
+toggle \.u_mesh g_r\[10\]\.rr\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 10 node mux pointer takes [4] only
+toggle \.u_mesh g_r\[10\]\.rr\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 10 node mux pointer takes [4] only
+toggle \.u_mesh g_r\[10\]\.pick\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 10 node mux: endpoints [3] only
+toggle \.u_mesh g_r\[10\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 10 node mux pointer takes [4] only
+toggle \.u_mesh g_r\[10\]\.pick\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 10 node mux: endpoints [3] only
+toggle \.u_mesh g_r\[10\]\.rr\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 10 node mux pointer takes [4] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[11\]\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 11 [3, 2] east side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt (east_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[2\]|g_in\[2\]\.\w+|rr\[2\]|win\[2\])\S* \S*noc_router_open\.sv$ # router 11 [3, 2] east port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt rr\[0\]\[0\]\S* \S*noc_router_open\.sv$ # router 11 output 0: round-robin pointer takes [0, 2, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt rr\[1\]\[1\]\S* \S*noc_router_open\.sv$ # router 11 output 1: round-robin pointer takes [0, 1, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 11 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt rr\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 11 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt win\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 11 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt rr\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 11 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 11 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 11 output 4 is fed by inputs [0, 1, 3] only (XY routes of this SoC)
+line \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:51$ # router 11 [3, 2]: no destination lies east of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[11\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:103$ # router 11: east output on the mesh edge
+toggle \.u_mesh g_r\[11\]\.rr\[0\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 11 node mux pointer takes [5] only
+toggle \.u_mesh g_r\[11\]\.pick\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 11 node mux: endpoints [4] only
+toggle \.u_mesh g_r\[11\]\.rr\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 11 node mux pointer takes [5] only
+toggle \.u_mesh g_r\[11\]\.pick\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 11 node mux picks among [4, 5] only
+toggle \.u_mesh g_r\[11\]\.rr\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 11 node mux pointer takes [5] only
+toggle \.u_mesh g_r\[11\]\.pick\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 11 node mux: endpoints [4] only
+toggle \.u_mesh g_r\[11\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 11 node mux pointer takes [5] only
+toggle \.u_mesh g_r\[11\]\.pick\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 11 node mux: endpoints [4] only
+toggle \.u_mesh g_r\[11\]\.rr\[4\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 11 node mux pointer takes [5] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[12\]\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 [0, 3] north side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt (north_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[0\]|g_in\[0\]\.\w+|rr\[0\]|win\[0\])\S* \S*noc_router_open\.sv$ # router 12 [0, 3] north port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[12\]\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 [0, 3] west side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt (west_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[3\]|g_in\[3\]\.\w+|rr\[3\]|win\[3\])\S* \S*noc_router_open\.sv$ # router 12 [0, 3] west port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt win\[1\]\[0\]\S* \S*noc_router_open\.sv$ # router 12 output 1 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt rr\[1\]\[2\]\S* \S*noc_router_open\.sv$ # router 12 output 1: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt win\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 12 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 12 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt win\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 12 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 12 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt rr\[2\]\[2\]\S* \S*noc_router_open\.sv$ # router 12 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt rr\[4\]\[0\]\S* \S*noc_router_open\.sv$ # router 12 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt win\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 12 output 4 is fed by inputs [1] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt rr\[4\]\[1\]:1->0\S* \S*noc_router_open\.sv$ # router 12 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 12 output 4 is fed by inputs [1] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 12 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt g_in\[1\]\.cnt\[[1-9]\]\S* \S*noc_router_open\.sv$ # router 12 input 1 only feeds the local output, which no other input uses and whose ejection is always ready: the FIFO never holds more than one flit
+line \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:53$ # router 12 [0, 3]: no destination lies north of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:101$ # router 12: north output on the mesh edge
+line \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:52$ # router 12 [0, 3]: no destination lies west of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[12\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:104$ # router 12: west output on the mesh edge
+toggle \.u_mesh g_r\[12\]\.rr\[0\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 node mux pointer takes [17] only
+toggle \.u_mesh g_r\[12\]\.pick\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 node mux: endpoints [16] only
+toggle \.u_mesh g_r\[12\]\.rr\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 node mux pointer takes [17] only
+toggle \.u_mesh g_r\[12\]\.pick\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 node mux: endpoints [16] only
+toggle \.u_mesh g_r\[12\]\.rr\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 node mux pointer takes [17] only
+toggle \.u_mesh g_r\[12\]\.pick\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 node mux: endpoints [16] only
+toggle \.u_mesh g_r\[12\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 node mux pointer takes [17] only
+toggle \.u_mesh g_r\[12\]\.pick\[4\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 node mux picks among [16, 17] only
+toggle \.u_mesh g_r\[12\]\.rr\[4\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 12 node mux pointer takes [17] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[13\]\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 13 [1, 3] north side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt (north_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[0\]|g_in\[0\]\.\w+|rr\[0\]|win\[0\])\S* \S*noc_router_open\.sv$ # router 13 [1, 3] north port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 13 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 13 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 13 output 3 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 13 output 3: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt rr\[4\]\[0\]\S* \S*noc_router_open\.sv$ # router 13 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt win\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 13 output 4 is fed by inputs [1] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt rr\[4\]\[1\]:1->0\S* \S*noc_router_open\.sv$ # router 13 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 13 output 4 is fed by inputs [1] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 13 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt g_in\[1\]\.cnt\[[1-9]\]\S* \S*noc_router_open\.sv$ # router 13 input 1 only feeds the local output, which no other input uses and whose ejection is always ready: the FIFO never holds more than one flit
+line \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:53$ # router 13 [1, 3]: no destination lies north of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[13\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:101$ # router 13: north output on the mesh edge
+toggle \.u_mesh g_r\[13\]\.rr\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 13 node mux pointer takes [18] only
+toggle \.u_mesh g_r\[13\]\.rr\[1\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 13 node mux pointer takes [18] only
+toggle \.u_mesh g_r\[13\]\.pick\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 13 node mux: endpoints [17] only
+toggle \.u_mesh g_r\[13\]\.rr\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 13 node mux pointer takes [18] only
+toggle \.u_mesh g_r\[13\]\.pick\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 13 node mux: endpoints [17] only
+toggle \.u_mesh g_r\[13\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 13 node mux pointer takes [18] only
+toggle \.u_mesh g_r\[13\]\.pick\[4\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 13 node mux picks among [17, 18] only
+toggle \.u_mesh g_r\[13\]\.rr\[4\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 13 node mux pointer takes [18] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[14\]\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 14 [2, 3] north side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt (north_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[0\]|g_in\[0\]\.\w+|rr\[0\]|win\[0\])\S* \S*noc_router_open\.sv$ # router 14 [2, 3] north port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 14 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 14 output 2: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 14 output 3 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 14 output 3: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt rr\[4\]\[0\]\S* \S*noc_router_open\.sv$ # router 14 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt win\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 14 output 4 is fed by inputs [1] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt rr\[4\]\[1\]:1->0\S* \S*noc_router_open\.sv$ # router 14 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 14 output 4 is fed by inputs [1] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 14 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt g_in\[1\]\.cnt\[[1-9]\]\S* \S*noc_router_open\.sv$ # router 14 input 1 only feeds the local output, which no other input uses and whose ejection is always ready: the FIFO never holds more than one flit
+line \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:53$ # router 14 [2, 3]: no destination lies north of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[14\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:101$ # router 14: north output on the mesh edge
+toggle \.u_mesh g_r\[14\]\.rr\[0\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 14 node mux pointer takes [19] only
+toggle \.u_mesh g_r\[14\]\.pick\[1\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 14 node mux picks among [18, 19] only
+toggle \.u_mesh g_r\[14\]\.rr\[1\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 14 node mux pointer takes [19] only
+toggle \.u_mesh g_r\[14\]\.pick\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 14 node mux: endpoints [18] only
+toggle \.u_mesh g_r\[14\]\.rr\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 14 node mux pointer takes [19] only
+toggle \.u_mesh g_r\[14\]\.pick\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 14 node mux: endpoints [18] only
+toggle \.u_mesh g_r\[14\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 14 node mux pointer takes [19] only
+toggle \.u_mesh g_r\[14\]\.pick\[4\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 14 node mux picks among [18, 19] only
+toggle \.u_mesh g_r\[14\]\.rr\[4\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 14 node mux pointer takes [19] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[15\]\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 15 [3, 3] north side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt (north_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[0\]|g_in\[0\]\.\w+|rr\[0\]|win\[0\])\S* \S*noc_router_open\.sv$ # router 15 [3, 3] north port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[15\]\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 15 [3, 3] east side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt (east_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[2\]|g_in\[2\]\.\w+|rr\[2\]|win\[2\])\S* \S*noc_router_open\.sv$ # router 15 [3, 3] east port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt rr\[1\]\[0\]\S* \S*noc_router_open\.sv$ # router 15 output 1: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt rr\[1\]\[1\]\S* \S*noc_router_open\.sv$ # router 15 output 1: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 15 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt rr\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 15 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt win\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 15 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt rr\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 15 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 15 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt rr\[4\]\[0\]\S* \S*noc_router_open\.sv$ # router 15 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt win\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 15 output 4 is fed by inputs [1] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt rr\[4\]\[1\]:1->0\S* \S*noc_router_open\.sv$ # router 15 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 15 output 4 is fed by inputs [1] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 15 output 4: round-robin pointer takes [2] only
+toggle \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt g_in\[1\]\.cnt\[[1-9]\]\S* \S*noc_router_open\.sv$ # router 15 input 1 only feeds the local output, which no other input uses and whose ejection is always ready: the FIFO never holds more than one flit
+line \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:53$ # router 15 [3, 3]: no destination lies north of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:101$ # router 15: north output on the mesh edge
+line \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:51$ # router 15 [3, 3]: no destination lies east of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[15\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:103$ # router 15: east output on the mesh edge
+toggle \.u_mesh g_r\[15\]\.rr\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 15 node mux pointer takes [20] only
+toggle \.u_mesh g_r\[15\]\.rr\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 15 node mux pointer takes [20] only
+toggle \.u_mesh g_r\[15\]\.rr\[2\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 15 node mux pointer takes [20] only
+toggle \.u_mesh g_r\[15\]\.pick\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 15 node mux: endpoints [19] only
+toggle \.u_mesh g_r\[15\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 15 node mux pointer takes [20] only
+toggle \.u_mesh g_r\[15\]\.pick\[4\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 15 node mux picks among [19, 20] only
+toggle \.u_mesh g_r\[15\]\.rr\[4\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 15 node mux pointer takes [20] only
+toggle \.u_ni_cpu (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc cpu_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_cpu whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_cpu if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_cpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_gpu (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc gpu_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_gpu whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_gpu if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_gpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_gpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_gpu cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_npu (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc npu_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_npu whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_npu if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_npu cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_vdec (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc vdec_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_vdec whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_vdec if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_vdec cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_vdec cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_vdec cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_pq (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc pq_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_pq whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_pq if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_pq cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_pq cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_pq cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_disp (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc disp_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_disp whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_disp if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_disp cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_disp cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_disp cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_hdmirx (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc hdmirx_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_hdmirx whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_hdmirx if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_hdmirx cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_hdmirx cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_hdmirx cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_tsd (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc tsd_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_tsd whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_tsd if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_tsd cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_tsd cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_tsd cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_adsp (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc adsp_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_adsp whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_adsp if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_adsp cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_adsp cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_adsp cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_dma (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc dma_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_dma whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_dma if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_sec (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc sec_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_sec whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_sec if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_sec cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_sec cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_sec cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_netio (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc netio_(ax_)?a[rw]size\[2\]\S* \S*tv8k_soc_mesh_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_netio whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_netio if \S*rtl/noc/noc_ni_mst[.]sv:173$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_netio cond_then \S*rtl/noc/noc_ni_mst[.]sv:212$ # DW = 32: R = 1
+branch \.u_ni_netio cond_then \S*rtl/noc/noc_ni_mst[.]sv:343$ # DW = 32: R = 1
+branch \.u_ni_netio cond_then \S*rtl/noc/noc_ni_mst[.]sv:333$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \S+ (m_a[rw](id|len)\[|m_[br]id\[|m_a[rw]burst\[1\]|m_a[rw]burst\[0\]:1->0|m_wlast:1->0|(m_a[rw]size|size_q|hsize)\[2\]|hburst\[|hprot\[[23]\]|htrans\[0\]|hsel:1->0|(m_a[rw]prot|prot_q)\[1\])\S* \S*rtl/noc/noc_ahb2axi\.sv$ # noc_ahb2axi issues single INCR beats with ID 0 and AxPROT[1] = 0; its AHB masters (noc_axi2ahb) issue SINGLE NONSEQ transfers, HSIZE <= 2, HPROT[3:2] = 0, HSEL tied high
+toggle \S+ ((s_a[rw]size|size_q|hsize)\[2\]|hburst\[|hprot\[[23]\]|htrans\[0\]|s_[br]resp\[0\])\S* \S*rtl/noc/noc_axi2ahb\.sv$ # noc_axi2ahb: 32-bit bus (size <= 2), SINGLE NONSEQ transfers, HPROT[3:2] = 0, answers OKAY / SLVERR only
+toggle \S+ (s_a[rw]size|size_q)\[2\]\S* \S*rtl/noc/noc_axi2lite\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \S+ (m_a[rw](id|len)\[|m_[br]id\[|m_a[rw]burst\[1\]|m_a[rw]burst\[0\]:1->0|m_wlast:1->0|m_a[rw]size\[[02]\]|m_a[rw]size\[1\]:1->0)\S* \S*rtl/noc/noc_apb2axi\.sv$ # noc_apb2axi issues single 32-bit INCR beats with ID 0
+toggle \.u_ni_dram0 m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc dram0_(ax_)?(awid|arid|bid|rid)\[\S* \S*tv8k_soc_mesh_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_dram0 m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc dram0_(ax_)?a[rw]len\[[3-7]\]\S* \S*tv8k_soc_mesh_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_dram0 m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc dram0_(ax_)?a[rw]burst\[1\]\S* \S*tv8k_soc_mesh_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_dram0 m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_dram0 (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero without CHI home nodes
+toggle \.u_ni_dram0 (rp|wp)\[\d+\]\.src\[4\]\S* \S*noc_ni_slv\.sv$ # requesters are masters 0..11
+toggle \.u_ni_dram0 rp\[\d+\]\.tag\[(3|4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8)
+toggle \.u_ni_dram0 wp\[\d+\]\.tag\[(2|3|4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4)
+toggle \.u_ni_dram0 (rq_cnt|wq_cnt)\[(7)\]\S* \S*noc_ni_slv\.sv$ # at most 96 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_dram0 m_a[rw]addr\[(31)\]\S* \S*noc_ni_slv\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_noc dram0_(ax_)?(a[rw]addr|haddr|paddr)\[(31)\]\S* \S*tv8k_soc_mesh_noc\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_dram0_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_ni_dram1 m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc dram1_(ax_)?(awid|arid|bid|rid)\[\S* \S*tv8k_soc_mesh_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_dram1 m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc dram1_(ax_)?a[rw]len\[[3-7]\]\S* \S*tv8k_soc_mesh_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_dram1 m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc dram1_(ax_)?a[rw]burst\[1\]\S* \S*tv8k_soc_mesh_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_dram1 m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_dram1 (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero without CHI home nodes
+toggle \.u_ni_dram1 (rp|wp)\[\d+\]\.src\[4\]\S* \S*noc_ni_slv\.sv$ # requesters are masters 0..11
+toggle \.u_ni_dram1 rp\[\d+\]\.tag\[(3|4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8)
+toggle \.u_ni_dram1 wp\[\d+\]\.tag\[(2|3|4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4)
+toggle \.u_ni_dram1 (rq_cnt|wq_cnt)\[(7)\]\S* \S*noc_ni_slv\.sv$ # at most 96 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_dram1 m_a[rw]addr\[(31)\]\S* \S*noc_ni_slv\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_noc dram1_(ax_)?(a[rw]addr|haddr|paddr)\[(31)\]\S* \S*tv8k_soc_mesh_noc\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_dram1_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_ni_dram2 m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc dram2_(ax_)?(awid|arid|bid|rid)\[\S* \S*tv8k_soc_mesh_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_dram2 m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc dram2_(ax_)?a[rw]len\[[3-7]\]\S* \S*tv8k_soc_mesh_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_dram2 m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc dram2_(ax_)?a[rw]burst\[1\]\S* \S*tv8k_soc_mesh_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_dram2 m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_dram2 (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero without CHI home nodes
+toggle \.u_ni_dram2 (rp|wp)\[\d+\]\.src\[4\]\S* \S*noc_ni_slv\.sv$ # requesters are masters 0..11
+toggle \.u_ni_dram2 rp\[\d+\]\.tag\[(3|4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8)
+toggle \.u_ni_dram2 wp\[\d+\]\.tag\[(2|3|4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4)
+toggle \.u_ni_dram2 (rq_cnt|wq_cnt)\[(7)\]\S* \S*noc_ni_slv\.sv$ # at most 96 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_dram2 m_a[rw]addr\[(31)\]\S* \S*noc_ni_slv\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_noc dram2_(ax_)?(a[rw]addr|haddr|paddr)\[(31)\]\S* \S*tv8k_soc_mesh_noc\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_dram2_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_ni_dram3 m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc dram3_(ax_)?(awid|arid|bid|rid)\[\S* \S*tv8k_soc_mesh_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_dram3 m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc dram3_(ax_)?a[rw]len\[[3-7]\]\S* \S*tv8k_soc_mesh_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_dram3 m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc dram3_(ax_)?a[rw]burst\[1\]\S* \S*tv8k_soc_mesh_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_dram3 m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_dram3 (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero without CHI home nodes
+toggle \.u_ni_dram3 (rp|wp)\[\d+\]\.src\[4\]\S* \S*noc_ni_slv\.sv$ # requesters are masters 0..11
+toggle \.u_ni_dram3 rp\[\d+\]\.tag\[(3|4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8)
+toggle \.u_ni_dram3 wp\[\d+\]\.tag\[(2|3|4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4)
+toggle \.u_ni_dram3 (rq_cnt|wq_cnt)\[(7)\]\S* \S*noc_ni_slv\.sv$ # at most 96 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_dram3 m_a[rw]addr\[(31)\]\S* \S*noc_ni_slv\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_noc dram3_(ax_)?(a[rw]addr|haddr|paddr)\[(31)\]\S* \S*tv8k_soc_mesh_noc\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_dram3_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_ni_dram4 m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc dram4_(ax_)?(awid|arid|bid|rid)\[\S* \S*tv8k_soc_mesh_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_dram4 m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc dram4_(ax_)?a[rw]len\[[3-7]\]\S* \S*tv8k_soc_mesh_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_dram4 m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc dram4_(ax_)?a[rw]burst\[1\]\S* \S*tv8k_soc_mesh_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_dram4 m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_dram4 (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero without CHI home nodes
+toggle \.u_ni_dram4 (rp|wp)\[\d+\]\.src\[4\]\S* \S*noc_ni_slv\.sv$ # requesters are masters 0..11
+toggle \.u_ni_dram4 rp\[\d+\]\.tag\[(3|4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8)
+toggle \.u_ni_dram4 wp\[\d+\]\.tag\[(2|3|4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4)
+toggle \.u_ni_dram4 (rq_cnt|wq_cnt)\[(7)\]\S* \S*noc_ni_slv\.sv$ # at most 96 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_dram4 m_a[rw]addr\[(31)\]\S* \S*noc_ni_slv\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_noc dram4_(ax_)?(a[rw]addr|haddr|paddr)\[(31)\]\S* \S*tv8k_soc_mesh_noc\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_dram4_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_ni_dram5 m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc dram5_(ax_)?(awid|arid|bid|rid)\[\S* \S*tv8k_soc_mesh_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_dram5 m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc dram5_(ax_)?a[rw]len\[[3-7]\]\S* \S*tv8k_soc_mesh_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_dram5 m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc dram5_(ax_)?a[rw]burst\[1\]\S* \S*tv8k_soc_mesh_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_dram5 m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_dram5 (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero without CHI home nodes
+toggle \.u_ni_dram5 (rp|wp)\[\d+\]\.src\[4\]\S* \S*noc_ni_slv\.sv$ # requesters are masters 0..11
+toggle \.u_ni_dram5 rp\[\d+\]\.tag\[(3|4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8)
+toggle \.u_ni_dram5 wp\[\d+\]\.tag\[(2|3|4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4)
+toggle \.u_ni_dram5 (rq_cnt|wq_cnt)\[(7)\]\S* \S*noc_ni_slv\.sv$ # at most 96 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_dram5 m_a[rw]addr\[(31)\]\S* \S*noc_ni_slv\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_noc dram5_(ax_)?(a[rw]addr|haddr|paddr)\[(31)\]\S* \S*tv8k_soc_mesh_noc\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_dram5_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_ni_dram6 m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc dram6_(ax_)?(awid|arid|bid|rid)\[\S* \S*tv8k_soc_mesh_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_dram6 m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc dram6_(ax_)?a[rw]len\[[3-7]\]\S* \S*tv8k_soc_mesh_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_dram6 m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc dram6_(ax_)?a[rw]burst\[1\]\S* \S*tv8k_soc_mesh_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_dram6 m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_dram6 (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero without CHI home nodes
+toggle \.u_ni_dram6 (rp|wp)\[\d+\]\.src\[4\]\S* \S*noc_ni_slv\.sv$ # requesters are masters 0..11
+toggle \.u_ni_dram6 rp\[\d+\]\.tag\[(3|4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8)
+toggle \.u_ni_dram6 wp\[\d+\]\.tag\[(2|3|4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4)
+toggle \.u_ni_dram6 (rq_cnt|wq_cnt)\[(7)\]\S* \S*noc_ni_slv\.sv$ # at most 96 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_dram6 m_a[rw]addr\[(31)\]\S* \S*noc_ni_slv\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_noc dram6_(ax_)?(a[rw]addr|haddr|paddr)\[(31)\]\S* \S*tv8k_soc_mesh_noc\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_dram6_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_ni_dram7 m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc dram7_(ax_)?(awid|arid|bid|rid)\[\S* \S*tv8k_soc_mesh_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_dram7 m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc dram7_(ax_)?a[rw]len\[[3-7]\]\S* \S*tv8k_soc_mesh_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_dram7 m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc dram7_(ax_)?a[rw]burst\[1\]\S* \S*tv8k_soc_mesh_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_dram7 m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_dram7 (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero without CHI home nodes
+toggle \.u_ni_dram7 (rp|wp)\[\d+\]\.src\[4\]\S* \S*noc_ni_slv\.sv$ # requesters are masters 0..11
+toggle \.u_ni_dram7 rp\[\d+\]\.tag\[(3|4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8)
+toggle \.u_ni_dram7 wp\[\d+\]\.tag\[(2|3|4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4)
+toggle \.u_ni_dram7 (rq_cnt|wq_cnt)\[(7)\]\S* \S*noc_ni_slv\.sv$ # at most 96 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_dram7 m_a[rw]addr\[(31)\]\S* \S*noc_ni_slv\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_noc dram7_(ax_)?(a[rw]addr|haddr|paddr)\[(31)\]\S* \S*tv8k_soc_mesh_noc\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_dram7_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x80000000 / 0x80000000: address bits 31..31 are constant
+toggle \.u_ni_boot_sram m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc boot_sram_(ax_)?(awid|arid|bid|rid)\[\S* \S*tv8k_soc_mesh_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_boot_sram m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc boot_sram_(ax_)?a[rw]len\[[3-7]\]\S* \S*tv8k_soc_mesh_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_boot_sram m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc boot_sram_(ax_)?a[rw]burst\[1\]\S* \S*tv8k_soc_mesh_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_boot_sram m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_boot_sram (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero without CHI home nodes
+toggle \.u_ni_boot_sram (rp|wp)\[\d+\]\.src\[4\]\S* \S*noc_ni_slv\.sv$ # requesters are masters 0..11
+toggle \.u_ni_boot_sram rp\[\d+\]\.tag\[(3|4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8)
+toggle \.u_ni_boot_sram wp\[\d+\]\.tag\[(2|3|4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4)
+toggle \.u_ni_boot_sram (rq_cnt|wq_cnt)\[(7)\]\S* \S*noc_ni_slv\.sv$ # at most 96 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_boot_sram m_a[rw]addr\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*noc_ni_slv\.sv$ # window 0x00000000 / 0x10000: address bits 16..31 are constant
+toggle \.u_noc boot_sram_(ax_)?(a[rw]addr|haddr|paddr)\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*tv8k_soc_mesh_noc\.sv$ # window 0x00000000 / 0x10000: address bits 16..31 are constant
+toggle \.u_boot_sram_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x00000000 / 0x10000: address bits 16..31 are constant
+toggle \.u_ni_periph m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc periph_(ax_)?(awid|arid|bid|rid)\[\S* \S*tv8k_soc_mesh_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_periph m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc periph_(ax_)?a[rw]len\[[3-7]\]\S* \S*tv8k_soc_mesh_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_periph m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc periph_(ax_)?a[rw]burst\[1\]\S* \S*tv8k_soc_mesh_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_periph m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_periph (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero without CHI home nodes
+toggle \.u_ni_periph (rp|wp)\[\d+\]\.src\[4\]\S* \S*noc_ni_slv\.sv$ # requesters are masters 0..11
+toggle \.u_ni_periph rp\[\d+\]\.tag\[(3|4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8)
+toggle \.u_ni_periph wp\[\d+\]\.tag\[(2|3|4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4)
+toggle \.u_ni_periph (rq_cnt|wq_cnt)\[(7)\]\S* \S*noc_ni_slv\.sv$ # at most 96 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_periph m_a[rw]addr\[(17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*noc_ni_slv\.sv$ # window 0x10000000 / 0x20000: address bits 17..31 are constant
+toggle \.u_noc periph_(ax_)?(a[rw]addr|haddr|paddr)\[(17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*tv8k_soc_mesh_noc\.sv$ # window 0x10000000 / 0x20000: address bits 17..31 are constant
+toggle \.u_periph_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x10000000 / 0x20000: address bits 17..31 are constant
+toggle \.u_ni_periph (rp_cnt|wp_cnt)\[[1-9]\]\S* \S*noc_ni_slv\.sv$ # axi2apb_bridge takes the next burst only when idle: one burst in flight
+toggle \.u_ni_periph (m_[br]resp\[0\]|r_resp\[\d+\]\[0\])\S* \S*noc_ni_slv\.sv$ # answers OKAY / SLVERR only (AHB / APB have one error response)
+toggle \.u_noc periph_(ax_)?[br]resp\[0\]\S* \S*tv8k_soc_mesh_noc\.sv$ # answers OKAY / SLVERR only (AHB / APB have one error response)
+toggle \.u_apb ((awid|arid|bid|rid)\[|a[rw]len\[[3-7]\]|a[rw]burst\[1\])\S* \S*\.sv$ # the slave NI issues ID 0, at most 8 beats, FIXED / INCR
+toggle \.u_mesh(_d\S+)?\.g_r\[\d+\]\.u_rt (in_r\[\d\]:1->0|out_r\[[0-3]\]:1->0|(north|south|east|west|local)_(rx|tx)_ready:1->0|g_in\[\d\]\.cnt\[[2-9]\])\S* \S*noc_router_open\.sv$ # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way
+toggle \.u_mesh(_d\S+)? ((rx_r|tx_r)\[\d+\]\[\d\]|l_rx_r\[\d+\]):1->0\S* \S*rtl/noc/noc_mesh\.sv$ # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way
+user \.g_s\[0\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[1\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[2\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[3\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[4\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[5\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[6\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[7\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[8\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[9\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[0\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[1\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[2\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[3\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[4\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[5\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[6\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[7\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[8\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[9\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
 toggle u_apb (awaddr|araddr|paddr|\w+_paddr)\[(17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\] # APB window 0x10000000/0x20000: address bits 17..31 are constant
 toggle u_apb (awid|arid|bid|rid)\[(4|5|6|7)\] # the NoC forwards 4-bit master IDs into the 8-bit APB-port ID
 toggle u_apb [br]resp\[0\] # axi2apb_bridge answers OKAY/SLVERR only
