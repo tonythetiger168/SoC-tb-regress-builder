@@ -566,8 +566,9 @@ def _mesh_cov_waivers(m):
         T("\\.u_phy", "([ab]_sb_(tx|rx)_msg|abs_m\\[\\d+\\]|bas_m\\[\\d+\\])\\[", "noc_d2d_phy\\.sv$",
           "sideband messages are UCIe_top's link-management codes (IP function, closed by its own bench); "
           "the PHY model only delays them")
-        T("\\.u_phy", f"n_err\\[({rng(12, 32)})\\]", "noc_d2d_phy\\.sv$",
-          "error-injection counter: bits 12 and up need more than 4096 corrupted flits, beyond a bench run")
+        T("\\.u_phy", f"n_err\\[({rng(6, 32)})\\]", "noc_d2d_phy\\.sv$",
+          "error-injection statistics counter (observability only, no RTL decision reads it): the "
+          "+D2D_ERR_EVERY run corrupts about 100 flits; bits 6 and up need 64 to 2^31 corrupted flits")
     # ---- master NIs (noc_ni_mst, DW = 32) and their adapters ----
     one = [x for x in m.masters if x.protocol in ("axi4lite", "ahb")]
     BR = "(rb\\[\\d+\\]|rh|wh|whb\\.b)"

@@ -131,7 +131,7 @@ toggle \.u_mesh_d1 (ej_valid|inj_ready)\[(0|1|8|10|11)\]\S* \S*rtl/noc/noc_mesh\
 branch \.u_noc if \S*/chiplet_soc_noc[.]sv:431$ # d2d_error: no gateway overflow (queues sized for every flit in flight) and no unrecoverable link error (UCIe Retry recovers the injected errors; link failure is UCIe_top's own function)
 toggle \.u_gw\d+ overflow\S* \S*noc_d2d_gw\.sv$ # the queues hold every flit all masters can have in flight
 toggle \.u_phy ([ab]_sb_(tx|rx)_msg|abs_m\[\d+\]|bas_m\[\d+\])\[\S* \S*noc_d2d_phy\.sv$ # sideband messages are UCIe_top's link-management codes (IP function, closed by its own bench); the PHY model only delays them
-toggle \.u_phy n_err\[(12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*noc_d2d_phy\.sv$ # error-injection counter: bits 12 and up need more than 4096 corrupted flits, beyond a bench run
+toggle \.u_phy n_err\[(6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*noc_d2d_phy\.sv$ # error-injection statistics counter (observability only, no RTL decision reads it): the +D2D_ERR_EVERY run corrupts about 100 flits; bits 6 and up need 64 to 2^31 corrupted flits
 toggle \.u_ni_cpu (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
 toggle \.u_noc cpu_(ax_)?a[rw]size\[2\]\S* \S*chiplet_soc_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
 toggle \.u_ni_cpu whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
