@@ -11,21 +11,24 @@
 //    keeps such lines out of the caches). Inner / outer shareable (01 / 10)
 //    goes through the home.
 //  * WriteLineUnique (AWSNOOP 001) is a snooped write like WriteUnique.
-//  * cache maintenance on AR: CleanShared (1000), CleanInvalid (1001),
-//    MakeInvalid (1101). Each becomes a one-word snooped read of the line at
-//    its home: the home snoops the unique holder SnpCleanShared and writes a
-//    dirty line back to memory, which is CleanShared. CleanInvalid and
-//    MakeInvalid get the same clean but do NOT invalidate the RN-F copies
-//    (the home has no invalidating dataless request yet; documented gap).
-//    The master gets the single R beat (data to be ignored).
+//  * cache maintenance on AR: CleanShared (1000) becomes a one-word snooped
+//    read of the line at its home: the home snoops the unique holder
+//    SnpCleanShared and writes a dirty line back to memory. The master gets
+//    the single R beat (data to be ignored).
+//    CleanInvalid (1001) and MakeInvalid (1101) are NOT supported: the home
+//    has no invalidating dataless request yet. They are answered here with
+//    one R beat, RRESP = SLVERR, so a master that relies on the invalidation
+//    sees the error instead of stale data.
 //  * barriers (AxBAR[0] = 1): held until every earlier transaction of that
 //    direction has its response, then answered here (one R beat with RLAST /
-//    one B), so later transactions are issued only after the barrier.
+//    one B), so later transactions are issued only after the barrier. An
+//    unsupported CMO waits the same way, so its SLVERR keeps response order.
 // Responses keep the NI's order (in order per port), so a barrier never
 // overtakes a response.
 // ============================================================================
 module noc_acelite2axi #(
-  parameter int IDW = 4
+  parameter int IDW = 4,
+  parameter int DW  = 32                  // data width of both ports
 )(
   input  logic            clk, rst_n,
   // ---------------- ACE-Lite slave port (from the master) ----------------
@@ -40,8 +43,8 @@ module noc_acelite2axi #(
   input  logic [1:0]      s_awbar,
   input  logic            s_awvalid,
   output logic            s_awready,
-  input  logic [31:0]     s_wdata,
-  input  logic [3:0]      s_wstrb,
+  input  logic [DW-1:0]   s_wdata,
+  input  logic [DW/8-1:0] s_wstrb,
   input  logic            s_wlast,
   input  logic            s_wvalid,
   output logic            s_wready,
@@ -61,7 +64,7 @@ module noc_acelite2axi #(
   input  logic            s_arvalid,
   output logic            s_arready,
   output logic [IDW-1:0]  s_rid,
-  output logic [31:0]     s_rdata,
+  output logic [DW-1:0]   s_rdata,
   output logic [1:0]      s_rresp,
   output logic            s_rlast,
   output logic            s_rvalid,
@@ -76,8 +79,8 @@ module noc_acelite2axi #(
   output logic            m_awnosnp,
   output logic            m_awvalid,
   input  logic            m_awready,
-  output logic [31:0]     m_wdata,
-  output logic [3:0]      m_wstrb,
+  output logic [DW-1:0]   m_wdata,
+  output logic [DW/8-1:0] m_wstrb,
   output logic            m_wlast,
   output logic            m_wvalid,
   input  logic            m_wready,
@@ -95,27 +98,31 @@ module noc_acelite2axi #(
   output logic            m_arvalid,
   input  logic            m_arready,
   input  logic [IDW-1:0]  m_rid,
-  input  logic [31:0]     m_rdata,
+  input  logic [DW-1:0]   m_rdata,
   input  logic [1:0]      m_rresp,
   input  logic            m_rlast,
   input  logic            m_rvalid,
   output logic            m_rready
 );
+  localparam logic [2:0] SIZE = 3'($clog2(DW / 8));   // one full beat
+
   function automatic logic shareable(logic [1:0] d);
     return d == 2'b01 || d == 2'b10;
   endfunction
 
   // ---------------- read side ----------------
   logic [7:0]     r_out;                  // ARs sent to the NI without their last R beat yet
-  logic           br_pend;                // a read barrier's R beat to return
+  logic           br_pend;                // a locally answered R beat to return (barrier / unsupported CMO)
+  logic           br_err;                 // ... with SLVERR (unsupported CMO)
   logic [IDW-1:0] br_id;
-  wire  ar_bar = s_arbar[0];
-  wire  ar_cmo = s_arsnoop == 4'b1000 || s_arsnoop == 4'b1001 || s_arsnoop == 4'b1101;
+  wire  ar_inv = s_arsnoop == 4'b1001 || s_arsnoop == 4'b1101;   // CleanInvalid, MakeInvalid: unsupported
+  wire  ar_bar = s_arbar[0] || ar_inv;    // answered here once r_out drains
+  wire  ar_cmo = s_arsnoop == 4'b1000;    // CleanShared
 
   assign m_arid    = s_arid;
   assign m_araddr  = ar_cmo ? {s_araddr[31:6], 6'd0} : s_araddr;
   assign m_arlen   = ar_cmo ? 8'd0 : s_arlen;
-  assign m_arsize  = ar_cmo ? 3'd2 : s_arsize;
+  assign m_arsize  = ar_cmo ? SIZE : s_arsize;
   assign m_arburst = ar_cmo ? 2'b01 : s_arburst;
   assign m_arprot  = s_arprot;
   assign m_arnosnp = !ar_cmo && !shareable(s_ardomain);
@@ -125,16 +132,16 @@ module noc_acelite2axi #(
   assign s_rvalid = br_pend || m_rvalid;
   assign s_rid    = br_pend ? br_id : m_rid;
   assign s_rdata  = br_pend ? '0 : m_rdata;
-  assign s_rresp  = br_pend ? 2'b00 : m_rresp;
+  assign s_rresp  = br_pend ? (br_err ? 2'b10 : 2'b00) : m_rresp;
   assign s_rlast  = br_pend || m_rlast;
   assign m_rready = !br_pend && s_rready;
 
   always_ff @(posedge clk or negedge rst_n)
     if (!rst_n) begin
-      r_out <= '0; br_pend <= 1'b0; br_id <= '0;
+      r_out <= '0; br_pend <= 1'b0; br_err <= 1'b0; br_id <= '0;
     end else begin
       r_out <= r_out + 8'(m_arvalid && m_arready) - 8'(m_rvalid && m_rready && m_rlast);
-      if (s_arvalid && s_arready && ar_bar) begin br_pend <= 1'b1; br_id <= s_arid; end
+      if (s_arvalid && s_arready && ar_bar) begin br_pend <= 1'b1; br_err <= ar_inv; br_id <= s_arid; end
       else if (br_pend && s_rready) br_pend <= 1'b0;
     end
 
@@ -175,7 +182,8 @@ module noc_acelite2axi #(
 
 `ifndef SYNTHESIS
   // ---------------- ACE-Lite port rules (ARM IHI 0022, ACE-Lite subset) ----------------
-  // read: ReadNoSnoop / ReadOnce (0000), CleanShared, CleanInvalid, MakeInvalid; barrier = AxSNOOP 0, one beat
+  // read: ReadNoSnoop / ReadOnce (0000), CleanShared, CleanInvalid, MakeInvalid (the last two get
+  // SLVERR); barrier = AxSNOOP 0, one beat
   a_arsnoop: assert property (@(posedge clk) disable iff (!rst_n)
     s_arvalid |-> s_arsnoop inside {4'b0000, 4'b1000, 4'b1001, 4'b1101});
   a_awsnoop: assert property (@(posedge clk) disable iff (!rst_n)
@@ -186,7 +194,7 @@ module noc_acelite2axi #(
     s_awvalid && s_awbar[0] |-> s_awsnoop == 3'b000 && s_awlen == 8'd0);
   // CMOs and WriteLineUnique are shareable whole-line transactions
   a_cmo: assert property (@(posedge clk) disable iff (!rst_n)
-    s_arvalid && ar_cmo |-> shareable(s_ardomain) && s_araddr[5:0] == 6'd0);
+    s_arvalid && (ar_cmo || ar_inv) |-> shareable(s_ardomain) && s_araddr[5:0] == 6'd0);
   a_wlu: assert property (@(posedge clk) disable iff (!rst_n)
     s_awvalid && s_awsnoop == 3'b001 |-> shareable(s_awdomain) && s_awaddr[5:0] == 6'd0 &&
                                           (32'(s_awlen) + 1) << s_awsize == 32'd64);
@@ -200,12 +208,14 @@ module noc_acelite2axi #(
   c_cleanshared: cover property (@(posedge clk) s_arvalid && s_arready && s_arsnoop == 4'b1000);
   c_cleaninv:   cover property (@(posedge clk) s_arvalid && s_arready && s_arsnoop == 4'b1001);
   c_makeinv:    cover property (@(posedge clk) s_arvalid && s_arready && s_arsnoop == 4'b1101);
-  c_rbar:       cover property (@(posedge clk) s_arvalid && s_arready && ar_bar);
+  c_rbar:       cover property (@(posedge clk) s_arvalid && s_arready && s_arbar[0]);
+  c_cmo_err:    cover property (@(posedge clk) s_rvalid && s_rready && br_pend && br_err);
   c_wunique:    cover property (@(posedge clk) s_awvalid && s_awready && s_awsnoop == 3'b000 && shareable(s_awdomain));
   c_wlu:        cover property (@(posedge clk) s_awvalid && s_awready && s_awsnoop == 3'b001);
   c_wnosnp:     cover property (@(posedge clk) s_awvalid && s_awready && !aw_bar && !shareable(s_awdomain));
   c_wbar:       cover property (@(posedge clk) s_awvalid && s_awready && aw_bar);
-  c_rbar_wait:  cover property (@(posedge clk) s_arvalid && ar_bar && r_out != '0);
+  c_rbar_wait:  cover property (@(posedge clk) s_arvalid && s_arbar[0] && r_out != '0);
+  c_inv_wait:   cover property (@(posedge clk) s_arvalid && ar_inv && r_out != '0);
   c_wbar_wait:  cover property (@(posedge clk) s_awvalid && aw_bar && w_out != '0);
 `endif
   wire unused = ^{s_arbar[1], s_awbar[1]};

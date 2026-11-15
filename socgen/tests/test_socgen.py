@@ -488,6 +488,12 @@ class Chi(unittest.TestCase):
         tb = nocgen.tb_hookup(m)
         self.assertIn("noc_chi_rnf #(.IDW(ID_WIDTH)) u_cpu0_shim", tb)
         self.assertIn("noc_cfg_pkg::chi_dat_t cpu0_shim_txdat_flit;", tb)
+        # the DMA is an ACE-Lite (IO-coherent) port: adapter in the NoC, shim in the bench
+        self.assertIn("noc_acelite2axi #(.IDW(ID_WIDTH)) u_dma_acel", rtl)
+        self.assertIn("input  logic [3:0] dma_arsnoop", rtl)
+        self.assertIn(".s_awnosnp(dma_ax_awnosnp), .s_arnosnp(dma_ax_arnosnp)", rtl)
+        self.assertIn(".s_awnosnp(1'b0), .s_arnosnp(1'b0)", rtl)       # the AHB mcu: always via the home
+        self.assertIn("noc_axi2acelite #(.IDW(ID_WIDTH)) u_dma_shim", tb)
 
 
 if __name__ == "__main__":

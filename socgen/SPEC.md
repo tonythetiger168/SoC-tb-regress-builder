@@ -74,7 +74,7 @@ bench and suite sit next to the behavioural one for a latency comparison.
 | `qos.priority` | 0 | 0..15; higher wins slave-port arbitration in the behavioural NoC |
 | `qos.latency_target` | | read latency budget in cycles; the report flags any path from this master whose worst percentile is over it |
 | `kind` | `vip` | `vip`: AXI master agent drives the port; `rtl`: an IP master (port left to the DUT) |
-| `protocol` | `axi4` | protocol of the master port: `axi4`, `axi4lite`, `ahb` (AHB-Lite), `chi` (CHI RN-F, needs the `chi` section). Others than `axi4` need `noc.model: mesh`; the bench drives them from the AXI4 VIP through a test shim (`noc_axi2lite` / `noc_axi2ahb` / the `noc_chi_rnf` cache) |
+| `protocol` | `axi4` | protocol of the master port: `axi4`, `axi4lite`, `ahb` (AHB-Lite), `chi` (CHI RN-F, needs the `chi` section), `ace_lite` (ACE-Lite, IO coherent: AXI4 + AxSNOOP / AxDOMAIN / AxBAR). Others than `axi4` need `noc.model: mesh`; the bench drives them from the AXI4 VIP through a test shim (`noc_axi2lite` / `noc_axi2ahb` / the `noc_chi_rnf` cache / `noc_axi2acelite`) |
 
 ## `iommus[]`
 
@@ -225,6 +225,18 @@ CHI coherence on the generated NoC: masters with `protocol: chi` are RN-Fs, the
 other masters are RN-Is, and one or more HN-Fs on the mesh are the homes of
 the coherent memory.
 
+AXI4, AXI4-Lite and AHB masters are always IO coherent: their accesses to
+coherent memory go through the home (ReadOnce / WriteUnique semantics).
+`protocol: ace_lite` masters choose per transaction (`noc_acelite2axi`):
+inner / outer shareable through the home; non-shareable or system
+(ReadNoSnoop / WriteNoSnoop) straight to the slave; WriteLineUnique as a
+snooped write; barriers answered once every earlier transaction of that
+direction has its response; CleanShared, CleanInvalid and MakeInvalid as a
+one-word snooped read of the line (the home writes a dirty line back; the RN-F
+copies are not invalidated, so CleanInvalid / MakeInvalid act as CleanShared).
+The bench's `noc_axi2acelite` shim marks coherent addresses inner shareable,
+others non-shareable or system, and inserts a barrier or CMO every 8 bursts.
+
 | Key | Default | Meaning |
 |---|---|---|
 | `home` | | the HN-F routers: `[x, y]`, or a list of 1, 2 or 4 homes, each `[x, y]` or `{node: [x, y], die: d}` (chiplet) |
@@ -297,6 +309,8 @@ The generic RTL it configures is in `rtl/noc/`:
 | `noc_ni_chi.sv` | CHI: RN-F network interface (CHI channels <-> packets to the home) |
 | `noc_hnf.sv` | CHI: home node, snoop filter, RN-I chunks to coherent memory |
 | `noc_chi_rnf.sv` | CHI: RN-F cache (AXI4 slave -> cache -> CHI port), the bench's shim for `protocol: chi` |
+| `noc_acelite2axi.sv` | ACE-Lite master port -> master NI (shareability, barriers, CMOs; port SVA) |
+| `noc_axi2acelite.sv` | AXI4 -> ACE-Lite, the bench's shim for `protocol: ace_lite` |
 | `rtl/soc/axi2apb_bridge.sv` | AXI4 -> APB4 on APB slave ports |
 
 Protocol notes: AHB-Lite has no write strobes (a narrow write needs a narrow
