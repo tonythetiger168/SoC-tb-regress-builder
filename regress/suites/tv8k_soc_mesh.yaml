@@ -8,5 +8,6 @@ list:
   default: regress/tv8k_soc_mesh_testlist.txt
   nightly: regress/tv8k_soc_mesh_nightly.txt
 cov_include: ['socgen/out/tv8k_soc_mesh/rtl/*']
+timeout: 3600
 requires: [ext/xuanji-core/rtl/noc/orca_noc_router.sv]
 fallback: {filelist: socgen/out/tv8k_soc_mesh/sim/files_open.f}

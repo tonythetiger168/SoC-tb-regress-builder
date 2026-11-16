@@ -38,6 +38,11 @@ package {{ m.name }}_pkg;
 {% endfor %}
   localparam logic [31:0] S_BASE [NS] = '{ {{ m.targets|map(attribute='base')|map('sv_h32')|join(', ') }} };
   localparam int S_ACCESS [NS] = '{ {{ m.targets|map(attribute='access')|join(', ') }} };
+  // 1: an RTL DRAM model serves the port (memories[].model != vip), it takes its own time
+  // set by tb_top once every RTL DRAM channel has finished its power-up / MRS / ZQ
+  // sequence (the tests start their traffic after it, as boot code would)
+  bit dram_ready = 1'b{{ 0 if m.targets|selectattr('kind', 'equalto', 'channel')|selectattr('model', 'ne', 'vip')|list else 1 }};
+  localparam bit S_DRAM [NS] = '{ {% for t in m.targets %}1'b{{ 1 if t.kind == 'channel' and t.model != 'vip' else 0 }}{{ ', ' if not loop.last }}{% endfor %} };
 {% for mem in m.memories %}
   // {{ mem.name }}: channel = off[{{ mem.gbits + mem.cbits - 1 }}:{{ mem.gbits }}]{% if mem.hash == 'xor' %} ^ off[{{ mem.gbits + 2*mem.cbits - 1 }}:{{ mem.gbits + mem.cbits }}]{% endif %}, off = a - {{ mem.name|upper }}_BASE
   function automatic int {{ m.prefix }}_{{ mem.name }}_channel(logic [31:0] a);

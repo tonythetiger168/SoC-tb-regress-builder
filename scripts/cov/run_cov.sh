@@ -8,7 +8,8 @@
 # scores the result with score_cov.py against scripts/cov/exclude/<tb>.txt and,
 # for a socgen bench, the generated <out>/doc/<tb>_cov_waivers.txt.
 # Scope of code coverage: COV_SCOPE (regex on source paths); default rtl/<tb>/,
-# or, for a socgen bench (sim/<tb>.f absent), its generated RTL plus rtl/noc/.
+# or, for a socgen bench (sim/<tb>.f absent), its generated RTL plus rtl/noc/,
+# plus vip/dram/soc_ddr4_chan.sv when the bench has DDR4 channels.
 # FLIST, TOP and UVM_HOME can be overridden the same way.
 set -u
 TB=${1:-soc}; LIST=${2:-regress/testlist.txt}
@@ -24,6 +25,10 @@ else                                # socgen bench
   FLIST=${FLIST:-$FL}
   # generated SoC glue, plus the generated and generic NoC RTL of a mesh bench
   SCOPE=${COV_SCOPE:-socgen/out/$TB/rtl/(${TB}_|noc_)|(^|/)rtl/noc/}
+  # DDR4 channels (memories[].model: ddr4): their glue is scored too
+  if [ -z "${COV_SCOPE:-}" ] && grep -q 'vip/dram/soc_ddr4_chan.sv' "$FLIST"; then
+    SCOPE="$SCOPE|vip/dram/soc_ddr4_chan\.sv"
+  fi
 fi
 UVM_HOME=${UVM_HOME:-$ROOT/uvm-core/src}
 D=build/cov/$TB
@@ -37,12 +42,14 @@ fail=0
 while read -r tb t n args; do
   [ "$tb" = "$TB" ] || continue
   for s in $(seq 1 "$n"); do
-    log=$D/run_${t}_$s.log
+    # plusargs go into the run name (a test can be listed once per +cov_part)
+    tag=$t$(for a in $args; do a=${a#+}; printf '__%s' "${a//[^A-Za-z0-9_]/}"; done)
+    log=$D/run_${tag}_$s.log
     (cd "$D" && ./obj/V"$TOP" +UVM_TESTNAME="$t" +verilator+seed+"$s" $args > "$(basename "$log")" 2>&1
-     mv coverage.dat "cov_${t}_$s.dat")
-    if grep -qE 'UVM_(ERROR|FATAL) [^:]*@' "$log" || ! grep -q 'PASS' "$log"; then
-      echo "FAIL $t seed $s ($log)"; fail=1
-    else echo "pass $t seed $s"; fi
+     mv coverage.dat "cov_${tag}_$s.dat")
+    if grep -qE 'UVM_(ERROR|FATAL) [^:]*@' "$log" || ! grep -qE '^(SB_PASS checks=[1-9]|RAL_PASS|COV_PASS)' "$log"; then
+      echo "FAIL $tag seed $s ($log)"; fail=1
+    else echo "pass $tag seed $s"; fi
   done
 done < <(grep -v '^#' "$LIST")
 verilator_coverage --write "$D/merged.dat" "$D"/cov_*.dat > /dev/null && rm -f "$D"/cov_*.dat

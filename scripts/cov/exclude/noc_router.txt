@@ -1,0 +1,1 @@
+toggle noc_router_tb_top\.dut test_en # unused by noc_router_open (scan-enable input of the orca_noc_router interface); every mesh ties it to 0

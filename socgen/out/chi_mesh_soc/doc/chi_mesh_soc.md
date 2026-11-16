@@ -35,7 +35,7 @@ NoC: generated RTL `chi_mesh_soc_noc` (2x2 mesh of orca_noc_router (open router 
 | 1 | 0x10001000 | uart | open-ip UART | 0x55410200 |
 | 2 | 0x10002000 | ext | APB VIP | - |
 
-open-ip-portfolio commit `359f40a67051a7da5dba4d0bf57c01e67bdcf2fa`.
+open-ip-portfolio commit `35cc545ed27330e451ea432d76f94e2dc4db8c47`.
 
 ## Placement
 

@@ -1,0 +1,2 @@
+# noc_router_open unit bench: <tb> <test> <seeds>
+noc_router noc_router_random 4

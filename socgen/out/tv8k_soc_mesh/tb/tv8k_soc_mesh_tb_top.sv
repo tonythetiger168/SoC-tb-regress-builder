@@ -854,6 +854,148 @@ module tv8k_soc_mesh_tb_top;
     .irq(apb_irq)
   );
 
+
+  // Interrupt routing (SoC glue): after reset, hold every IP interrupt output
+  // low, then drive each one high and low on its own and check that exactly
+  // apb_irq[slot] follows. What makes an IP raise its interrupt is IP function,
+  // closed by that IP's own bench; here only the wiring to the SoC IRQ index is
+  // checked. Every test runs it; it takes 54 clocks.
+  initial begin
+    wait (aresetn);
+    repeat (2) @(posedge aclk);
+    force u_apb.u_gpio.irq = 1'b0;
+    force u_apb.u_uart.irq = 1'b0;
+    force u_apb.u_i2c.irq = 1'b0;
+    force u_apb.u_spi.irq = 1'b0;
+    force u_apb.u_pwm.irq = 1'b0;
+    force u_apb.u_trng.irq = 1'b0;
+    force u_apb.u_hdmi.irq = 1'b0;
+    force u_apb.u_hdcp.irq = 1'b0;
+    force u_apb.u_i2s.irq = 1'b0;
+    force u_apb.u_crypto.irq = 1'b0;
+    force u_apb.u_eth.irq = 1'b0;
+    force u_apb.u_usb.irq = 1'b0;
+    force u_apb.u_emmc.irq = 1'b0;
+    @(posedge aclk);
+    force u_apb.u_gpio.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 0)
+      `uvm_error("IRQ_ROUTE", $sformatf("gpio interrupt: apb_irq = 'b%b, expected only bit 0", apb_irq))
+    force u_apb.u_gpio.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("gpio interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_uart.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 1)
+      `uvm_error("IRQ_ROUTE", $sformatf("uart interrupt: apb_irq = 'b%b, expected only bit 1", apb_irq))
+    force u_apb.u_uart.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("uart interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_i2c.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 3)
+      `uvm_error("IRQ_ROUTE", $sformatf("i2c interrupt: apb_irq = 'b%b, expected only bit 3", apb_irq))
+    force u_apb.u_i2c.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("i2c interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_spi.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 4)
+      `uvm_error("IRQ_ROUTE", $sformatf("spi interrupt: apb_irq = 'b%b, expected only bit 4", apb_irq))
+    force u_apb.u_spi.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("spi interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_pwm.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 5)
+      `uvm_error("IRQ_ROUTE", $sformatf("pwm interrupt: apb_irq = 'b%b, expected only bit 5", apb_irq))
+    force u_apb.u_pwm.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("pwm interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_trng.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 6)
+      `uvm_error("IRQ_ROUTE", $sformatf("trng interrupt: apb_irq = 'b%b, expected only bit 6", apb_irq))
+    force u_apb.u_trng.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("trng interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_hdmi.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 7)
+      `uvm_error("IRQ_ROUTE", $sformatf("hdmi interrupt: apb_irq = 'b%b, expected only bit 7", apb_irq))
+    force u_apb.u_hdmi.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("hdmi interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_hdcp.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 8)
+      `uvm_error("IRQ_ROUTE", $sformatf("hdcp interrupt: apb_irq = 'b%b, expected only bit 8", apb_irq))
+    force u_apb.u_hdcp.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("hdcp interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_i2s.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 9)
+      `uvm_error("IRQ_ROUTE", $sformatf("i2s interrupt: apb_irq = 'b%b, expected only bit 9", apb_irq))
+    force u_apb.u_i2s.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("i2s interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_crypto.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 10)
+      `uvm_error("IRQ_ROUTE", $sformatf("crypto interrupt: apb_irq = 'b%b, expected only bit 10", apb_irq))
+    force u_apb.u_crypto.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("crypto interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_eth.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 11)
+      `uvm_error("IRQ_ROUTE", $sformatf("eth interrupt: apb_irq = 'b%b, expected only bit 11", apb_irq))
+    force u_apb.u_eth.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("eth interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_usb.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 12)
+      `uvm_error("IRQ_ROUTE", $sformatf("usb interrupt: apb_irq = 'b%b, expected only bit 12", apb_irq))
+    force u_apb.u_usb.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("usb interrupt released: apb_irq = 'b%b", apb_irq))
+    force u_apb.u_emmc.irq = 1'b1;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== 19'(1) << 13)
+      `uvm_error("IRQ_ROUTE", $sformatf("emmc interrupt: apb_irq = 'b%b, expected only bit 13", apb_irq))
+    force u_apb.u_emmc.irq = 1'b0;
+    repeat (2) @(posedge aclk);
+    if (apb_irq !== '0)
+      `uvm_error("IRQ_ROUTE", $sformatf("emmc interrupt released: apb_irq = 'b%b", apb_irq))
+    release u_apb.u_gpio.irq;
+    release u_apb.u_uart.irq;
+    release u_apb.u_i2c.irq;
+    release u_apb.u_spi.irq;
+    release u_apb.u_pwm.irq;
+    release u_apb.u_trng.irq;
+    release u_apb.u_hdmi.irq;
+    release u_apb.u_hdcp.irq;
+    release u_apb.u_i2s.irq;
+    release u_apb.u_crypto.irq;
+    release u_apb.u_eth.irq;
+    release u_apb.u_usb.irq;
+    release u_apb.u_emmc.irq;
+    `uvm_info("IRQ_ROUTE", "13 IP interrupts reach their apb_irq bits", UVM_LOW)
+  end
   apb_sva #(.NAME("apb_apb_ext")) u_apb_apb_ext_sva (apb_apb_ext_if);
   initial uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top.env.apb_apb_ext.*", "vif", apb_apb_ext_if);
 

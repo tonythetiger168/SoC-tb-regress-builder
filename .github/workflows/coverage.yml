@@ -1,0 +1,51 @@
+name: coverage-closure
+# Nightly coverage closure gate: rebuilds the benches with Verilator line,
+# branch, toggle and SVA coverage, runs their test lists and fails when
+# scripts/cov/score_cov.py reports any unwaived hole (see docs in scripts/cov/).
+# About 8 minutes per bench, so it runs nightly and on demand, not per push.
+on:
+  schedule:
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+jobs:
+  closure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        tb:
+          - {name: soc,      list: regress/testlist.txt}
+          - {name: mini_soc, list: regress/mini_soc_testlist.txt}
+          - {name: mini_mesh_soc, list: regress/mini_mesh_soc_testlist.txt}
+          - {name: noc_router, list: regress/noc_router_testlist.txt, scope: 'rtl/noc/noc_router_open\.sv'}
+    env:
+      VERILATOR_VERSION: v5.052
+      VERILATOR_PREFIX: /opt/verilator
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Verilator
+        uses: actions/cache@v4
+        with:
+          path: /opt/verilator
+          key: verilator-${{ env.VERILATOR_VERSION }}-${{ runner.os }}-ubuntu-24.04
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libfl2 ccache python3-yaml
+          sudo mkdir -p /opt/verilator && sudo chown "$USER" /opt/verilator
+          bash scripts/install_tools.sh
+          echo "/opt/verilator/bin" >> "$GITHUB_PATH"
+      - name: Coverage closure (${{ matrix.tb.name }})
+        env:
+          COV_SCOPE: ${{ matrix.tb.scope }}
+        run: |
+          [ -n "$COV_SCOPE" ] || unset COV_SCOPE
+          bash scripts/cov/run_cov.sh ${{ matrix.tb.name }} ${{ matrix.tb.list }}
+      - name: Upload score
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cov_${{ matrix.tb.name }}
+          path: |
+            build/cov/${{ matrix.tb.name }}/score.json
+            build/cov/${{ matrix.tb.name }}/*.log

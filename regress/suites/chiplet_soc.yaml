@@ -7,5 +7,6 @@ top: chiplet_soc_tb_top
 list:
   default: regress/chiplet_soc_testlist.txt
 cov_include: ['socgen/out/chiplet_soc/rtl/*']
+timeout: 2400
 requires: [ext/xuanji-core/rtl/noc/orca_noc_router.sv]
 fallback: {filelist: socgen/out/chiplet_soc/sim/files_open.f}

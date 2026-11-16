@@ -136,6 +136,7 @@ package tv8k_soc_mesh_test_pkg;
 
     task run_phase(uvm_phase phase);
       phase.raise_objection(this);
+      wait (dram_ready);
       #(20 * TCK * 1ns);
       body();
       #(50 * TCK * 1ns);
@@ -347,9 +348,14 @@ package tv8k_soc_mesh_test_pkg;
 
     // mesh: slave error responses, every address bit of every target from
     // every master, and a 256-beat burst each way from every master
-    task mesh_extra();
+    // par 0 / 1: only the even / odd VIP masters (the APB VIP bursts go with 0)
+    task mesh_extra(int par = -1);
       int vm[$];
-      for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) vm.push_back(mi);
+      for (int mi = 0, n = 0; mi < NM; mi++) if (vip_master(mi)) begin
+        if (par < 0 || n % 2 == par) vm.push_back(mi);
+        n++;
+      end
+      if (vm.size() == 0) return;
       for (int si = 0; si < NS; si++) begin
         logic [31:0] b = err_base(si);
         if (S_KIND[si] != "channel" && S_KIND[si] != "memory" && S_KIND[si] != "vip") continue;
@@ -359,6 +365,11 @@ package tv8k_soc_mesh_test_pkg;
           run_item(vm[i], wr, b, 8, 2, AXI4_INCR);              // SLVERR, every word of a chunk
           run_item(vm[i], wr, b + 32'h80, 8, 2, AXI4_INCR);     // DECERR
         end
+        // then OKAY through the same slave NI: a read over every word of its
+        // chunk and single writes through every write-burst slot, so the
+        // response and burst-length bits fall again
+        run_item(vm[0], 0, PATH_ADDR[vm[0]][si] & ~32'h3F, 8, 2, AXI4_INCR);
+        for (int k = 0; k < 4; k++) run_item(vm[0], 1, (PATH_ADDR[vm[0]][si] & ~32'h3F) + 4 * k, 1, 2, AXI4_INCR);
       end
       foreach (vm[i]) for (int si = 0; si < NS; si++) begin
         if (S_KIND[si] == "apb_bridge") continue;
@@ -371,6 +382,7 @@ package tv8k_soc_mesh_test_pkg;
           run_item(vm[i], 1, S_BASE[si] + (32'd1 << bit_), 1, 2, AXI4_INCR);
         run_item(vm[i], 1, S_BASE[si] + target_size(si) - 32'h4, 1, 2, AXI4_INCR);
       end
+      `uvm_info("COV_PHASE", "decerr walk", UVM_LOW)
       // every master: each address bit at a decode miss (DECERR in the master NI)
       foreach (vm[i])
         for (int bit_ = 2; bit_ < 32; bit_++)
@@ -378,6 +390,7 @@ package tv8k_soc_mesh_test_pkg;
             for (int k = 0; k < 4; k++) run_item(vm[i], 0, 32'd1 << bit_, 1, 2, AXI4_INCR);   // every slot
             for (int k = 0; k < 4; k++) run_item(vm[i], 1, 32'd1 << bit_, 1, 2, AXI4_INCR);
           end
+      `uvm_info("COV_PHASE", "burst shapes", UVM_LOW)
       // every master: the burst shapes on a memory in +0x800 of its 4 KB block
       // (no other phase uses it), WRAP bursts that split at the wrap point at
       // odd words, narrow reads at odd addresses, multi-chunk partially strobed
@@ -404,9 +417,10 @@ package tv8k_soc_mesh_test_pkg;
           for (int k = 0; k < 4; k++) run_item(mi, 1, a, 1, 2, AXI4_INCR);
         end
       end
+      `uvm_info("COV_PHASE", "apb vip bursts", UVM_LOW)
       // APB VIP completers: multi-beat bursts with random data, so every word
       // of the peripheral port's read chunk carries data
-      for (int i = 0; i < NAPB_VIP; i++)
+      if (par <= 0) for (int i = 0; i < NAPB_VIP; i++)
         for (int k = 0; k < 16; k++) begin
           run_item(first_vip(), 1, apb_vip_base(i) + 32'h100, 8, 2, AXI4_INCR);
           run_item(first_vip(), 0, apb_vip_base(i) + 32'h100, 8, 2, AXI4_INCR);
@@ -468,6 +482,13 @@ package tv8k_soc_mesh_test_pkg;
 
     task body();
       logic [31:0] hole = empty_slot();
+      // +cov_part=N runs one part only (0 or none: all), so a big bench can
+      // spread the test over several runs whose coverage merges: 1 RAL, burst
+      // shapes, APB ports; 2 / 3 mesh error and address walks of the even / odd
+      // masters; 4 mesh stress phases; 5 random link fill
+      int part = 0;
+      void'($value$plusargs("cov_part=%d", part));
+      if (part <= 1) begin
       ral_bash();
       // every VIP master and every NoC port gets the burst shapes at least once:
       // pair k = 0 .. max(masters, ports) - 1 -> (k-th VIP master, port k)
@@ -484,10 +505,15 @@ package tv8k_soc_mesh_test_pkg;
             if (pass && (k >= NS || M_PROTO[vm[k % vm.size()]] == "axi4" || M_PROTO[mi] != "axi4")) break;
             if (S_KIND[si] == "apb_bridge") begin
               if (hole != 0) shapes(mi, hole, 0, ahb);
-            end else if (S_KIND[si] != "periph") shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1, ahb);   // stays in its 4 KB granule
+            end else if (S_KIND[si] != "periph") begin
+              shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1, ahb);   // stays in its 4 KB granule
+            end
             else begin                                      // RTL slave
               shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 0, ahb);
               if (k < NS) rtl_slave_walk(mi, si);
+              // then OKAY over every word of the slave NI's read chunk, so the
+              // response bits of the walk's error replies fall again
+              if (k < NS) run_item(first_vip(), 0, PATH_ADDR[first_vip()][si] & ~32'h3F, 8, 2, AXI4_INCR);
             end
           end
         end
@@ -497,9 +523,14 @@ package tv8k_soc_mesh_test_pkg;
         end
       end
       if (hole != 0) apb_port_stress(hole, empty_slot(1));
-      mesh_extra();
-      pipe_stress();
-      for (int i = 0; i < NAPB_VIP; i++) begin
+      // then OKAY over every word of the APB port NI's read chunk, so the
+      // response bits of the empty slot's SLVERR bursts fall again
+      if (hole != 0 && NAPB_VIP > 0) run_item(first_vip(), 0, apb_vip_base(0) + 32'h100, 8, 2, AXI4_INCR);
+      end
+      if (part == 0) begin mesh_extra(); pipe_stress(); end
+      if (part == 2 || part == 3) mesh_extra(part - 2);
+      if (part == 4 || part == 5) pipe_stress(part - 3);
+      if (part <= 1) for (int i = 0; i < NAPB_VIP; i++) begin
         logic [31:0] b = apb_vip_base(i);
         int mi = first_vip();
         axi4_item t;
@@ -529,11 +560,28 @@ package tv8k_soc_mesh_test_pkg;
     // and the routers and the slave NI's response path back-pressure.
     // Reads may go anywhere in the master's slice; writes only to its own
     // PATH_ADDR (one writer per address, so the scoreboard sees no races).
-    task pipe_stress();
+    // On meshes over 2x2: a slave port with the same kind and protocol as an
+    // earlier one on the same router (e.g. 4 LPDDR channels on one edge
+    // router). The stress phases aim at router outputs and slave NI queues,
+    // which such a twin repeats, so they skip it to keep the run time down.
+    function bit twin_port(int si);
+      if (noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y <= 4 || S_KIND[si] == "apb_bridge") return 0;
+      for (int x = 0; x < si; x++)
+        if (S_KIND[x] == S_KIND[si] && S_PROTO[x] == S_PROTO[si] &&
+            noc_cfg_pkg::EP_X[NM + x] == noc_cfg_pkg::EP_X[NM + si] &&
+            noc_cfg_pkg::EP_Y[NM + x] == noc_cfg_pkg::EP_Y[NM + si]) return 1;
+      return 0;
+    endfunction
+
+    // sect 1: everything but the random link fill; 2: the random link fill only
+    task pipe_stress(int sect = 0);
       int ms[$];
       int unsigned acc[$];
       for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) ms.push_back(mi);
       foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 16;
+      foreach (env.cfg.s_cfg[i]) acc.push_back(env.cfg.s_cfg[i].access_latency);
+      if (sect != 2) begin
+      `uvm_info("COV_PHASE", "hot spots", UVM_LOW)
       // passes 0-2 with zero-latency slaves (no access time either), 3-5 with
       // heavy back-pressure:
       // reads, writes, then both at once (the slave NI's read and write
@@ -541,7 +589,6 @@ package tv8k_soc_mesh_test_pkg;
       // waits; mixed-pass writes are single beats so B responses come back to
       // back). Mixed-pass reads go to +0xC00 of the 4 KB block, which no
       // other phase writes, so they cannot race the writes.
-      foreach (env.cfg.s_cfg[i]) acc.push_back(env.cfg.s_cfg[i].access_latency);
       // passes 6-8: the same hot spots with single beats only (reads, writes,
       // mixed), the APB port included, so request flits pile up in the routers
       for (int pass = 0; pass < 9; pass++) begin
@@ -551,6 +598,9 @@ package tv8k_soc_mesh_test_pkg;
         for (int si = 0; si < NS; si++) begin
           logic [31:0] apb = NAPB_VIP ? apb_vip_base(0) + 32'h200 : empty_slot();
           if (S_KIND[si] == "apb_bridge" && pass < 6) continue;
+          // twins: the deep read / write queues (passes 0, 1) and the slow
+          // writes that keep several bursts waiting for B (pass 4) only
+          if (twin_port(si) && pass != 0 && pass != 1 && pass != 4) continue;
           // one fork level only: Verilator 5.052 binds a nested fork's view of
           // the outer fork's locals to the last iteration
           for (int i = 0; i < ms.size(); i++)
@@ -570,6 +620,7 @@ package tv8k_soc_mesh_test_pkg;
           wait fork;
         end
       end
+      `uvm_info("COV_PHASE", "storm", UVM_LOW)
       // storm: every master at once to every port, single beats, zero latency,
       // so flits from several inputs meet at one router output and queue up
       env.cfg.set_timing(0);
@@ -587,6 +638,7 @@ package tv8k_soc_mesh_test_pkg;
           end
         wait fork;
       end
+      `uvm_info("COV_PHASE", "streams", UVM_LOW)
       // streams: every master keeps 16 single beats in flight for a long
       // while, each thread walking over all ports (thread 0 / 1 on the APB
       // port), so all links carry traffic at once and the router input
@@ -614,6 +666,7 @@ package tv8k_soc_mesh_test_pkg;
           end
         wait fork;
       end
+      `uvm_info("COV_PHASE", "link fill", UVM_LOW)
       // link fill: every full AXI4 master at once sends one port a 64-beat
       // read (8 request flits in 8 cycles) and 8 single-beat writes (one
       // flit per W beat), and 8 single reads to the next port, so two
@@ -622,6 +675,7 @@ package tv8k_soc_mesh_test_pkg;
       begin
         logic [31:0] apb = NAPB_VIP ? apb_vip_base(0) + 32'h200 : empty_slot();
         for (int si = 0; si < NS; si++) begin
+          if (twin_port(si)) continue;
           for (int i = 0; i < ms.size(); i++) begin
             automatic int mi = ms[i], s = si, ii = i, t = (si + 1) % NS;
             if (M_PROTO[mi] != "axi4") continue;
@@ -642,6 +696,7 @@ package tv8k_soc_mesh_test_pkg;
           wait fork;
         end
       end
+      `uvm_info("COV_PHASE", "apb two-chunk writes", UVM_LOW)
       // APB port: two-chunk writes from every master at once (MAXB bursts x 2
       // chunks each), so the slave NI's write queue holds more than 16 chunks
       if (NAPB_VIP) begin
@@ -655,13 +710,18 @@ package tv8k_soc_mesh_test_pkg;
           end
         wait fork;
       end
+      `uvm_info("COV_PHASE", "router fill", UVM_LOW)
       // router fill: masters split in two groups, each group hammering the
       // slave ports on one router (single reads and writes, zero latency), so
       // the response flits of one router's slaves leave it back to back and
       // meet the other group's traffic on the way
+      // (every router pair up to 2x2; on bigger meshes each router with itself
+      // and its east and north neighbours, which keeps the run time linear)
       for (int ra = 0; ra < noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y; ra++)
         for (int rb = 0; rb < noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y; rb++)
           for (int par = 0; par < 2; par++) begin
+            if (noc_cfg_pkg::MESH_X * noc_cfg_pkg::MESH_Y > 4 && rb != ra && rb != ra + 1 &&
+                rb != ra + noc_cfg_pkg::MESH_X) continue;
             for (int i = 0; i < ms.size(); i++) begin
               int r = (i % 2 == par) ? ra : rb;
               int ss[$];
@@ -680,6 +740,11 @@ package tv8k_soc_mesh_test_pkg;
             end
             wait fork;
           end
+      end
+      if (sect != 1) begin
+      env.cfg.set_timing(0);
+      foreach (env.cfg.s_cfg[i]) env.cfg.s_cfg[i].access_latency = 0;
+      `uvm_info("COV_PHASE", "random link fill", UVM_LOW)
       // random link fill: random target pairs, burst mixes and start skews,
       // so the flit trains of different masters line up at some router
       for (int round = 0; round < 800; round++) begin
@@ -705,6 +770,7 @@ package tv8k_soc_mesh_test_pkg;
           end
         end
         wait fork;
+      end
       end
       foreach (env.cfg.s_cfg[i]) env.cfg.s_cfg[i].access_latency = acc[i];
       foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 1;
