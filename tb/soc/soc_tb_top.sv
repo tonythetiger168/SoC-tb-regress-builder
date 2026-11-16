@@ -16,6 +16,14 @@ module soc_tb_top;
     aresetn <= 1'b1;
   end
 
+  // mid-test reset requested by a test (soc_cov_test): aresetn low for 4 clocks
+  soc_ctl_if ctl (.clk(aclk), .rstn(aresetn));
+  always @(posedge ctl.rst_req) begin
+    @(posedge aclk) aresetn <= 1'b0;
+    repeat (4) @(posedge aclk);
+    aresetn <= 1'b1;
+  end
+
   // ---------------- interfaces ----------------
   axi4_if m_if [2] (.aclk(aclk), .aresetn(aresetn));   // DUT AXI slave ports m0/m1
   axi4_if ddr_if   (.aclk(aclk), .aresetn(aresetn));   // DUT external memory port
@@ -129,6 +137,7 @@ module soc_tb_top;
     uvm_config_db#(virtual axi4_if)::set(null, "uvm_test_top.env.ddr_agent*", "vif", ddr_if);
     uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top.env.apbx_agent*", "vif", apbx_if);
     uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top.env.apb_mon_agent*", "vif", apbi_if);
+    uvm_config_db#(virtual soc_ctl_if)::set(null, "uvm_test_top", "ctl_vif", ctl);
     run_test();
   end
 

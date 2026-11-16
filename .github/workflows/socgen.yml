@@ -1,0 +1,59 @@
+name: socgen
+on:
+  push:
+    paths: ["socgen/**", "vip/**", "rtl/soc/axi2apb_bridge.sv", "rtl/noc/**", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
+  pull_request:
+    paths: ["socgen/**", "vip/**", "rtl/soc/axi2apb_bridge.sv", "rtl/noc/**", "regress/**", "Makefile", ".github/workflows/socgen.yml"]
+  workflow_dispatch:
+jobs:
+  socgen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VERILATOR_VERSION: v5.052
+      VERILATOR_PREFIX: /opt/verilator
+      OPEN_IP_ROOT: ${{ github.workspace }}/open-ip-portfolio
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: tonythetiger168/open-ip-portfolio
+          path: open-ip-portfolio
+      - name: Python deps
+        run: pip install pyyaml jinja2
+      - name: Unit tests
+        run: python3 -m unittest discover -s socgen/tests -v
+      - name: Specs validate and regenerate
+        run: |
+          for s in socgen/specs/*.yaml; do python3 socgen/socgen.py "$s" --check; done
+          python3 socgen/socgen.py socgen/specs/mini_soc.yaml
+          python3 socgen/socgen.py socgen/specs/phone_soc.yaml
+          python3 socgen/socgen.py socgen/specs/mini_mesh_soc.yaml
+          python3 socgen/socgen.py socgen/specs/chiplet_soc.yaml
+          python3 socgen/socgen.py socgen/specs/chi_mesh_soc.yaml
+          python3 socgen/socgen.py socgen/specs/chi_mesh_soc.yaml --no-direct
+          python3 socgen/socgen.py socgen/specs/chi_chiplet_soc.yaml
+          python3 socgen/socgen.py socgen/specs/phone_soc.yaml --noc-model mesh
+          git status --short socgen/out regress
+      - name: Cache Verilator
+        uses: actions/cache@v4
+        with:
+          path: /opt/verilator
+          key: verilator-${{ env.VERILATOR_VERSION }}-${{ runner.os }}-ubuntu-24.04
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libfl2 ccache python3-yaml
+          sudo mkdir -p /opt/verilator && sudo chown "$USER" /opt/verilator
+          bash scripts/install_tools.sh
+          echo "/opt/verilator/bin" >> "$GITHUB_PATH"
+      - name: mini_soc regression (behavioural NoC; generated mesh RTL with every AMBA protocol; two-die UCIe chiplet; CHI coherence)
+        run: python3 regress/regress.py --suite mini_soc --suite mini_mesh_soc --suite chiplet_soc --suite chi_mesh_soc --suite chi_chiplet_soc --jobs "$(nproc)"
+      - name: Summary
+        if: always()
+        run: cat regress_out/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: socgen_regress_out
+          path: regress_out/

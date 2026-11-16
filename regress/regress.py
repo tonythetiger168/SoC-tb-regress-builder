@@ -35,8 +35,12 @@ yesterday's nightly) into one cumulative report.
 
 A run PASSES when the simulator exits 0, the log has ``UVM_ERROR : 0`` and
 ``UVM_FATAL : 0``, and it printed a pass marker (``SB_PASS checks=<n>`` with
-n > 0, or ``RAL_PASS``; see ``pass_markers``). Exit status 1 if any run or
-build fails.
+n > 0, or ``RAL_PASS``; see ``pass_markers``).
+A run on Micron's DDR4 model (``DRAM ... model micron``) also fails on any
+non-UVM log line with ``ERROR``: Micron reports JEDEC violations only as
+messages, so the bench's own DRAM error count stays 0 there.
+Outputs in --out: one log per run (<tb>/<test>__s<seed>.log), summary.csv,
+summary.md and junit.xml. Exit status 1 if any run fails or a build fails.
 """
 import argparse, concurrent.futures as cf, csv, fnmatch, glob, hashlib, json, os, re, shutil
 import subprocess, sys, time, zipfile
@@ -240,6 +244,18 @@ def build(s, sim, jobs, cov, build_root, uvm_home):
     return dict(key=key, dir=bdir, exe=exe)
 
 
+MICRON_RUN = re.compile(r"^DRAM \S+ .* model micron$", re.M)
+MICRON_ERR = re.compile(r"(?<![A-Za-z_])ERROR\b")
+
+
+def vendor_model_error(log):
+    """First Micron model violation message in a Micron run, else ''."""
+    if not MICRON_RUN.search(log):
+        return ""
+    return next((l for l in log.splitlines()
+                 if not l.startswith("UVM_") and not l.startswith("DRAM ") and MICRON_ERR.search(l)), "")
+
+
 # --------------------------------------------------------------------------- run
 def classify(rc, log, markers):
     errs = re.search(r"^UVM_ERROR\s*:\s*(\d+)", log, re.M)
@@ -253,6 +269,9 @@ def classify(rc, log, markers):
         return "FAIL", checks, first or "no UVM report summary (crash or timeout?)"
     if int(errs.group(1)) or int(fats.group(1)) or rc != 0:
         return "FAIL", checks, first
+    verr = vendor_model_error(log)
+    if verr:
+        return "FAIL", checks, "Micron model: " + verr.strip()
     if not mk or checks == 0:
         return "FAIL", 0, f"no {' / '.join(markers)} line"
     return "PASS", checks, ""

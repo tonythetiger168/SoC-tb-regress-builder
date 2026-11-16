@@ -4,3 +4,5 @@ uvm-core
 uvm-core/
 *.vcd
 __pycache__/
+ext/
+tv8k_latency*.csv

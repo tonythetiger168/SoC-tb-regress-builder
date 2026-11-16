@@ -1,0 +1,3 @@
+# tv8k VDEC: c1p HEVC decode through the NoC (vectors: make tv8k_vdec_vec)
+tv8k_vdec_hevc_test  1  +C1P_VEC=base
+tv8k_vdec_hevc_test  1  +C1P_VEC=lft4k +VDEC_BG=20

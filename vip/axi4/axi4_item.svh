@@ -22,6 +22,7 @@ class axi4_item extends uvm_sequence_item;
   time              t_start, t_end;
   time              t_req;      // monitor: first cycle AWVALID/ARVALID was seen
   time              t_first;    // monitor: first R beat (reads)
+  bit               done;       // set by the master driver when the response is complete
 
   // knobs read by the master driver
   int unsigned      aw_delay, w_gap, b_delay, r_gap;

@@ -52,6 +52,7 @@ class axi4_slave_driver extends uvm_component;
 
   task aw_thread();
     forever begin
+      if (cfg.ready_after_valid) while (vif.slv_cb.awvalid !== 1'b1) @(vif.slv_cb);
       repeat (axi4_cfg::rand_delay(cfg.max_aready_delay)) @(vif.slv_cb);
       vif.slv_cb.awready <= 1'b1;
       do @(vif.slv_cb); while (!(vif.slv_cb.awvalid === 1'b1 && vif.awready === 1'b1));
@@ -67,6 +68,10 @@ class axi4_slave_driver extends uvm_component;
       t.resp[0] = cfg.resp_for(t.addr);
       for (int unsigned i = 0; i < t.beats(); i++) begin
         int unsigned d = axi4_cfg::rand_delay(cfg.max_wready_delay);
+        if (cfg.ready_after_valid) begin
+          vif.slv_cb.wready <= 1'b0;
+          do @(vif.slv_cb); while (vif.slv_cb.wvalid !== 1'b1);
+        end
         if (d) begin
           vif.slv_cb.wready <= 1'b0;
           repeat (d) @(vif.slv_cb);
@@ -108,6 +113,7 @@ class axi4_slave_driver extends uvm_component;
   task ar_thread();
     forever begin
       axi4_item t;
+      if (cfg.ready_after_valid) while (vif.slv_cb.arvalid !== 1'b1) @(vif.slv_cb);
       repeat (axi4_cfg::rand_delay(cfg.max_aready_delay)) @(vif.slv_cb);
       vif.slv_cb.arready <= 1'b1;
       do @(vif.slv_cb); while (!(vif.slv_cb.arvalid === 1'b1 && vif.arready === 1'b1));
@@ -151,13 +157,13 @@ class axi4_slave_driver extends uvm_component;
 
   // ---------------------------------------------------------------- timing hooks
   // A memory-timing model (e.g. lpddr5_pkg) extends this driver and overrides
-  // these; the defaults are the random delays of axi4_cfg.
+  // these; the defaults are cfg.access_latency plus the random delays of axi4_cfg.
   // write_done: all W beats of t were accepted (t.resp[0] is set).
   virtual function void write_done(axi4_item t);
   endfunction
   // clocks from the end of the W burst to BVALID
   virtual function int unsigned write_resp_delay(axi4_item t);
-    return axi4_cfg::rand_delay(cfg.max_b_latency);
+    return cfg.access_latency + axi4_cfg::rand_delay(cfg.max_b_latency);
   endfunction
   // the read t starts service now (AR dequeued); rsp = its response
   virtual function void read_start(axi4_item t, axi4_resp_e rsp);
@@ -165,7 +171,8 @@ class axi4_slave_driver extends uvm_component;
   // clocks before beat i is presented (i = 0: from read_start; RVALID is
   // low meanwhile)
   virtual function int unsigned read_beat_delay(axi4_item t, int unsigned i);
-    return (i == 0) ? axi4_cfg::rand_delay(cfg.max_r_latency) : axi4_cfg::rand_delay(cfg.max_rvalid_gap);
+    return (i == 0) ? cfg.access_latency + axi4_cfg::rand_delay(cfg.max_r_latency)
+                    : axi4_cfg::rand_delay(cfg.max_rvalid_gap);
   endfunction
 
   function void report_phase(uvm_phase phase);

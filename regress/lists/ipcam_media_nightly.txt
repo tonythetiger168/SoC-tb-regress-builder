@@ -1,0 +1,13 @@
+# nightly: every vector, more NPU seeds and memory settings
+ipcam_ip_jpeg_test 1 +vec=t2_64x48 +w=64 +h=48 +qp=30 +level=30
+ipcam_ip_venc_test 1 +vec=t2_64x48 +w=64 +h=48 +qp=30 +level=30
+ipcam_ip_all_test 1 +vec=t2_64x48 +w=64 +h=48 +qp=30 +level=30 +IP_LAT=60 +IP_BP=4
+ipcam_ip_jpeg_test 1 +vec=bars_96x64 +w=96 +h=64 +qp=34 +level=30
+ipcam_ip_venc_test 1 +vec=bars_96x64 +w=96 +h=64 +qp=34 +level=30
+ipcam_ip_all_test 1 +vec=bars_96x64 +w=96 +h=64 +qp=34 +level=30 +IP_LAT=60 +IP_BP=4
+ipcam_ip_jpeg_test 1 +vec=mb_176x144 +w=176 +h=144 +qp=26 +level=30
+ipcam_ip_venc_test 1 +vec=mb_176x144 +w=176 +h=144 +qp=26 +level=30
+ipcam_ip_all_test 1 +vec=mb_176x144 +w=176 +h=144 +qp=26 +level=30 +IP_LAT=60 +IP_BP=4
+ipcam_ip_all_test 1 +vec=mb_176x144 +w=176 +h=144 +qp=26 +level=30 +IP_LAT=120 +IP_BP=8
+ipcam_ip_npu_test 10 +npu_rounds=8 +npu_lines=64
+ipcam_ip_npu_test 3 +npu_rounds=4 +npu_lines=32 +IP_LAT=120 +IP_BP=8

@@ -1,0 +1,4 @@
+# ipcam_hd_soc media: <test> <seeds> [plusargs]
+ipcam_soc_media_test 1 +vec=t2_64x48 +w=64 +h=48 +qp=30 +level=30
+ipcam_soc_media_test 1 +vec=bars_96x64 +w=96 +h=64 +qp=34 +level=30 +SOC_ITEMS=200
+ipcam_soc_media_test 1 +vec=t2_64x48 +w=64 +h=48 +qp=30 +level=30 +SOC_TIMING=2

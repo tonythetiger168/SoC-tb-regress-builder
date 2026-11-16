@@ -1,0 +1,3 @@
+# tv8k NPU: xuanji NPU subsystem GEMM jobs through the NoC
+tv8k_npu_gemm_test   3
+tv8k_npu_gemm_test   1  +NPU_JOBS=8 +NPU_KMAX=1024

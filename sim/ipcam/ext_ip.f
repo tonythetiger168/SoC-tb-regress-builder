@@ -1,0 +1,53 @@
+// Real IPs fetched by scripts/fetch_ext_ip.sh (paths from the repo root)
+// ---- c1p-codec: encoders + AXI master ----
+ext/c1p-codec/c1p/rtl/decoder/c1p_axi_mst.sv
+ext/c1p-codec/c1p/rtl/decoder/c1p_dec_pkg.sv
+ext/c1p-codec/c1p/rtl/decoder/c1p_cabac_pkg.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_hve_pkg.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_hve_tab_pkg.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_hve_cabac.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_hve_ana.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_hve_ent.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_hve_out.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_hve.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_hve_regs.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_jpe_pkg.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_jpe_tab_pkg.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_jpe_dct.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_jpe_ent.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_jpe_out.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_jpe.sv
+ext/c1p-codec/c1p/rtl/encoder/c1p_jpe_regs.sv
+// ---- xuanji-core: NPU subsystem ----
++incdir+ext/xuanji-core/rtl/common
++incdir+ext/xuanji-core/rtl/fp
+ext/xuanji-core/rtl/common/orca_pkg.sv
+ext/xuanji-core/rtl/common/clock_gate.sv
+ext/xuanji-core/rtl/common/ret_shadow.sv
+ext/xuanji-core/rtl/common/npu_vec_pkg.sv
+ext/xuanji-core/rtl/npu/npu_mma.sv
+ext/xuanji-core/rtl/npu/npu_gemm_cu.sv
+ext/xuanji-core/rtl/fp/fp_add.sv
+ext/xuanji-core/rtl/fp/fp_mul.sv
+ext/xuanji-core/rtl/fp/fp_narrow.sv
+ext/xuanji-core/rtl/fp/fp_widen.sv
+ext/xuanji-core/rtl/fp/sfu.sv
+ext/xuanji-core/rtl/fp/fp_max.sv
+ext/xuanji-core/rtl/fp/fp_small_dec.sv
+ext/xuanji-core/rtl/fp/fp_mx_scale.sv
+ext/xuanji-core/rtl/fp/fp_from_int.sv
+ext/xuanji-core/rtl/npu/npu_vec.sv
+ext/xuanji-core/rtl/npu/npu_vec_eng.sv
+ext/xuanji-core/rtl/npu/npu_l2_arb2.sv
+ext/xuanji-core/rtl/npu/npu_l2_xbar.sv
+ext/xuanji-core/rtl/npu/npu_core.sv
+ext/xuanji-core/rtl/npu/npu_ss_dma.sv
+ext/xuanji-core/rtl/npu/orca_npu_ss.sv
+ext/xuanji-core/rtl/npu/npu_ss_regs.sv
+ext/xuanji-core/rtl/npu/orca_npu_ss_apb.sv
+// ---- IPCAM wrappers (this repo) ----
+rtl/ipcam/ipcam_axi_dn64.sv
+rtl/ipcam/ipcam_line2axi.sv
+rtl/ipcam/ipcam_venc_c1p.sv
+rtl/ipcam/ipcam_jpeg_c1p.sv
+rtl/ipcam/ipcam_npu_xj.sv

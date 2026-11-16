@@ -9,3 +9,4 @@ soc soc_decerr_test          5
 soc soc_concurrent_test      20  +SOC_ITEMS=200
 soc soc_stress_test          20  +SOC_ITEMS=300
 soc soc_concurrent_test      10  +SOC_TIMING=0 +SOC_ITEMS=200
+soc soc_cov_test             5
