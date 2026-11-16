@@ -358,7 +358,14 @@ package mini_soc_test_pkg;
 
     task body();
       logic [31:0] hole = empty_slot();
+      // +cov_part=N runs one part only (0 or none: all), so a big bench can
+      // spread the test over several runs whose coverage merges: 1 RAL, burst
+      // shapes, APB ports; 2 / 3 mesh error and address walks of the even / odd
+      // masters; 4 mesh stress phases; 5 random link fill
+      int part = 0;
+      void'($value$plusargs("cov_part=%d", part));
       env.noc.ready_after_valid = 1;
+      if (part <= 1) begin
       ral_bash();
       // every VIP master and every NoC port gets the burst shapes at least once:
       // pair k = 0 .. max(masters, ports) - 1 -> (k-th VIP master, port k)
@@ -388,7 +395,8 @@ package mini_soc_test_pkg;
         end
       end
       if (hole != 0) apb_port_stress(hole, empty_slot(1));
-      for (int i = 0; i < NAPB_VIP; i++) begin
+      end
+      if (part <= 1) for (int i = 0; i < NAPB_VIP; i++) begin
         logic [31:0] b = apb_vip_base(i);
         int mi = first_vip();
         axi4_item t;

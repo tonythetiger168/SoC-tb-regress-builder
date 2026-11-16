@@ -37,12 +37,14 @@ fail=0
 while read -r tb t n args; do
   [ "$tb" = "$TB" ] || continue
   for s in $(seq 1 "$n"); do
-    log=$D/run_${t}_$s.log
+    # plusargs go into the run name (a test can be listed once per +cov_part)
+    tag=$t$(for a in $args; do a=${a#+}; printf '__%s' "${a//[^A-Za-z0-9_]/}"; done)
+    log=$D/run_${tag}_$s.log
     (cd "$D" && ./obj/V"$TOP" +UVM_TESTNAME="$t" +verilator+seed+"$s" $args > "$(basename "$log")" 2>&1
-     mv coverage.dat "cov_${t}_$s.dat")
+     mv coverage.dat "cov_${tag}_$s.dat")
     if grep -qE 'UVM_(ERROR|FATAL) [^:]*@' "$log" || ! grep -qE '^(SB_PASS checks=[1-9]|RAL_PASS|COV_PASS)' "$log"; then
-      echo "FAIL $t seed $s ($log)"; fail=1
-    else echo "pass $t seed $s"; fi
+      echo "FAIL $tag seed $s ($log)"; fail=1
+    else echo "pass $tag seed $s"; fi
   done
 done < <(grep -v '^#' "$LIST")
 verilator_coverage --write "$D/merged.dat" "$D"/cov_*.dat > /dev/null && rm -f "$D"/cov_*.dat

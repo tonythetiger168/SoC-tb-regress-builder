@@ -343,9 +343,14 @@ package chi_chiplet_soc_test_pkg;
 
     // mesh: slave error responses, every address bit of every target from
     // every master, and a 256-beat burst each way from every master
-    task mesh_extra();
+    // par 0 / 1: only the even / odd VIP masters (the APB VIP bursts go with 0)
+    task mesh_extra(int par = -1);
       int vm[$];
-      for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) vm.push_back(mi);
+      for (int mi = 0, n = 0; mi < NM; mi++) if (vip_master(mi)) begin
+        if (par < 0 || n % 2 == par) vm.push_back(mi);
+        n++;
+      end
+      if (vm.size() == 0) return;
       for (int si = 0; si < NS; si++) begin
         logic [31:0] b = err_base(si);
         if (S_KIND[si] != "channel" && S_KIND[si] != "memory" && S_KIND[si] != "vip") continue;
@@ -355,6 +360,11 @@ package chi_chiplet_soc_test_pkg;
           run_item(vm[i], wr, b, 8, 2, AXI4_INCR);              // SLVERR, every word of a chunk
           run_item(vm[i], wr, b + 32'h80, 8, 2, AXI4_INCR);     // DECERR
         end
+        // then OKAY through the same slave NI: a read over every word of its
+        // chunk and single writes through every write-burst slot, so the
+        // response and burst-length bits fall again
+        run_item(vm[0], 0, PATH_ADDR[vm[0]][si] & ~32'h3F, 8, 2, AXI4_INCR);
+        for (int k = 0; k < 4; k++) run_item(vm[0], 1, (PATH_ADDR[vm[0]][si] & ~32'h3F) + 4 * k, 1, 2, AXI4_INCR);
       end
       foreach (vm[i]) for (int si = 0; si < NS; si++) begin
         if (S_KIND[si] == "apb_bridge") continue;
@@ -405,7 +415,7 @@ package chi_chiplet_soc_test_pkg;
       `uvm_info("COV_PHASE", "apb vip bursts", UVM_LOW)
       // APB VIP completers: multi-beat bursts with random data, so every word
       // of the peripheral port's read chunk carries data
-      for (int i = 0; i < NAPB_VIP; i++)
+      if (par <= 0) for (int i = 0; i < NAPB_VIP; i++)
         for (int k = 0; k < 16; k++) begin
           run_item(first_vip(), 1, apb_vip_base(i) + 32'h100, 8, 2, AXI4_INCR);
           run_item(first_vip(), 0, apb_vip_base(i) + 32'h100, 8, 2, AXI4_INCR);
@@ -466,6 +476,13 @@ package chi_chiplet_soc_test_pkg;
 
     task body();
       logic [31:0] hole = empty_slot();
+      // +cov_part=N runs one part only (0 or none: all), so a big bench can
+      // spread the test over several runs whose coverage merges: 1 RAL, burst
+      // shapes, APB ports; 2 / 3 mesh error and address walks of the even / odd
+      // masters; 4 mesh stress phases; 5 random link fill
+      int part = 0;
+      void'($value$plusargs("cov_part=%d", part));
+      if (part <= 1) begin
       ral_bash();
       // every VIP master and every NoC port gets the burst shapes at least once:
       // pair k = 0 .. max(masters, ports) - 1 -> (k-th VIP master, port k)
@@ -486,6 +503,9 @@ package chi_chiplet_soc_test_pkg;
             else begin                                      // RTL slave
               shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 0, ahb);
               if (k < NS) rtl_slave_walk(mi, si);
+              // then OKAY over every word of the slave NI's read chunk, so the
+              // response bits of the walk's error replies fall again
+              if (k < NS) run_item(first_vip(), 0, PATH_ADDR[first_vip()][si] & ~32'h3F, 8, 2, AXI4_INCR);
             end
           end
         end
@@ -495,9 +515,11 @@ package chi_chiplet_soc_test_pkg;
         end
       end
       if (hole != 0) apb_port_stress(hole, empty_slot(1));
-      mesh_extra();
-      pipe_stress();
-      for (int i = 0; i < NAPB_VIP; i++) begin
+      end
+      if (part == 0) begin mesh_extra(); pipe_stress(); end
+      if (part == 2 || part == 3) mesh_extra(part - 2);
+      if (part == 4 || part == 5) pipe_stress(part - 3);
+      if (part <= 1) for (int i = 0; i < NAPB_VIP; i++) begin
         logic [31:0] b = apb_vip_base(i);
         int mi = first_vip();
         axi4_item t;
@@ -539,11 +561,14 @@ package chi_chiplet_soc_test_pkg;
       return 0;
     endfunction
 
-    task pipe_stress();
+    // sect 1: everything but the random link fill; 2: the random link fill only
+    task pipe_stress(int sect = 0);
       int ms[$];
       int unsigned acc[$];
       for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) ms.push_back(mi);
       foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 16;
+      foreach (env.cfg.s_cfg[i]) acc.push_back(env.cfg.s_cfg[i].access_latency);
+      if (sect != 2) begin
       `uvm_info("COV_PHASE", "hot spots", UVM_LOW)
       // passes 0-2 with zero-latency slaves (no access time either), 3-5 with
       // heavy back-pressure:
@@ -552,7 +577,6 @@ package chi_chiplet_soc_test_pkg;
       // waits; mixed-pass writes are single beats so B responses come back to
       // back). Mixed-pass reads go to +0xC00 of the 4 KB block, which no
       // other phase writes, so they cannot race the writes.
-      foreach (env.cfg.s_cfg[i]) acc.push_back(env.cfg.s_cfg[i].access_latency);
       // passes 6-8: the same hot spots with single beats only (reads, writes,
       // mixed), the APB port included, so request flits pile up in the routers
       for (int pass = 0; pass < 9; pass++) begin
@@ -562,7 +586,9 @@ package chi_chiplet_soc_test_pkg;
         for (int si = 0; si < NS; si++) begin
           logic [31:0] apb = NAPB_VIP ? apb_vip_base(0) + 32'h200 : empty_slot();
           if (S_KIND[si] == "apb_bridge" && pass < 6) continue;
-          if (twin_port(si)) continue;
+          // twins: the deep read / write queues (passes 0, 1) and the slow
+          // writes that keep several bursts waiting for B (pass 4) only
+          if (twin_port(si) && pass != 0 && pass != 1 && pass != 4) continue;
           // one fork level only: Verilator 5.052 binds a nested fork's view of
           // the outer fork's locals to the last iteration
           for (int i = 0; i < ms.size(); i++)
@@ -702,6 +728,10 @@ package chi_chiplet_soc_test_pkg;
             end
             wait fork;
           end
+      end
+      if (sect != 1) begin
+      env.cfg.set_timing(0);
+      foreach (env.cfg.s_cfg[i]) env.cfg.s_cfg[i].access_latency = 0;
       `uvm_info("COV_PHASE", "random link fill", UVM_LOW)
       // random link fill: random target pairs, burst mixes and start skews,
       // so the flit trains of different masters line up at some router
@@ -728,6 +758,7 @@ package chi_chiplet_soc_test_pkg;
           end
         end
         wait fork;
+      end
       end
       foreach (env.cfg.s_cfg[i]) env.cfg.s_cfg[i].access_latency = acc[i];
       foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 1;
