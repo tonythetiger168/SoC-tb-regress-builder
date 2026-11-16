@@ -24,6 +24,8 @@ rtl/noc/noc_d2d_phy.sv
 rtl/noc/noc_ni_chi.sv
 rtl/noc/noc_hnf.sv
 rtl/noc/noc_chi_rnf.sv
+rtl/noc/noc_acelite2axi.sv
+rtl/noc/noc_axi2acelite.sv
 socgen/out/chi_mesh_soc_nodirect/rtl/chi_mesh_soc_nodirect_noc.sv
 socgen/out/chi_mesh_soc_nodirect/rtl/chi_mesh_soc_nodirect_apb_subsys.sv
 vip/axi4/axi4_if.sv

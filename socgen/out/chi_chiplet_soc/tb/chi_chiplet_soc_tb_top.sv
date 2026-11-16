@@ -31,6 +31,7 @@ module chi_chiplet_soc_tb_top;
   final $display("D2D link: %0d flits corrupted by the PHY model, %0d UCIe replays", d2d_flits, d2d_replays);
   axi4_if m_if [NM] (.aclk(aclk), .aresetn(vip_resetn));
   axi4_if s_if [NS] (.aclk(aclk), .aresetn(vip_resetn));
+  apb_if  apb_ext_if (.pclk(aclk), .presetn(aresetn));
 
   for (genvar i = 0; i < NM; i++) begin : g_m
     axi4_sva #(.NAME($sformatf("m_%0d", i))) u_sva (m_if[i]);
@@ -92,6 +93,12 @@ module chi_chiplet_soc_tb_top;
   assign m_if[M_CPU1].rid[7:ID_WIDTH] = '0;
   assign m_if[M_NPU].bid[7:ID_WIDTH] = '0;
   assign m_if[M_NPU].rid[7:ID_WIDTH] = '0;
+  // ---------------- CHI coherence invariant (single writer, many readers) ----------------
+  for (genvar i = 0; i < noc_cfg_pkg::CHI_LINES; i++) begin : g_swmr
+    a_swmr: assert property (@(posedge aclk) disable iff (!aresetn) !(
+      (u_cpu0_shim.cs[i] != 2'd0 && u_cpu1_shim.cs[i] != 2'd0 && u_cpu0_shim.ctag[i] == u_cpu1_shim.ctag[i] && (u_cpu0_shim.cs[i][1] || u_cpu1_shim.cs[i][1]))))
+      else $error("coherence: line entry %0d is unique (UC / UD) in one RN-F and valid in another", i);
+  end
   assign s_if[S_DDR0].awid[7:ID_WIDTH] = '0;
   assign s_if[S_DDR0].arid[7:ID_WIDTH] = '0;
   assign s_if[S_DDR0].awlock = 1'b0;
@@ -341,7 +348,7 @@ module chi_chiplet_soc_tb_top;
 
   // ---------------- APB subsystem on S_PERIPH ----------------
 
-  logic [0:0] apb_irq;
+  logic [1:0] apb_irq;
   chi_chiplet_soc_apb_subsys u_apb (
     .clk(aclk), .rst_n(aresetn),
     .awid(s_if[S_PERIPH].awid),
@@ -375,6 +382,10 @@ module chi_chiplet_soc_tb_top;
     .rlast(s_if[S_PERIPH].rlast),
     .rvalid(s_if[S_PERIPH].rvalid),
     .rready(s_if[S_PERIPH].rready),
+    .ext_paddr(apb_ext_if.paddr), .ext_psel(apb_ext_if.psel), .ext_penable(apb_ext_if.penable),
+    .ext_pwrite(apb_ext_if.pwrite), .ext_pwdata(apb_ext_if.pwdata), .ext_pstrb(apb_ext_if.pstrb),
+    .ext_pprot(apb_ext_if.pprot), .ext_prdata(apb_ext_if.prdata), .ext_pready(apb_ext_if.pready),
+    .ext_pslverr(apb_ext_if.pslverr),
     .irq(apb_irq)
   );
 
@@ -391,7 +402,7 @@ module chi_chiplet_soc_tb_top;
     @(posedge aclk);
     force u_apb.u_gpio.irq = 1'b1;
     repeat (2) @(posedge aclk);
-    if (apb_irq !== 1'(1) << 0)
+    if (apb_irq !== 2'(1) << 0)
       `uvm_error("IRQ_ROUTE", $sformatf("gpio interrupt: apb_irq = 'b%b, expected only bit 0", apb_irq))
     force u_apb.u_gpio.irq = 1'b0;
     repeat (2) @(posedge aclk);
@@ -400,6 +411,8 @@ module chi_chiplet_soc_tb_top;
     release u_apb.u_gpio.irq;
     `uvm_info("IRQ_ROUTE", "1 IP interrupts reach their apb_irq bits", UVM_LOW)
   end
+  apb_sva #(.NAME("apb_ext")) u_apb_ext_sva (apb_ext_if);
+  initial uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top.env.apb_ext.*", "vif", apb_ext_if);
 
   initial begin
     if ($test$plusargs("VCD")) begin

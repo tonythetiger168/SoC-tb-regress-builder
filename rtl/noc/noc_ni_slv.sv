@@ -141,7 +141,7 @@ module noc_ni_slv
   logic pref_rd, sel_rd;
   assign sel_rd    = rr_v && (pref_rd || !wr_v);
   assign inj_valid = rr_v || wr_v;
-  assign inj_flit  = mk_flit(sel_rd ? rr_pkt : wr_pkt, SELF, VC_RSP);
+  assign inj_flit  = mk_flit(sel_rd ? rr_pkt : wr_pkt, SELF);
   wire   inj_hs    = inj_valid && inj_ready;
 
   always_ff @(posedge clk or negedge rst_n) begin

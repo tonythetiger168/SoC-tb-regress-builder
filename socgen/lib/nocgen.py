@@ -49,10 +49,25 @@ CHI = [("txreq_valid", 1, "o"), ("txreq_ready", 1, "i"), ("txreq_flit", "chi_req
        ("rxdat_valid", 1, "i"), ("rxdat_flit", "chi_dat_t", "i"),
        ("rxsnp_valid", 1, "i"), ("rxsnp_flit", "chi_snp_t", "i")]
 
-MST_SIGS = {"axi4": AXI4, "axi4lite": LITE, "ahb": AHB_MST, "chi": CHI}
+# ACE-Lite (IO coherent): AXI4 + AxSNOOP, AxDOMAIN, AxBAR (noc_acelite2axi)
+def _ace_lite():
+    L = []
+    for n, w, d in AXI4:
+        L.append((n, w, d))
+        if n == "awprot":
+            L += [("awsnoop", 3, "o"), ("awdomain", 2, "o"), ("awbar", 2, "o")]
+        if n == "arprot":
+            L += [("arsnoop", 4, "o"), ("ardomain", 2, "o"), ("arbar", 2, "o")]
+    return L
+
+
+ACELITE = _ace_lite()
+
+MST_SIGS = {"axi4": AXI4, "axi4lite": LITE, "ahb": AHB_MST, "chi": CHI, "ace_lite": ACELITE}
 SLV_SIGS = {"axi4": AXI4, "axi4lite": LITE, "ahb": AHB_SLV, "apb": APB}
 
-PROTO_NAME = {"axi4": "AXI4", "axi4lite": "AXI4-Lite", "ahb": "AHB-Lite", "apb": "APB4", "chi": "CHI RN-F"}
+PROTO_NAME = {"axi4": "AXI4", "axi4lite": "AXI4-Lite", "ahb": "AHB-Lite", "apb": "APB4", "chi": "CHI RN-F",
+              "ace_lite": "ACE-Lite"}
 
 
 def clog2(n):
@@ -68,7 +83,7 @@ def params(m):
     p = dict(nm=nm, ns=ns, ngw=ngw, nhn=nhn, nep=nep, epb=clog2(nep + 1),
              xb=2 if m.noc.router_ip == "orca" else clog2(m.noc.cols),
              yb=2 if m.noc.router_ip == "orca" else clog2(m.noc.rows),
-             qd=(nm + nhn) * m.noc_ni.maxo, hq=2 * nm * m.noc_ni.maxo)
+             qd=nm * m.noc_ni.maxo + nhn * max(m.noc_ni.maxo, 2 * (m.chi.slots if nhn else 1)), hq=2 * nm * m.noc_ni.maxo)
     return p
 
 
@@ -138,8 +153,12 @@ package noc_cfg_pkg;
   }} noc_flit_t;
   localparam int FLIT_W = $bits(noc_flit_t);
 
-  localparam logic [1:0] VC_REQ = 2'd0;
-  localparam logic [1:0] VC_RSP = 2'd1;
+  // virtual channels (one per CHI channel, so a snoop or a response is never
+  // stuck behind a request: the home can always make progress)
+  localparam logic [1:0] VC_REQ = 2'd0;   // AMBA read / write chunks, CHI REQ
+  localparam logic [1:0] VC_RSP = 2'd1;   // AMBA write responses, CHI RSP
+  localparam logic [1:0] VC_SNP = 2'd2;   // CHI SNP
+  localparam logic [1:0] VC_DAT = 2'd3;   // AMBA read data, CHI DAT
 
   // ---------------- endpoints ----------------
   localparam int NM  = {p['nm']};
@@ -172,6 +191,7 @@ package noc_cfg_pkg;
   localparam int HN_EP = NM + NS + NGW;           // the first HN-F endpoint
   localparam int HN_G = {int(math.log2(m.chi.granule)) if m.chi.rn else 12};                     // homes interleave on 2**HN_G bytes
   localparam int HN_K = {m.chi.hbits if m.chi.rn else 0};                      // log2(NHN)
+  localparam int HN_SLOTS = {m.chi.slots if m.chi.rn else 1};                  // transactions in flight per home
   localparam bit CHI_DMT = 1'b{1 if m.chi.dmt else 0};             // memory data straight to the requester
   localparam bit CHI_DCT = 1'b{1 if m.chi.dct else 0};             // the owner forwards the line to the requester
   localparam int NRN = {len(m.chi.rn) if m.chi.rn else 1};                   // RN-F ports (protocol chi masters)
@@ -240,11 +260,15 @@ package noc_cfg_pkg;
   // RX, TgtID on TX; requests go to the address's home); 256-bit data (a
   // 64-byte line is two DAT flits, DataID 0 and 2); L-Credits replaced by
   // valid / ready on the RN-F's TX channels, and the RN-F always accepts on RX.
+  // ReadNoSnp / WriteNoSnpPtl carry nm1: 32-bit words - 1, all in one 32-byte
+  // half line (where CHI would use Size and byte enables; it keeps a
+  // peripheral's registers that were not asked for untouched).
   typedef struct packed {{
     logic [TAGW-1:0] txnid;
     logic [5:0]      opcode;
     logic [31:0]     addr;
     logic [2:0]      size;
+    logic [2:0]      nm1;
   }} chi_req_t;
   typedef struct packed {{
     logic [EPB-1:0]  nid;                 // SrcID (the home)
@@ -291,7 +315,19 @@ package noc_cfg_pkg;
   // RespErr
   localparam logic [1:0] RESPERR_OK = 2'b00, RESPERR_DERR = 2'b10, RESPERR_NDERR = 2'b11;
 
-  function automatic noc_flit_t mk_flit(pkt_t p, int src, logic [1:0] vc);
+  // the virtual channel of a packet follows from its opcode
+  function automatic logic [1:0] vc_of(op_e op);
+    logic [1:0] v;
+    unique case (op)
+      OP_RD, OP_WR, OP_CREQ: v = VC_REQ;
+      OP_WRSP, OP_CRSP:      v = VC_RSP;
+      OP_CSNP:               v = VC_SNP;
+      default:               v = VC_DAT;    // OP_RDATA, OP_CDAT
+    endcase
+    return v;
+  endfunction
+
+  function automatic noc_flit_t mk_flit(pkt_t p, int src);
     noc_flit_t f;
     f = '0;
     f.payload = PAYLOAD_W'(p);
@@ -299,7 +335,7 @@ package noc_cfg_pkg;
     f.dest_y  = YB'(EP_Y[local_ep(int'(p.dst_ep), EP_DIE[src])]);
     f.src_x   = XB'(EP_X[src]);
     f.src_y   = YB'(EP_Y[src]);
-    f.vc_id   = vc;
+    f.vc_id   = vc_of(p.op);
     f.ftype   = FT_SINGLE;
     f.valid   = 1'b1;
     return f;
@@ -381,13 +417,20 @@ def noc_module(m):
             L.append(f"    .ej_flit(ej_flit[{i}]), .ej_valid(ej_valid[{i}]), .ej_ready(ej_ready[{i}]));")
             L.append("")
             continue
+        nosnp = ["1'b0", "1'b0"]           # AXI4 / Lite / AHB: coherent memory always via its home
         if x.protocol == "axi4":
             conn = {n: f"{x.name}_{n}" for n in axi_names}
         else:
             for n, w, _ in AXI4:
                 L.append(f"  logic {_w(w)}{a}_{n};")
             conn = {n: f"{a}_{n}" for n in axi_names}
-            if x.protocol == "axi4lite":
+            if x.protocol == "ace_lite":
+                L.append(f"  logic {a}_awnosnp, {a}_arnosnp;")
+                nosnp = [f"{a}_awnosnp", f"{a}_arnosnp"]
+                L.append(f"  noc_acelite2axi #(.IDW(ID_WIDTH)) u_{x.name}_acel (.clk, .rst_n,")
+                L.append("    " + ", ".join(f".s_{n}({x.name}_{n})" for n, _, _ in ACELITE) + ",")
+                L.append("    " + ", ".join(f".m_{n}({a}_{n})" for n in axi_names) + f", .m_awnosnp({a}_awnosnp), .m_arnosnp({a}_arnosnp));")
+            elif x.protocol == "axi4lite":
                 for n, _, d in LITE:
                     L.append(f"  assign {a}_{n} = {x.name}_{n};" if d == "o" else f"  assign {x.name}_{n} = {a}_{n};")
                 L += [f"  assign {a}_awid = '0;", f"  assign {a}_awlen = 8'd0;", f"  assign {a}_awsize = 3'd2;",
@@ -399,7 +442,7 @@ def noc_module(m):
                 L.append("    " + ", ".join(f".m_{n}({a}_{n})" for n in axi_names) + ");")
         L.append(f"  noc_ni_mst #(.SELF({i}), .DW(32), .IDW(ID_WIDTH), .MAXB({ni.maxb}), .MAXO({ni.maxo})) u_ni_{x.name} (")
         L.append("    .clk, .rst_n,")
-        L.append("    " + ", ".join(f".s_{n}({conn[n]})" for n in axi_names) + ",")
+        L.append("    " + ", ".join(f".s_{n}({conn[n]})" for n in axi_names) + f", .s_awnosnp({nosnp[0]}), .s_arnosnp({nosnp[1]}),")
         L.append(f"    .inj_flit(inj_flit[{i}]), .inj_valid(inj_valid[{i}]), .inj_ready(inj_ready[{i}]),")
         L.append(f"    .ej_flit(ej_flit[{i}]), .ej_valid(ej_valid[{i}]), .ej_ready(ej_ready[{i}]));")
         L.append("")
@@ -450,11 +493,11 @@ def noc_module(m):
 def _chiplet(m, p):
     """one mesh per die, a gateway + UCIe adapter per die, the PHY model between them"""
     # every packet that can be in flight: the master NIs' chunks, plus CHI
-    # (per RN-F a request, write data and a CompAck; per home one snoop per
-    # RN-F with up to four data flits and a response each, and its CompData /
-    # DMT reads)
+    # (per RN-F a request, write data and a CompAck; per home transaction
+    # slot one snoop per RN-F with up to four data flits and a response each,
+    # and its CompData / DMT reads)
     nrn, nhn = len(m.chi.rn), p["nhn"]
-    chi = 4 * nrn + nhn * (6 * nrn + 8) if nhn else 0
+    chi = 4 * nrn + nhn * m.chi.slots * (6 * nrn + 8) if nhn else 0
     qd = 2 * p["nm"] * m.noc_ni.maxo + chi
     nd = m.chiplet.dies
     L = [f"  // ---------------- chiplet: {nd} dies, one mesh each, UCIe die-to-die link ----------------"]
@@ -538,6 +581,11 @@ def tb_hookup(m):
             L.append(f"  noc_chi_rnf #(.IDW(ID_WIDTH)) u_{x.name}_shim (.clk({m.clock.name}), .rst_n(aresetn),")
             L.append(f"    {vip},")
             L.append("    " + ", ".join(f".{n}({sh}_{n})" for n, _, _ in CHI) + ");")
+        elif x.protocol == "ace_lite":
+            # IO-coherent master: the shim sets AxDOMAIN / AxSNOOP and adds barriers and CMOs
+            L.append(f"  noc_axi2acelite #(.IDW(ID_WIDTH)) u_{x.name}_shim (.clk({m.clock.name}), .rst_n(aresetn),")
+            L.append(f"    {vip},")
+            L.append("    " + ", ".join(f".{n}({sh}_{n})" for n, _, _ in ACELITE) + ");")
         elif x.protocol == "axi4lite":
             L.append(f"  noc_axi2lite #(.IDW(ID_WIDTH)) u_{x.name}_shim (.clk({m.clock.name}), .rst_n(aresetn),")
             L.append(f"    {vip},")
@@ -551,6 +599,23 @@ def tb_hookup(m):
         L += [f"  assign {M}.bid[7:ID_WIDTH] = '0;", f"  assign {M}.rid[7:ID_WIDTH] = '0;"]
         for n, _, _ in sigs:
             conns.append(f".{x.name}_{n}({sh}_{n})")
+    rnf = [x.name for x in m.masters if x.protocol == "chi"]
+    if len(rnf) > 1:
+        # coherence invariant (single writer, many readers) on the RN-F caches: a
+        # line one RN-F holds UC / UD is held by no other RN-F. The caches are
+        # direct-mapped with the same index, so compare the same entry pairwise.
+        # Catches a wrong final state after a snoop (SnpUnique, SnpUniqueFwd / DCT).
+        pairs = [(a, b) for i, a in enumerate(rnf) for b in rnf[i + 1:]]
+        def both(a, b, i):
+            A, B = f"u_{a}_shim", f"u_{b}_shim"
+            return (f"({A}.cs[{i}] != 2'd0 && {B}.cs[{i}] != 2'd0 && {A}.ctag[{i}] == {B}.ctag[{i}] && "
+                    f"({A}.cs[{i}][1] || {B}.cs[{i}][1]))")
+        L.append("  // ---------------- CHI coherence invariant (single writer, many readers) ----------------")
+        L.append("  for (genvar i = 0; i < noc_cfg_pkg::CHI_LINES; i++) begin : g_swmr")
+        L.append(f"    a_swmr: assert property (@(posedge {m.clock.name}) disable iff (!aresetn) !(")
+        L.append("      " + " ||\n      ".join(both(a, b, "i") for a, b in pairs) + "))")
+        L.append(f"      else $error(\"coherence: line entry %0d is unique (UC / UD) in one RN-F and valid in another\", i);")
+        L.append("  end")
     for t in m.targets:
         S = f"s_if[S_{t.name.upper()}]"
         if t.protocol == "axi4":

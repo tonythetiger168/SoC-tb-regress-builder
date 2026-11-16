@@ -7,7 +7,7 @@
 // Master ports (the NoC is the slave):
 //   cpu0           CHI RN-F   router [0, 0]
 //   cpu1           CHI RN-F   router [0, 1]
-//   dma            AXI4       router [1, 1]
+//   dma            ACE-Lite   router [1, 1]
 //   mcu            AHB-Lite   router [1, 1]
 // Slave ports (the NoC is the master):
 //   ddr0           AXI4       router [0, 1]  0x80000000 (interleaved)
@@ -58,13 +58,16 @@ module chi_mesh_soc_nodirect_noc
   output chi_dat_t cpu1_rxdat_flit,
   output logic cpu1_rxsnp_valid,
   output chi_snp_t cpu1_rxsnp_flit,
-  // ---- master port dma: AXI4 ----
+  // ---- master port dma: ACE-Lite ----
   input  logic [ID_WIDTH-1:0] dma_awid,
   input  logic [31:0] dma_awaddr,
   input  logic [7:0] dma_awlen,
   input  logic [2:0] dma_awsize,
   input  logic [1:0] dma_awburst,
   input  logic [2:0] dma_awprot,
+  input  logic [2:0] dma_awsnoop,
+  input  logic [1:0] dma_awdomain,
+  input  logic [1:0] dma_awbar,
   input  logic dma_awvalid,
   output logic dma_awready,
   input  logic [31:0] dma_wdata,
@@ -82,6 +85,9 @@ module chi_mesh_soc_nodirect_noc
   input  logic [2:0] dma_arsize,
   input  logic [1:0] dma_arburst,
   input  logic [2:0] dma_arprot,
+  input  logic [3:0] dma_arsnoop,
+  input  logic [1:0] dma_ardomain,
+  input  logic [1:0] dma_arbar,
   input  logic dma_arvalid,
   output logic dma_arready,
   output logic [ID_WIDTH-1:0] dma_rid,
@@ -263,10 +269,45 @@ module chi_mesh_soc_nodirect_noc
     .inj_flit(inj_flit[1]), .inj_valid(inj_valid[1]), .inj_ready(inj_ready[1]),
     .ej_flit(ej_flit[1]), .ej_valid(ej_valid[1]), .ej_ready(ej_ready[1]));
 
-  // ---------------- master 2: dma (AXI4) ----------------
+  // ---------------- master 2: dma (ACE-Lite) ----------------
+  logic [ID_WIDTH-1:0] dma_ax_awid;
+  logic [31:0] dma_ax_awaddr;
+  logic [7:0] dma_ax_awlen;
+  logic [2:0] dma_ax_awsize;
+  logic [1:0] dma_ax_awburst;
+  logic [2:0] dma_ax_awprot;
+  logic dma_ax_awvalid;
+  logic dma_ax_awready;
+  logic [31:0] dma_ax_wdata;
+  logic [3:0] dma_ax_wstrb;
+  logic dma_ax_wlast;
+  logic dma_ax_wvalid;
+  logic dma_ax_wready;
+  logic [ID_WIDTH-1:0] dma_ax_bid;
+  logic [1:0] dma_ax_bresp;
+  logic dma_ax_bvalid;
+  logic dma_ax_bready;
+  logic [ID_WIDTH-1:0] dma_ax_arid;
+  logic [31:0] dma_ax_araddr;
+  logic [7:0] dma_ax_arlen;
+  logic [2:0] dma_ax_arsize;
+  logic [1:0] dma_ax_arburst;
+  logic [2:0] dma_ax_arprot;
+  logic dma_ax_arvalid;
+  logic dma_ax_arready;
+  logic [ID_WIDTH-1:0] dma_ax_rid;
+  logic [31:0] dma_ax_rdata;
+  logic [1:0] dma_ax_rresp;
+  logic dma_ax_rlast;
+  logic dma_ax_rvalid;
+  logic dma_ax_rready;
+  logic dma_ax_awnosnp, dma_ax_arnosnp;
+  noc_acelite2axi #(.IDW(ID_WIDTH)) u_dma_acel (.clk, .rst_n,
+    .s_awid(dma_awid), .s_awaddr(dma_awaddr), .s_awlen(dma_awlen), .s_awsize(dma_awsize), .s_awburst(dma_awburst), .s_awprot(dma_awprot), .s_awsnoop(dma_awsnoop), .s_awdomain(dma_awdomain), .s_awbar(dma_awbar), .s_awvalid(dma_awvalid), .s_awready(dma_awready), .s_wdata(dma_wdata), .s_wstrb(dma_wstrb), .s_wlast(dma_wlast), .s_wvalid(dma_wvalid), .s_wready(dma_wready), .s_bid(dma_bid), .s_bresp(dma_bresp), .s_bvalid(dma_bvalid), .s_bready(dma_bready), .s_arid(dma_arid), .s_araddr(dma_araddr), .s_arlen(dma_arlen), .s_arsize(dma_arsize), .s_arburst(dma_arburst), .s_arprot(dma_arprot), .s_arsnoop(dma_arsnoop), .s_ardomain(dma_ardomain), .s_arbar(dma_arbar), .s_arvalid(dma_arvalid), .s_arready(dma_arready), .s_rid(dma_rid), .s_rdata(dma_rdata), .s_rresp(dma_rresp), .s_rlast(dma_rlast), .s_rvalid(dma_rvalid), .s_rready(dma_rready),
+    .m_awid(dma_ax_awid), .m_awaddr(dma_ax_awaddr), .m_awlen(dma_ax_awlen), .m_awsize(dma_ax_awsize), .m_awburst(dma_ax_awburst), .m_awprot(dma_ax_awprot), .m_awvalid(dma_ax_awvalid), .m_awready(dma_ax_awready), .m_wdata(dma_ax_wdata), .m_wstrb(dma_ax_wstrb), .m_wlast(dma_ax_wlast), .m_wvalid(dma_ax_wvalid), .m_wready(dma_ax_wready), .m_bid(dma_ax_bid), .m_bresp(dma_ax_bresp), .m_bvalid(dma_ax_bvalid), .m_bready(dma_ax_bready), .m_arid(dma_ax_arid), .m_araddr(dma_ax_araddr), .m_arlen(dma_ax_arlen), .m_arsize(dma_ax_arsize), .m_arburst(dma_ax_arburst), .m_arprot(dma_ax_arprot), .m_arvalid(dma_ax_arvalid), .m_arready(dma_ax_arready), .m_rid(dma_ax_rid), .m_rdata(dma_ax_rdata), .m_rresp(dma_ax_rresp), .m_rlast(dma_ax_rlast), .m_rvalid(dma_ax_rvalid), .m_rready(dma_ax_rready), .m_awnosnp(dma_ax_awnosnp), .m_arnosnp(dma_ax_arnosnp));
   noc_ni_mst #(.SELF(2), .DW(32), .IDW(ID_WIDTH), .MAXB(4), .MAXO(8)) u_ni_dma (
     .clk, .rst_n,
-    .s_awid(dma_awid), .s_awaddr(dma_awaddr), .s_awlen(dma_awlen), .s_awsize(dma_awsize), .s_awburst(dma_awburst), .s_awprot(dma_awprot), .s_awvalid(dma_awvalid), .s_awready(dma_awready), .s_wdata(dma_wdata), .s_wstrb(dma_wstrb), .s_wlast(dma_wlast), .s_wvalid(dma_wvalid), .s_wready(dma_wready), .s_bid(dma_bid), .s_bresp(dma_bresp), .s_bvalid(dma_bvalid), .s_bready(dma_bready), .s_arid(dma_arid), .s_araddr(dma_araddr), .s_arlen(dma_arlen), .s_arsize(dma_arsize), .s_arburst(dma_arburst), .s_arprot(dma_arprot), .s_arvalid(dma_arvalid), .s_arready(dma_arready), .s_rid(dma_rid), .s_rdata(dma_rdata), .s_rresp(dma_rresp), .s_rlast(dma_rlast), .s_rvalid(dma_rvalid), .s_rready(dma_rready),
+    .s_awid(dma_ax_awid), .s_awaddr(dma_ax_awaddr), .s_awlen(dma_ax_awlen), .s_awsize(dma_ax_awsize), .s_awburst(dma_ax_awburst), .s_awprot(dma_ax_awprot), .s_awvalid(dma_ax_awvalid), .s_awready(dma_ax_awready), .s_wdata(dma_ax_wdata), .s_wstrb(dma_ax_wstrb), .s_wlast(dma_ax_wlast), .s_wvalid(dma_ax_wvalid), .s_wready(dma_ax_wready), .s_bid(dma_ax_bid), .s_bresp(dma_ax_bresp), .s_bvalid(dma_ax_bvalid), .s_bready(dma_ax_bready), .s_arid(dma_ax_arid), .s_araddr(dma_ax_araddr), .s_arlen(dma_ax_arlen), .s_arsize(dma_ax_arsize), .s_arburst(dma_ax_arburst), .s_arprot(dma_ax_arprot), .s_arvalid(dma_ax_arvalid), .s_arready(dma_ax_arready), .s_rid(dma_ax_rid), .s_rdata(dma_ax_rdata), .s_rresp(dma_ax_rresp), .s_rlast(dma_ax_rlast), .s_rvalid(dma_ax_rvalid), .s_rready(dma_ax_rready), .s_awnosnp(dma_ax_awnosnp), .s_arnosnp(dma_ax_arnosnp),
     .inj_flit(inj_flit[2]), .inj_valid(inj_valid[2]), .inj_ready(inj_ready[2]),
     .ej_flit(ej_flit[2]), .ej_valid(ej_valid[2]), .ej_ready(ej_ready[2]));
 
@@ -307,7 +348,7 @@ module chi_mesh_soc_nodirect_noc
     .m_awid(mcu_ax_awid), .m_awaddr(mcu_ax_awaddr), .m_awlen(mcu_ax_awlen), .m_awsize(mcu_ax_awsize), .m_awburst(mcu_ax_awburst), .m_awprot(mcu_ax_awprot), .m_awvalid(mcu_ax_awvalid), .m_awready(mcu_ax_awready), .m_wdata(mcu_ax_wdata), .m_wstrb(mcu_ax_wstrb), .m_wlast(mcu_ax_wlast), .m_wvalid(mcu_ax_wvalid), .m_wready(mcu_ax_wready), .m_bid(mcu_ax_bid), .m_bresp(mcu_ax_bresp), .m_bvalid(mcu_ax_bvalid), .m_bready(mcu_ax_bready), .m_arid(mcu_ax_arid), .m_araddr(mcu_ax_araddr), .m_arlen(mcu_ax_arlen), .m_arsize(mcu_ax_arsize), .m_arburst(mcu_ax_arburst), .m_arprot(mcu_ax_arprot), .m_arvalid(mcu_ax_arvalid), .m_arready(mcu_ax_arready), .m_rid(mcu_ax_rid), .m_rdata(mcu_ax_rdata), .m_rresp(mcu_ax_rresp), .m_rlast(mcu_ax_rlast), .m_rvalid(mcu_ax_rvalid), .m_rready(mcu_ax_rready));
   noc_ni_mst #(.SELF(3), .DW(32), .IDW(ID_WIDTH), .MAXB(4), .MAXO(8)) u_ni_mcu (
     .clk, .rst_n,
-    .s_awid(mcu_ax_awid), .s_awaddr(mcu_ax_awaddr), .s_awlen(mcu_ax_awlen), .s_awsize(mcu_ax_awsize), .s_awburst(mcu_ax_awburst), .s_awprot(mcu_ax_awprot), .s_awvalid(mcu_ax_awvalid), .s_awready(mcu_ax_awready), .s_wdata(mcu_ax_wdata), .s_wstrb(mcu_ax_wstrb), .s_wlast(mcu_ax_wlast), .s_wvalid(mcu_ax_wvalid), .s_wready(mcu_ax_wready), .s_bid(mcu_ax_bid), .s_bresp(mcu_ax_bresp), .s_bvalid(mcu_ax_bvalid), .s_bready(mcu_ax_bready), .s_arid(mcu_ax_arid), .s_araddr(mcu_ax_araddr), .s_arlen(mcu_ax_arlen), .s_arsize(mcu_ax_arsize), .s_arburst(mcu_ax_arburst), .s_arprot(mcu_ax_arprot), .s_arvalid(mcu_ax_arvalid), .s_arready(mcu_ax_arready), .s_rid(mcu_ax_rid), .s_rdata(mcu_ax_rdata), .s_rresp(mcu_ax_rresp), .s_rlast(mcu_ax_rlast), .s_rvalid(mcu_ax_rvalid), .s_rready(mcu_ax_rready),
+    .s_awid(mcu_ax_awid), .s_awaddr(mcu_ax_awaddr), .s_awlen(mcu_ax_awlen), .s_awsize(mcu_ax_awsize), .s_awburst(mcu_ax_awburst), .s_awprot(mcu_ax_awprot), .s_awvalid(mcu_ax_awvalid), .s_awready(mcu_ax_awready), .s_wdata(mcu_ax_wdata), .s_wstrb(mcu_ax_wstrb), .s_wlast(mcu_ax_wlast), .s_wvalid(mcu_ax_wvalid), .s_wready(mcu_ax_wready), .s_bid(mcu_ax_bid), .s_bresp(mcu_ax_bresp), .s_bvalid(mcu_ax_bvalid), .s_bready(mcu_ax_bready), .s_arid(mcu_ax_arid), .s_araddr(mcu_ax_araddr), .s_arlen(mcu_ax_arlen), .s_arsize(mcu_ax_arsize), .s_arburst(mcu_ax_arburst), .s_arprot(mcu_ax_arprot), .s_arvalid(mcu_ax_arvalid), .s_arready(mcu_ax_arready), .s_rid(mcu_ax_rid), .s_rdata(mcu_ax_rdata), .s_rresp(mcu_ax_rresp), .s_rlast(mcu_ax_rlast), .s_rvalid(mcu_ax_rvalid), .s_rready(mcu_ax_rready), .s_awnosnp(1'b0), .s_arnosnp(1'b0),
     .inj_flit(inj_flit[3]), .inj_valid(inj_valid[3]), .inj_ready(inj_ready[3]),
     .ej_flit(ej_flit[3]), .ej_valid(ej_valid[3]), .ej_ready(ej_ready[3]));
 

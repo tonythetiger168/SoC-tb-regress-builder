@@ -33,8 +33,12 @@ package noc_cfg_pkg;
   } noc_flit_t;
   localparam int FLIT_W = $bits(noc_flit_t);
 
-  localparam logic [1:0] VC_REQ = 2'd0;
-  localparam logic [1:0] VC_RSP = 2'd1;
+  // virtual channels (one per CHI channel, so a snoop or a response is never
+  // stuck behind a request: the home can always make progress)
+  localparam logic [1:0] VC_REQ = 2'd0;   // AMBA read / write chunks, CHI REQ
+  localparam logic [1:0] VC_RSP = 2'd1;   // AMBA write responses, CHI RSP
+  localparam logic [1:0] VC_SNP = 2'd2;   // CHI SNP
+  localparam logic [1:0] VC_DAT = 2'd3;   // AMBA read data, CHI DAT
 
   // ---------------- endpoints ----------------
   localparam int NM  = 4;
@@ -79,6 +83,7 @@ package noc_cfg_pkg;
   localparam int HN_EP = NM + NS + NGW;           // the first HN-F endpoint
   localparam int HN_G = 12;                     // homes interleave on 2**HN_G bytes
   localparam int HN_K = 0;                      // log2(NHN)
+  localparam int HN_SLOTS = 1;                  // transactions in flight per home
   localparam bit CHI_DMT = 1'b0;             // memory data straight to the requester
   localparam bit CHI_DCT = 1'b0;             // the owner forwards the line to the requester
   localparam int NRN = 1;                   // RN-F ports (protocol chi masters)
@@ -147,11 +152,15 @@ package noc_cfg_pkg;
   // RX, TgtID on TX; requests go to the address's home); 256-bit data (a
   // 64-byte line is two DAT flits, DataID 0 and 2); L-Credits replaced by
   // valid / ready on the RN-F's TX channels, and the RN-F always accepts on RX.
+  // ReadNoSnp / WriteNoSnpPtl carry nm1: 32-bit words - 1, all in one 32-byte
+  // half line (where CHI would use Size and byte enables; it keeps a
+  // peripheral's registers that were not asked for untouched).
   typedef struct packed {
     logic [TAGW-1:0] txnid;
     logic [5:0]      opcode;
     logic [31:0]     addr;
     logic [2:0]      size;
+    logic [2:0]      nm1;
   } chi_req_t;
   typedef struct packed {
     logic [EPB-1:0]  nid;                 // SrcID (the home)
@@ -198,7 +207,19 @@ package noc_cfg_pkg;
   // RespErr
   localparam logic [1:0] RESPERR_OK = 2'b00, RESPERR_DERR = 2'b10, RESPERR_NDERR = 2'b11;
 
-  function automatic noc_flit_t mk_flit(pkt_t p, int src, logic [1:0] vc);
+  // the virtual channel of a packet follows from its opcode
+  function automatic logic [1:0] vc_of(op_e op);
+    logic [1:0] v;
+    unique case (op)
+      OP_RD, OP_WR, OP_CREQ: v = VC_REQ;
+      OP_WRSP, OP_CRSP:      v = VC_RSP;
+      OP_CSNP:               v = VC_SNP;
+      default:               v = VC_DAT;    // OP_RDATA, OP_CDAT
+    endcase
+    return v;
+  endfunction
+
+  function automatic noc_flit_t mk_flit(pkt_t p, int src);
     noc_flit_t f;
     f = '0;
     f.payload = PAYLOAD_W'(p);
@@ -206,7 +227,7 @@ package noc_cfg_pkg;
     f.dest_y  = YB'(EP_Y[local_ep(int'(p.dst_ep), EP_DIE[src])]);
     f.src_x   = XB'(EP_X[src]);
     f.src_y   = YB'(EP_Y[src]);
-    f.vc_id   = vc;
+    f.vc_id   = vc_of(p.op);
     f.ftype   = FT_SINGLE;
     f.valid   = 1'b1;
     return f;

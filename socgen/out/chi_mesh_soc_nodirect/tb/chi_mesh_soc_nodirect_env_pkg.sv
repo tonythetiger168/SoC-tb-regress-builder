@@ -27,8 +27,8 @@ package chi_mesh_soc_nodirect_env_pkg;
   localparam real TCK = CLK_PERIOD_NS;
   localparam int NAXI_S = 4;          // NoC ports with an AXI slave agent
   localparam int AXI_S_PORT [NAXI_S] = '{ 0, 1, 2, 3 };
-  localparam int NAPB_VIP = 0;
-  localparam string APB_VIP_NAME [NAPB_VIP > 0 ? NAPB_VIP : 1] = '{ "" };
+  localparam int NAPB_VIP = 1;
+  localparam string APB_VIP_NAME [NAPB_VIP > 0 ? NAPB_VIP : 1] = '{ "ext" };
   localparam int N_SCN = 0;
   localparam string SCN_NAME [N_SCN > 0 ? N_SCN : 1] = '{ "" };
 

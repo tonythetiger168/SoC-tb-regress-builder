@@ -241,6 +241,11 @@ endmodule
         self.assertRaisesRegex(SpecError, "out and oe go together", self._dev_spec,
                                {"model": "x", "files": ["x.sv"], "inout": [{"pin": "dat", "out": "q"}]})
 
+    def test_mesh_needs_four_vcs(self):
+        r = raw("mini_mesh_soc.yaml")
+        r["noc"]["num_vc"] = 2
+        self.assertRaisesRegex(SpecError, "noc.num_vc: 4", spec.elaborate, r)
+
     def test_periph_slave_needs_ip_peripheral(self):
         r = raw("mini_soc.yaml")
         r["slaves"].insert(0, {"name": "xip", "kind": "periph", "periph": "nope", "base": 0x3000_0000,
@@ -448,6 +453,14 @@ class Chi(unittest.TestCase):
         self.assertEqual(m.masters[0].ideal[t["ddr0"]], 82)      # die 0 cpu -> die 1 ddr
         self.assertEqual(m.masters[3].ideal[t["ddr0"]], 77)      # die 1 npu via the die-0 home
 
+    def test_home_slots(self):
+        m = spec.elaborate(raw("chi_mesh_soc.yaml"))
+        self.assertEqual(m.chi.slots, 4)                          # default
+        r = raw("chi_mesh_soc.yaml")
+        r["chi"]["home_slots"] = 1
+        self.assertEqual(spec.elaborate(r).chi.slots, 1)
+        self.bad(lambda r: r["chi"].update(home_slots=17), "1 to 16")
+
     def test_three_homes(self):
         self.bad(lambda r: r["chi"].update(home=[[0, 0], [1, 0], [1, 1]]), "1, 2 or 4 homes")
 
@@ -480,6 +493,12 @@ class Chi(unittest.TestCase):
         tb = nocgen.tb_hookup(m)
         self.assertIn("noc_chi_rnf #(.IDW(ID_WIDTH)) u_cpu0_shim", tb)
         self.assertIn("noc_cfg_pkg::chi_dat_t cpu0_shim_txdat_flit;", tb)
+        # the DMA is an ACE-Lite (IO-coherent) port: adapter in the NoC, shim in the bench
+        self.assertIn("noc_acelite2axi #(.IDW(ID_WIDTH)) u_dma_acel", rtl)
+        self.assertIn("input  logic [3:0] dma_arsnoop", rtl)
+        self.assertIn(".s_awnosnp(dma_ax_awnosnp), .s_arnosnp(dma_ax_arnosnp)", rtl)
+        self.assertIn(".s_awnosnp(1'b0), .s_arnosnp(1'b0)", rtl)       # the AHB mcu: always via the home
+        self.assertIn("noc_axi2acelite #(.IDW(ID_WIDTH)) u_dma_shim", tb)
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ mesh, 32 LPDDR5 ports) and `specs/mini_soc.yaml` (small, for CI).
 | `model` | `behavioral` | `behavioral`: the TB's NoC component routes the traffic. `rtl`: tb_top instantiates `rtl_module` and the component is not built. `mesh`: socgen generates the NoC RTL (`<soc>_noc`, see "Generated NoC" below) and tb_top instantiates it. |
 | `rtl_module` | | DUT module name for `model: rtl` |
 | `router` | `orca` | `model: mesh`: `orca` = xuanji-core `orca_noc_router` (private, fetched into `ext/` by `scripts/fetch_private_ip.sh`; 2-bit coordinates, so at most 4x4); without the fetch, or with `open`, the open `rtl/noc/noc_router_open.sv` (same ports and routing, no VCs, any mesh size) |
-| `buf_depth`, `num_vc` | 8, 4 | `model: mesh`: router input FIFO depth and orca virtual channels |
+| `buf_depth`, `num_vc` | 8, 4 | `model: mesh`: router input FIFO depth and orca virtual channels. `num_vc` must be 4: each packet travels on the VC of its channel, VC0 = requests (AMBA read / write chunks, CHI REQ), VC1 = responses (AMBA write responses, CHI RSP), VC2 = CHI SNP, VC3 = data (AMBA read data, CHI DAT), so a snoop or a response is never stuck behind a request. `noc_router_open` has no VCs (one FIFO per input) |
 | `ni` | | `model: mesh`: `max_bursts` (4, AXI bursts per direction a master NI accepts), `max_chunks` (8, 32-byte chunks per direction in flight per master), `slave_outstanding` (4, bursts a slave NI keeps open at its slave). Powers of two, 2..32 |
 
 With `model: mesh` the `timing` key is not used: the ideal latency tables come
@@ -74,7 +74,7 @@ bench and suite sit next to the behavioural one for a latency comparison.
 | `qos.priority` | 0 | 0..15; higher wins slave-port arbitration in the behavioural NoC |
 | `qos.latency_target` | | read latency budget in cycles; the report flags any path from this master whose worst percentile is over it |
 | `kind` | `vip` | `vip`: AXI master agent drives the port; `rtl`: an IP master (port left to the DUT) |
-| `protocol` | `axi4` | protocol of the master port: `axi4`, `axi4lite`, `ahb` (AHB-Lite), `chi` (CHI RN-F, needs the `chi` section). Others than `axi4` need `noc.model: mesh`; the bench drives them from the AXI4 VIP through a test shim (`noc_axi2lite` / `noc_axi2ahb` / the `noc_chi_rnf` cache) |
+| `protocol` | `axi4` | protocol of the master port: `axi4`, `axi4lite`, `ahb` (AHB-Lite), `chi` (CHI RN-F, needs the `chi` section), `ace_lite` (ACE-Lite, IO coherent: AXI4 + AxSNOOP / AxDOMAIN / AxBAR). Others than `axi4` need `noc.model: mesh`; the bench drives them from the AXI4 VIP through a test shim (`noc_axi2lite` / `noc_axi2ahb` / the `noc_chi_rnf` cache / `noc_axi2acelite`) |
 
 ## `iommus[]`
 
@@ -227,12 +227,25 @@ CHI coherence on the generated NoC: masters with `protocol: chi` are RN-Fs, the
 other masters are RN-Is, and one or more HN-Fs on the mesh are the homes of
 the coherent memory.
 
+AXI4, AXI4-Lite and AHB masters are always IO coherent: their accesses to
+coherent memory go through the home (ReadOnce / WriteUnique semantics).
+`protocol: ace_lite` masters choose per transaction (`noc_acelite2axi`):
+inner / outer shareable through the home; non-shareable or system
+(ReadNoSnoop / WriteNoSnoop) straight to the slave; WriteLineUnique as a
+snooped write; barriers answered once every earlier transaction of that
+direction has its response; CleanShared, CleanInvalid and MakeInvalid as a
+one-word snooped read of the line (the home writes a dirty line back; the RN-F
+copies are not invalidated, so CleanInvalid / MakeInvalid act as CleanShared).
+The bench's `noc_axi2acelite` shim marks coherent addresses inner shareable,
+others non-shareable or system, and inserts a barrier or CMO every 8 bursts.
+
 | Key | Default | Meaning |
 |---|---|---|
 | `home` | | the HN-F routers: `[x, y]`, or a list of 1, 2 or 4 homes, each `[x, y]` or `{node: [x, y], die: d}` (chiplet) |
 | `coherent` | | memories (or slaves of kind `memory`) the homes keep coherent |
 | `cache_lines` | 64 | lines of each RN-F cache (64-byte, direct-mapped, power of two 4..1024); also sizes each snoop filter |
 | `home_granule` | 4096 | the homes interleave the address space on this granule (xor-folded); at least 4 KB so an AXI burst never spans two homes |
+| `home_slots` | 4 | transactions each home runs at once (1 to 16). Requests are taken in order; one whose snoop-filter set is already in a slot waits, so a line is never in two transactions. 1 is a serial home |
 | `dmt` | true | Direct Memory Transfer: memory sends a ReadShared / ReadUnique line straight to the requester |
 | `dct` | true | Direct Cache Transfer: a unique owner forwards the line to the requester (SnpSharedFwd / SnpUniqueFwd) |
 
@@ -243,8 +256,10 @@ the coherent memory.
   always accepts on RX). In the bench the AXI4 VIP is the CPU and
   `noc_chi_rnf` its cache: MESI (I / SC / UC / UD), ReadShared, ReadUnique,
   CleanUnique, WriteBackFull, Evict, CompAck (to the CompData's HomeNID);
-  ReadNoSnp / WriteNoSnpPtl (one beat each) for addresses outside the
-  coherent memory; it answers forwarded snoops with CompData to the requester.
+  ReadNoSnp / WriteNoSnpPtl for addresses outside the coherent memory (an
+  INCR burst of 32-bit beats as one request per 32-byte half line, carrying
+  just the words asked for; other bursts one beat each);
+  it answers forwarded snoops with CompData to the requester.
 - HN-F (`noc_hnf`): exact inclusive snoop filter for its address slice (a copy
   of every RN-F's tags), one transaction at a time; SnpShared / SnpUnique /
   SnpCleanShared, and the Fwd snoops with `dct`; dirty data written back or
@@ -296,6 +311,8 @@ The generic RTL it configures is in `rtl/noc/`:
 | `noc_ni_chi.sv` | CHI: RN-F network interface (CHI channels <-> packets to the home) |
 | `noc_hnf.sv` | CHI: home node, snoop filter, RN-I chunks to coherent memory |
 | `noc_chi_rnf.sv` | CHI: RN-F cache (AXI4 slave -> cache -> CHI port), the bench's shim for `protocol: chi` |
+| `noc_acelite2axi.sv` | ACE-Lite master port -> master NI (shareability, barriers, CMOs; port SVA) |
+| `noc_axi2acelite.sv` | AXI4 -> ACE-Lite, the bench's shim for `protocol: ace_lite` |
 | `rtl/soc/axi2apb_bridge.sv` | AXI4 -> APB4 on APB slave ports |
 
 Protocol notes: AHB-Lite has no write strobes (a narrow write needs a narrow

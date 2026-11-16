@@ -317,6 +317,9 @@ package chi_mesh_soc_test_pkg;
         logic [31:0] b = err_base(AXI_S_PORT[i]);
         c.s_cfg[i].add_err_range(b, b + 32'h7F, AXI4_SLVERR);
         c.s_cfg[i].add_err_range(b + 32'h80, b + 32'hFF, AXI4_DECERR);
+        // CHI: the same windows one granule up (the other home's NoSnp requests)
+        c.s_cfg[i].add_err_range(b + 32'h1000, b + 32'h107F, AXI4_SLVERR);
+        c.s_cfg[i].add_err_range(b + 32'h1080, b + 32'h10FF, AXI4_DECERR);
       end
     endfunction
 
@@ -407,7 +410,7 @@ package chi_mesh_soc_test_pkg;
         for (int k = 0; k < 4; k++) run_item(mi, 0, a + 32'h2, 1, 1, AXI4_INCR);
         for (int k = 0; k < 4; k++) run_item(mi, 0, a, 1, 2, AXI4_INCR);
         if (!ahb) for (int k = 0; k < 4; k++) run_item(mi, 1, a + 32'h100, 16, 2, AXI4_INCR, 2 + k);
-        if (M_PROTO[mi] == "axi4") begin
+        if (M_PROTO[mi] == "axi4" || M_PROTO[mi] == "ace_lite") begin
           for (int k = 0; k < 4; k++) run_item(mi, 0, a, 256, 2, AXI4_INCR);
           for (int k = 0; k < 4; k++) run_item(mi, 0, a, 1, 2, AXI4_INCR);
           for (int k = 0; k < 4; k++) run_item(mi, 1, a, 256, 2, AXI4_INCR);
@@ -448,9 +451,10 @@ package chi_mesh_soc_test_pkg;
     endfunction
 
     task run_item(int mi, bit wr, logic [31:0] a, int beats, bit [2:0] size, axi4_burst_e burst,
-                  int partial = 0);
+                  int partial = 0, int w_gap = 0);
       axi4_item t = axi4_api::make(wr, a, beats, size, burst, 8'($urandom_range((1 << ID_WIDTH) - 1, 0)));
       t.prot = 3'($urandom);
+      t.w_gap = w_gap;
       // partial 1: random strobes; partial 2+k: beat i drops byte (i + k) % 4, so
       // passes k = 0..3 set and clear every byte lane of every chunk word
       if (partial == 1) foreach (t.strb[i]) t.strb[i] = t.lanes(i) & 4'($urandom_range(14, 1));
@@ -546,8 +550,179 @@ package chi_mesh_soc_test_pkg;
         run_item(mi, 1, b + 32'hF00, 1, 2, AXI4_INCR);          // PSLVERR window
         run_item(mi, 0, b + 32'hF00, 1, 2, AXI4_INCR);
       end
+      chi_stress();
       $display("COV_PASS");
     endtask
+
+    // CHI: every VIP master at once on the coherent memory, so every home slot
+    // carries every kind of transaction: hot lines shared by all masters, two
+    // granules per home and several tags per RN-F cache set (snoops, DCT
+    // forwards, CleanUnique losing its line to an earlier snoop, dirty victims
+    // written back), random lines over every address bit of the coherent
+    // window, and the RN-Fs' non-coherent accesses (ReadNoSnp / WriteNoSnpPtl
+    // with partial strobes to their own words of a memory, NDERR outside the
+    // map) in between. The writers race by design: the coherent window is not
+    // scoreboarded in this last phase (the coherence test and the generated
+    // single-writer assertion check coherence).
+    localparam logic [31:0] CHI_CB = 32'h80000000;
+    localparam int CHI_GRAN = 4096;
+    localparam int CHI_NL = 16;
+    task chi_stress();
+      int ms[$];
+      foreach (S_COH[si]) if (si < NS && S_COH[si]) chi_csz = target_size(si);
+      for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) ms.push_back(mi);
+      env.sb.ign_lo.push_back(CHI_CB);
+      env.sb.ign_hi.push_back(CHI_CB + chi_csz);
+      for (int si = 0; si < NS; si++) begin    // the error windows one granule up
+        env.sb.ign_lo.push_back(err_base(si) + 32'h1000);
+        env.sb.ign_hi.push_back(err_base(si) + 32'h1100);
+      end
+      foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 4;
+      // pass 0 fast, pass 1 with slow slaves (the links back up, so the RN-Fs'
+      // TX queues wait on the NoC)
+      for (int pass = 0; pass < 2; pass++) begin
+        env.cfg.set_timing(pass ? 2 : 0);
+        for (int i = 0; i < ms.size(); i++) begin
+          automatic int mi = ms[i];
+          fork chi_walker(mi); join_none
+        end
+        wait fork;
+      end
+      // the races again while the RN-Is keep the homes' other slots busy
+      chi_races(ms);
+      env.cfg.set_timing(2);
+      for (int i = 0; i < ms.size(); i++) begin
+        automatic int mi = ms[i];
+        if (M_PROTO[mi] != "chi") fork chi_walker(mi); join_none
+      end
+      chi_races(ms);
+      wait fork;
+      env.cfg.set_timing(0);
+      begin                                     // the registers again after the walkers: every home
+        uvm_reg regs[$];                        // takes a NoSnp to the bridge after an RN-I's chunks
+        uvm_status_e st;
+        uvm_reg_data_t v;
+        if (env.regmodel != null) env.regmodel.get_registers(regs);
+        foreach (regs[i]) regs[i].read(st, v);
+        foreach (ms[i])                         // and writes from every master (an unmapped offset:
+          foreach (APB_MAPPED_SLOT[k])          // PSLVERR, no side effect), so every home takes some
+            for (int j = 0; j < 4; j++)
+              run_item(ms[i], 1, APB_BASE + (APB_MAPPED_SLOT[k] << 12) + 32'hFFC, 1, 2, AXI4_INCR);
+      end
+      foreach (ms[i]) env.cfg.m_cfg[ms[i]].max_outstanding = 1;
+    endtask
+
+    // directed races between two RN-Fs (and an RN-I) on one line, in every
+    // granule (so on every home) and over the sets: both write a line both
+    // hold SC (the second CleanUnique finds its line snooped away: Comp I);
+    // an RN-F writes back its dirty line while another RN-F reads it, writes
+    // it, or an RN-I reads it (the copy-back then carries I, SC or UC)
+    task chi_races(int ms[$]);
+      int c[$], io = -1;
+      foreach (ms[i]) if (M_PROTO[ms[i]] == "chi") c.push_back(ms[i]); else if (io < 0 && M_PROTO[ms[i]] != "ahb") io = ms[i];
+      if (c.size() < 2) return;
+      for (int g = 0; g < 4; g++)
+        for (int j = 0; j < 2 * CHI_NL; j++) begin
+          automatic logic [31:0] x = CHI_CB + g * CHI_GRAN + 32'h800 + (j % CHI_NL) * 64;
+          automatic logic [31:0] y = x + CHI_NL * 64 * (1 + j / CHI_NL);      // same set, another tag
+          automatic logic [31:0] z = x + CHI_NL * 64 * 3;                     // a third tag
+          automatic int a0 = c[j % 2], a1 = c[(j + 1) % 2];
+          // a clean victim's Evict racing another RN-F's ReadUnique of it
+          rd(a0, z);
+          fork rd(a0, x); wr(a1, z, $urandom); join
+          rd(a0, x); rd(a1, x);
+          fork wr(a0, x + 4, $urandom); wr(a1, x + 8, $urandom); join
+          wr(a0, x, $urandom);
+          fork
+            rd(a0, y);
+            case (j % 3)
+              0: wr(a1, x + 12, $urandom);
+              1: rd(a1, x);
+              default: if (io >= 0) run_item(io, 0, x, 4, 2, AXI4_INCR); else rd(a1, x);
+            endcase
+          join
+        end
+    endtask
+
+    logic [31:0] chi_csz = 32'h1000;
+
+    // a random word address outside the map (so every address bit, on every home), or 0
+    function logic [31:0] chi_unmapped();
+      logic [31:0] r = 0;
+      for (int j = 0; j < 64 && r == 0; j++) begin
+        logic [31:0] t = $urandom & ~32'h3F;
+        if (cmesh_decode(t) == S_DEF) r = t;
+      end
+      return r;
+    endfunction
+
+    task automatic chi_walker(int mi);
+      bit chi = M_PROTO[mi] == "chi", ahb = M_PROTO[mi] == "ahb";
+      int nc = -1;
+      for (int si = 0; si < NS; si++)
+        if (nc < 0 && !S_COH[si] && (S_KIND[si] == "memory" || S_KIND[si] == "channel") && S_PROTO[si] == "axi4") nc = si;
+      repeat (600) begin
+        int r = $urandom_range(99, 0), beats = ahb ? $urandom_range(4, 1) : $urandom_range(16, 1);
+        bit wr = $urandom_range(1, 0);
+        axi4_burst_e bt = AXI4_INCR;
+        logic [31:0] a;
+        if (r < 55)                       // hot lines: 2 tags x 4 granules, 4 or all sets
+          a = CHI_CB + ($urandom_range(3, 0) * CHI_GRAN) + ($urandom_range(1, 0) * CHI_NL * 64)
+              + ($urandom_range(r < 30 ? 3 : CHI_NL - 1, 0) << 6) + ($urandom_range(15, 0) << 2);
+        else if (!chi && r >= 75 && r < 80) begin   // any memory slave: 8 random words, written then read
+          int sl[$];
+          for (int si = 0; si < NS; si++)
+            if (!S_COH[si] && (S_KIND[si] == "memory" || S_KIND[si] == "channel")) sl.push_back(si);
+          if (sl.size() == 0) continue;
+          a = (PATH_ADDR[mi][sl[$urandom_range(sl.size() - 1, 0)]] & ~32'hFFF) | 32'h680;
+          if (NAPB_VIP && $urandom_range(1, 0)) a = apb_vip_base(0) + 32'h600 + 32'h20 * mi;   // the APB VIP
+          run_item(mi, 1, a, 8, 2, AXI4_INCR);
+          run_item(mi, 0, a, 8, 2, AXI4_INCR);
+          continue;
+        end else if (r < 75 || !chi) begin    // anywhere in the coherent window
+          a = CHI_CB + ($urandom_range(chi_csz / 4 - 1, 0) << 2);
+          if (!chi && !ahb && r >= 90) bt = AXI4_FIXED;   // RN-I FIXED chunks through the home
+          if (!chi && !ahb && r >= 85 && r < 90) begin   // RN-I narrow beats at odd addresses
+            bit [2:0] sz = $urandom_range(1, 0);
+            a += $urandom_range(3, 0);
+            if (sz) a[0] = 1'b0;
+            run_item(mi, wr, a, ((a & 32'hFFF) > 32'hFF0) ? 1 : $urandom_range(4, 1), sz, AXI4_INCR);
+            continue;
+          end
+        end else if (r < 90 && nc >= 0)   // non-coherent memory: own words only (scoreboarded)
+          a = ((PATH_ADDR[mi][nc] & ~32'hFFF) | 32'h600) + ($urandom_range(31, 0) << 2);
+        else if (r < 92 && chi && nc >= 0) begin   // NoSnp into the slave's error windows (DERR / NDERR)
+          a = err_base(nc) + ($urandom_range(1, 0) * 32'h1000) + ($urandom_range(1, 0) * 32'h80);
+          if (a - S_BASE[nc] >= target_size(nc)) a = err_base(nc);
+          a += $urandom_range(7, 0) * 4;
+          beats = $urandom_range(8, 1);
+        end else if (r < 95 && chi && nc >= 0) begin   // narrow NoSnp beats at odd addresses
+          bit [2:0] sz = $urandom_range(1, 0);
+          a = ((PATH_ADDR[mi][nc] & ~32'hFFF) | 32'h600) + $urandom_range(127, 0);
+          if (sz) a[0] = 1'b0;
+          run_item(mi, wr, a, 1, sz, AXI4_INCR);
+          continue;
+        end else begin                    // outside the map, anywhere: NDERR from either home
+          a = chi_unmapped();
+          beats = 2;
+          if (a == 0) continue;
+        end
+        if (beats > (4096 - (a & 32'hFFF)) / 4) beats = (4096 - (a & 32'hFFF)) / 4;
+        if (r >= 75 && r < 90 && beats > (32'h680 - (a & 32'hFFF)) / 4) beats = (32'h680 - (a & 32'hFFF)) / 4;
+        if (beats < 1) beats = 1;
+        run_item(mi, wr, a, beats, 2, bt, wr && !ahb, $urandom_range(3, 0));
+      end
+      // FIXED bursts on every slave port from a full AXI master
+      if (!chi && !ahb)
+        for (int si = 0; si < NS; si++) begin
+          logic [31:0] b = (S_KIND[si] == "apb_bridge") ? (NAPB_VIP ? apb_vip_base(0) + 32'h300 : empty_slot())
+                                                        : (PATH_ADDR[mi][si] & ~32'hFFF) | 32'h700;
+          if (b == 0) continue;
+          run_item(mi, 1, b, 4, 2, AXI4_FIXED);
+          run_item(mi, 0, b, 4, 2, AXI4_FIXED);
+        end
+    endtask
+
 
 
     // mesh NoC: every VIP master keeps up to 16 bursts in flight to one
