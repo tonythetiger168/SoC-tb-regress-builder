@@ -879,6 +879,11 @@ def _mesh_cov_waivers(m):
             L.append(f"user {g}c_a[rw]_fixed # behind the {t.protocol} adapter the VIP sees single INCR beats")
             L.append(f"user {g}c_[rb]_wait # the {t.protocol} test shim raises READY in the state after the "
                      "request handshake, before the slave can answer")
+    if not m.chi.homes:                      # AMBA mesh: no CHI packet, so no snoop VC
+        pk = nocgen.cfg_pkg(m).splitlines()
+        ln = next(i + 1 for i, t in enumerate(pk) if "OP_CSNP:" in t and "VC_SNP" in t)
+        L.append(f"line noc_cfg_pkg case \\S*rtl/noc_cfg_pkg[.]sv:{ln}$ # no CHI home: no snoop packet, "
+                 "so vc_of never returns VC_SNP")
     if m.chi.rn:
         L += _chi_cov_waivers(m, NR)
     return L
