@@ -350,7 +350,8 @@ package phone_env_pkg;
       if (a[16]) begin                       // segment 1: subsystem IPs (RAL) or nothing (PSLVERR)
         bit real_ips = $cast(pc, cfg) && pc.real_ips;
         known = 1; exp_rdata = 0; exp_err = 1;
-        if (real_ips && slot < SS_NSLOTS) begin exp_err = 0; known = 0; end
+        // real IPs: registers sit below 0x800; PSLVERR above it or when misaligned
+        if (real_ips && slot < SS_NSLOTS && a[1:0] == 2'b00 && !a[11]) begin exp_err = 0; known = 0; end
         return;
       end
       if (slot <= APB_EXT) super.predict_apb_xfer(a, wr, strb, wdata, exp_err, known, exp_rdata);

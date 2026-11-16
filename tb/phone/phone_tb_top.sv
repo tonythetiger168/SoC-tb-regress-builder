@@ -12,6 +12,8 @@ module phone_tb_top;
   logic aclk = 1'b0;
   logic aresetn = 1'b0;
   always #1 aclk = ~aclk;                 // 500 MHz NoC / memory-port clock
+  bit   ss_pins;                          // +SS_PINS: pin models (see "pin models" below)
+  initial ss_pins = $test$plusargs("SS_PINS");
   initial begin
     repeat (10) @(posedge aclk);
     aresetn <= 1'b1;
@@ -75,6 +77,15 @@ module phone_tb_top;
   always_ff @(posedge aclk or negedge aresetn)
     if (!aresetn) sh_cnt <= '0; else sh_cnt <= sh_cnt + 16'd1;
   assign sh_valid = (sh_cnt[3:0] == 4'hF);
+  // ISP sensor stream and panel READY: idle / always ready unless +SS_PINS
+  logic        isp_v, pix_rdy;
+  logic [31:0] isp_d;
+  always_ff @(posedge aclk or negedge aresetn)
+    if (!aresetn) begin isp_v <= 1'b0; isp_d <= '0; pix_rdy <= 1'b1; end
+    else if (ss_pins) begin
+      if (!isp_v || isp_sns_ready) begin isp_v <= ($urandom() % 4) != 0; isp_d <= $urandom(); end
+      pix_rdy <= ($urandom() % 4) != 0;
+    end
 
   phone_ss_ips u_ss (
     .aclk, .aresetn,
@@ -89,9 +100,9 @@ module phone_tb_top;
     .m_arburst(s_arburst), .m_arprot(s_arprot), .m_arvalid(s_arvalid), .m_arready,
     .m_rid, .m_rdata, .m_rresp, .m_rlast, .m_rvalid, .m_rready(s_rready),
     .irq_in(irq), .cpu_irq, .wdt_reset, .ss_irq,
-    .isp_sns_valid(1'b0), .isp_sns_data(32'h0), .isp_sns_ready,      // ISP uses its test pattern
-    .pix_valid, .pix_data, .pix_hsync, .pix_vsync, .pix_ready(1'b1),   // panel always ready
-    .sh_sns_valid(sh_valid), .sh_sns_data({4'h0, sh_cnt[15:4]})
+    .isp_sns_valid(isp_v), .isp_sns_data(isp_d), .isp_sns_ready,      // sensor stream (+SS_PINS)
+    .pix_valid, .pix_data, .pix_hsync, .pix_vsync, .pix_ready(pix_rdy), // panel back-pressure (+SS_PINS)
+    .sh_sns_valid(sh_valid), .sh_sns_data(ss_pins ? (sh_cnt >> 4) * 16'h9E37 : {4'h0, sh_cnt[15:4]})
   );
 `else
   localparam bit REAL_IPS = 1'b0;
@@ -215,10 +226,52 @@ module phone_tb_top;
     .ssp_paddr, .ssp_psel, .ssp_penable, .ssp_pwrite, .ssp_pwdata, .ssp_pstrb, .ssp_pprot,
     .ssp_prdata, .ssp_pready, .ssp_pslverr,
     .gpio, .uart_rxd(uart_txd), .uart_txd,                     // UART looped back
-    .i2c_sda, .i2c_scl(1'b1),                                  // I2C bus idle
-    .spi_sclk(1'b0), .spi_mosi(1'b0), .spi_miso, .spi_csn(1'b1), // SPI deselected
-    .pwm_out, .pwm_n_out, .trng_ro(4'b0), .irq
+    .i2c_sda, .i2c_scl(tb_scl),                                // I2C: idle, or the +SS_PINS master
+    .spi_sclk(tb_sclk), .spi_mosi(tb_mosi), .spi_miso, .spi_csn(tb_csn), // SPI: deselected, or +SS_PINS
+    .pwm_out, .pwm_n_out, .trng_ro(tb_ro), .irq
   );
+
+  // ---------------------------------------------------------------- pin models
+  // Off by default (I2C and SPI idle, ring oscillators 0, panel always ready,
+  // no sensor stream). +SS_PINS turns on: an I2C controller writing one byte
+  // to the I2C target (address 0x50) and an SPI controller sending one byte
+  // every 20 us, random ring-oscillator inputs, and (real-IP build) a random
+  // ISP sensor stream, random panel back-pressure and full-range sensor-hub
+  // samples.
+  logic        tb_scl = 1'b1, tb_sda_low = 1'b0, tb_sclk = 1'b0, tb_mosi = 1'b0, tb_csn = 1'b1;
+  logic [3:0]  tb_ro;
+  assign i2c_sda = tb_sda_low ? 1'b0 : 1'bz;
+  always_ff @(posedge aclk or negedge aresetn)
+    if (!aresetn) tb_ro <= '0;
+    else if (ss_pins) tb_ro <= 4'($urandom());
+  task automatic i2c_bit(bit b);                    // SCL low, set SDA, SCL high, SCL low
+    tb_sda_low = !b; #20ns; tb_scl = 1'b1; #20ns; tb_scl = 1'b0; #20ns;
+  endtask
+  initial begin
+    @(posedge aresetn);
+    if (ss_pins) forever begin
+      #20us;
+      // I2C: START, address 0x50 + write, ACK slot, data byte, ACK slot, STOP
+      begin
+        bit [7:0] d = 8'($urandom());
+        tb_sda_low = 1'b1; #20ns; tb_scl = 1'b0; #20ns;          // START
+        for (int i = 7; i >= 0; i--) i2c_bit((8'hA0 >> i) & 1);
+        i2c_bit(1);                                             // released: the target ACKs
+        for (int i = 7; i >= 0; i--) i2c_bit(d[i]);
+        i2c_bit(1);
+        tb_sda_low = 1'b1; #20ns; tb_scl = 1'b1; #20ns; tb_sda_low = 1'b0; #20ns;   // STOP
+      end
+      // SPI mode 0: one byte
+      begin
+        bit [7:0] d = 8'($urandom());
+        tb_csn = 1'b0; #20ns;
+        for (int i = 7; i >= 0; i--) begin
+          tb_mosi = d[i]; #20ns; tb_sclk = 1'b1; #20ns; tb_sclk = 1'b0;
+        end
+        #20ns; tb_csn = 1'b1; tb_mosi = 1'b0;
+      end
+    end
+  end
 
   // internal APB bus (bridge side of the decoder), observed only
   assign apbi_if.paddr   = dut.paddr;
