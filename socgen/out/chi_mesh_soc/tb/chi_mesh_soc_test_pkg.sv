@@ -516,6 +516,9 @@ package chi_mesh_soc_test_pkg;
         end
       end
       if (hole != 0) apb_port_stress(hole, empty_slot(1));
+      // then OKAY over every word of the APB port NI's read chunk, so the
+      // response bits of the empty slot's SLVERR bursts fall again
+      if (hole != 0 && NAPB_VIP > 0) run_item(first_vip(), 0, apb_vip_base(0) + 32'h100, 8, 2, AXI4_INCR);
       end
       if (part == 0) begin mesh_extra(); pipe_stress(); end
       if (part == 2 || part == 3) mesh_extra(part - 2);
