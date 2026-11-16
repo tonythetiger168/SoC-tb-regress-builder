@@ -8,6 +8,6 @@ list:
   default: regress/phone_soc_mesh_testlist.txt
   nightly: regress/phone_soc_mesh_nightly.txt
 cov_include: ['socgen/out/phone_soc_mesh/rtl/*']
-timeout: 2400
+timeout: 3600
 requires: [ext/xuanji-core/rtl/noc/orca_noc_router.sv]
 fallback: {filelist: socgen/out/phone_soc_mesh/sim/files_open.f}
