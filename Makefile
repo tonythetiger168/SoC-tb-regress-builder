@@ -21,6 +21,7 @@ TOP_soc  := soc_tb_top
 TOP_vip  := vip_tb_top
 TOP_phone := phone_tb_top
 TOP_phone_real := phone_tb_top
+TOP_phone_aon := phone_aon_tb_top
 TOP_tv8k_noc := tv8k_noc_tb_top
 TOP_tv8k_noc_open := tv8k_noc_tb_top
 TOP_tv8k_vdec := tv8k_noc_tb_top

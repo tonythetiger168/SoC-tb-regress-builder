@@ -53,6 +53,8 @@ package phone_env_pkg;
       super.new(name);
       ddr_err_lo = LP5_ERR_LO;
       ddr_err_hi = LP5_ERR_HI;
+      ddr_dec_lo = 32'h0;                  // no DECERR window unless a test sets one
+      ddr_dec_hi = 32'h0;
       foreach (pm_cfg[m]) begin
         pm_cfg[m] = axi4_cfg::type_id::create($sformatf("%s_cfg", master_name(m)));
         pm_cfg[m].role = AXI4_MASTER;
@@ -79,6 +81,7 @@ package phone_env_pkg;
         if (ch_cfg[c] == null) continue;
         ch_cfg[c].err_ranges.delete();
         ch_cfg[c].add_err_range(ddr_err_lo, ddr_err_hi, AXI4_SLVERR);
+        if (ddr_dec_hi != 0) ch_cfg[c].add_err_range(ddr_dec_lo, ddr_dec_hi, AXI4_DECERR);
       end
     endfunction
 
@@ -276,8 +279,10 @@ package phone_env_pkg;
     // ---------------------------------------------------------------- DRAM
     function void predict_dram(axi4_item t, int m);
       string tag = {"DRAM ", t.convert2string()};
-      bit err = (t.addr >= cfg.ddr_err_lo && t.addr <= cfg.ddr_err_hi);
-      axi4_resp_e exp = err ? AXI4_SLVERR : AXI4_OKAY;
+      bit slv = (t.addr >= cfg.ddr_err_lo && t.addr <= cfg.ddr_err_hi);
+      bit dec = (cfg.ddr_dec_hi != 0 && t.addr >= cfg.ddr_dec_lo && t.addr <= cfg.ddr_dec_hi);
+      bit err = slv || dec;
+      axi4_resp_e exp = dec ? AXI4_DECERR : slv ? AXI4_SLVERR : AXI4_OKAY;
       axi4_item e;
       int c = dram_channel(t.addr);
       if (t.write) begin

@@ -386,6 +386,7 @@ module phone_iommu #(
   assign d_bready  = (ws == W_RESP) && u_bready;
 
   // synthesis translate_off
+  /* verilator coverage_off */          // debug trace, not hardware
   always @(posedge clk) if ($test$plusargs("IOMMU_DEBUG")) begin
     if (ws == W_LOOK) $display("%t %m W_LOOK va=%h hit=%b ppn=%h r=%b w=%b oow=%b en=%b", $time, w_va, w_hit, w_ppn, w_rok, w_wok, w_oow, en);
     if (rs == R_LOOK) $display("%t %m R_LOOK va=%h hit=%b ppn=%h r=%b w=%b oow=%b kst=%0d", $time, r_va, r_hit, r_ppn, r_rok, r_wok, r_oow, kst);
@@ -393,6 +394,7 @@ module phone_iommu #(
     if (fault_r || fault_w) $display("%t %m FAULT r=%b w=%b", $time, fault_r, fault_w);
     if (ws == W_FWD && d_awready) $display("%t %m W_FWD pa=%h", $time, d_awaddr);
   end
+  /* verilator coverage_on */
   // synthesis translate_on
 
   // ==========================================================================

@@ -1,0 +1,3 @@
+# Coverage waivers for the phone_aon_arb unit bench (tb/phone_aon, scope rtl/phone/phone_aon_arb.sv).
+# Format: <metric> <regex on "metric hierarchy comment [file:line]"> # reason
+line dut case rtl/phone/phone_aon_arb\.sv:(83|127)$ # FSM default arms: the write FSM uses all four 2-bit codes, the read FSM's code 3 is never assigned

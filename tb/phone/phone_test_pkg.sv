@@ -760,5 +760,6 @@ package phone_test_pkg;
   endclass
 
   `include "phone_ss_test.svh"
+  `include "phone_cov_test.svh"
 endpackage
 `endif
