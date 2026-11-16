@@ -1,0 +1,2 @@
+# tv8k CPU: xuanji core boot through the NoC (program: make tv8k_cpu_sw)
+tv8k_cpu_boot_test  1

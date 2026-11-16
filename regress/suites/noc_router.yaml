@@ -1,0 +1,12 @@
+# Unit suite: the open mesh router (rtl/noc/noc_router_open) every generated
+# mesh NoC uses, with random per-port ready stalls on all five ports, FIFO-full
+# back-pressure, one output blocked, and a mid-run reset (tb/noc_router).
+name: noc_router
+level: subsystem
+soc: noc
+subsystem: router
+description: noc_router_open flow control, XY routing and per-input ordering under random ready stalls.
+filelist: sim/noc_router.f
+top: noc_router_tb_top
+list: regress/noc_router_testlist.txt
+cov_include: ["*rtl/noc/noc_router_open.sv"]

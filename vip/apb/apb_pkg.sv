@@ -8,6 +8,7 @@
 `define APB_PKG_SV
 package apb_pkg;
   import uvm_pkg::*;
+  import fcov_pkg::*;
   `include "uvm_macros.svh"
 
   typedef enum int { APB_MASTER = 0, APB_SLAVE = 1 } apb_role_e;
@@ -217,18 +218,40 @@ package apb_pkg;
       x_dir_err:   cross cp_dir, cp_err;
       x_dir_waits: cross cp_dir, cp_waits;
     endgroup
+    fcov_group fg;   // simulator-neutral mirror of cg
     function new(string name, uvm_component parent);
       super.new(name, parent);
       cg = new();
     endfunction
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      fg = fcov_db::group("apb_coverage", get_full_name());
+      fg.add_bins("cp_dir", '{"rd", "wr"});
+      fg.add_bins("cp_err", '{"ok", "err"});
+      fg.add_bins("cp_waits", '{"none", "one", "few", "many"});
+      fg.add_bins("cp_strb", '{"full", "partial", "none"});
+      fg.cross2("x_dir_err", "cp_dir", '{"rd", "wr"}, "cp_err", '{"ok", "err"});
+      fg.cross2("x_dir_waits", "cp_dir", '{"rd", "wr"}, "cp_waits", '{"none", "one", "few", "many"});
+    endfunction
     function void write(apb_item t);
+      string d, e, w;
       cv_write = t.write; cv_slverr = t.slverr; cv_waits = t.wait_cycles; cv_strb = t.strb;
       n_sampled++;
       cg.sample();
+      d = cv_write ? "wr" : "rd";
+      e = cv_slverr ? "err" : "ok";
+      w = (cv_waits == 0) ? "none" : (cv_waits == 1) ? "one" : (cv_waits <= 4) ? "few" : "many";
+      fg.hit("cp_dir", d);
+      fg.hit("cp_err", e);
+      fg.hit("cp_waits", w);
+      if (cv_write) fg.hit("cp_strb", (cv_strb == 4'hF) ? "full" : (cv_strb == 0) ? "none" : "partial");
+      fg.hit("x_dir_err", {d, ".", e});
+      fg.hit("x_dir_waits", {d, ".", w});
     endfunction
     function void report_phase(uvm_phase phase);
       `uvm_info("APB_COV", $sformatf("%s: %0d transfers sampled, coverage %0.1f%%", get_full_name(),
                 n_sampled, cg.get_inst_coverage()), UVM_LOW)
+      fg.dump();
     endfunction
   endclass
 

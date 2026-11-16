@@ -20,6 +20,7 @@ class axi4_item extends uvm_sequence_item;
   // filled in by monitors
   int               port = -1;  // agent tag (e.g. interconnect master index)
   time              t_start, t_end;
+  bit               done;       // set by the master driver when the response is complete
 
   // knobs read by the master driver
   int unsigned      aw_delay, w_gap, b_delay, r_gap;

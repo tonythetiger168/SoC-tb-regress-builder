@@ -17,6 +17,8 @@ jobs:
         tb:
           - {name: soc,      list: regress/testlist.txt}
           - {name: mini_soc, list: regress/mini_soc_testlist.txt}
+          - {name: mini_mesh_soc, list: regress/mini_mesh_soc_testlist.txt}
+          - {name: noc_router, list: regress/noc_router_testlist.txt, scope: 'rtl/noc/noc_router_open\.sv'}
     env:
       VERILATOR_VERSION: v5.052
       VERILATOR_PREFIX: /opt/verilator
@@ -34,7 +36,11 @@ jobs:
           bash scripts/install_tools.sh
           echo "/opt/verilator/bin" >> "$GITHUB_PATH"
       - name: Coverage closure (${{ matrix.tb.name }})
-        run: bash scripts/cov/run_cov.sh ${{ matrix.tb.name }} ${{ matrix.tb.list }}
+        env:
+          COV_SCOPE: ${{ matrix.tb.scope }}
+        run: |
+          [ -n "$COV_SCOPE" ] || unset COV_SCOPE
+          bash scripts/cov/run_cov.sh ${{ matrix.tb.name }} ${{ matrix.tb.list }}
       - name: Upload score
         if: always()
         uses: actions/upload-artifact@v4

@@ -21,6 +21,8 @@ class axi4_cfg extends uvm_object;
   // ---- master knobs (upper bounds of random delays, in clocks) ----
   int unsigned  max_b_delay = 0;     // BREADY low before the response
   int unsigned  max_r_gap   = 0;     // RREADY low between beats
+  int unsigned  max_outstanding = 1; // bursts in flight: > 1 issues the next address while
+                                     // earlier responses are pending (B/R matched by ID, in order)
 
   // ---- slave (memory responder) knobs ----
   mem_vip_pkg::mem_model mem;        // storage; created by the agent if null
@@ -31,6 +33,7 @@ class axi4_cfg extends uvm_object;
   int unsigned  max_b_latency    = 0; // cycles from WLAST to BVALID
   int unsigned  max_r_latency    = 0; // cycles from AR to first RVALID
   int unsigned  max_rvalid_gap   = 0; // RVALID low cycles between beats
+  int unsigned  access_latency   = 0; // fixed cycles before the first R beat / before B (memory access time)
   axi4_err_range err_ranges[$];       // start address in range -> resp
 
   function new(string name = "axi4_cfg");

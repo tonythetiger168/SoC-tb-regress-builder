@@ -10,8 +10,10 @@ class axi4_single_seq extends uvm_sequence #(axi4_item);
     super.new(name);
   endfunction
   task body();
+    item.done = 0;
     start_item(item);
     finish_item(item);
+    wait (item.done);                    // the driver may still be collecting the response
   endtask
 endclass
 

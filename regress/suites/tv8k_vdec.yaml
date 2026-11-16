@@ -1,0 +1,18 @@
+# Subsystem suite of the 8K TV SoC: the VDEC is the c1p decoder RTL (private
+# c1p-codec, fetched into ext/ by scripts/fetch_private_ip.sh) on the xuanji
+# NoC. The CPU VIP replays the decoder firmware's register script through the
+# NoC; the decoded pictures land in DRAM and are compared sample by sample with
+# c1p's reference model. Vectors: scripts/tv8k_vdec_prep.sh build/tv8k_vdec_vec
+# (make regress runs it). Without c1p-codec the suite is not run.
+name: tv8k_vdec
+level: subsystem
+soc: tv8k
+subsystem: vdec
+description: HEVC decode by the c1p decoder RTL through the NoC into DRAM, bit-exact against the reference model, with background traffic.
+filelist: sim/tv8k_vdec.f
+top: tv8k_noc_tb_top
+list: {default: regress/lists/tv8k_vdec.txt, nightly: regress/lists/tv8k_vdec_nightly.txt}
+cov_include: ["*rtl/tv8k/*"]
+timeout: 3600
+requires: [ext/c1p-codec/c1p/rtl/decoder/c1p_dec_axi_top.sv, ext/xuanji-core/rtl/noc/orca_noc_router.sv,
+           build/tv8k_vdec_vec/base.args]

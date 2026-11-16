@@ -1,0 +1,2 @@
+vip_axi4_loopback_test   3
+vip_apb_loopback_test    3

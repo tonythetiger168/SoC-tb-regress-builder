@@ -1,0 +1,3 @@
+# tv8k NoC: bandwidth and hotspot
+tv8k_noc_bw_test         2
+tv8k_noc_hotspot_test    2
