@@ -86,6 +86,11 @@ package phone_soc_mesh_pkg;
 
   localparam logic [31:0] S_BASE [NS] = '{ 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h00000000, 32'h10000000 };
   localparam int S_ACCESS [NS] = '{ 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 2, 4 };
+  // 1: an RTL DRAM model serves the port (memories[].model != vip), it takes its own time
+  // set by tb_top once every RTL DRAM channel has finished its power-up / MRS / ZQ
+  // sequence (the tests start their traffic after it, as boot code would)
+  bit dram_ready = 1'b1;
+  localparam bit S_DRAM [NS] = '{ 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0 };
 
   // lpddr: channel = off[16:12] ^ off[21:17], off = a - LPDDR_BASE
   function automatic int phone_mesh_lpddr_channel(logic [31:0] a);

@@ -138,6 +138,7 @@ package chi_chiplet_soc_test_pkg;
 
     task run_phase(uvm_phase phase);
       phase.raise_objection(this);
+      wait (dram_ready);
       #(20 * TCK * 1ns);
       body();
       #(50 * TCK * 1ns);
@@ -499,7 +500,9 @@ package chi_chiplet_soc_test_pkg;
             if (pass && (k >= NS || M_PROTO[vm[k % vm.size()]] == "axi4" || M_PROTO[mi] != "axi4")) break;
             if (S_KIND[si] == "apb_bridge") begin
               if (hole != 0) shapes(mi, hole, 0, ahb);
-            end else if (S_KIND[si] != "periph") shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1, ahb);   // stays in its 4 KB granule
+            end else if (S_KIND[si] != "periph") begin
+              shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1, ahb);   // stays in its 4 KB granule
+            end
             else begin                                      // RTL slave
               shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 0, ahb);
               if (k < NS) rtl_slave_walk(mi, si);

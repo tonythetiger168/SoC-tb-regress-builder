@@ -336,6 +336,7 @@ user \.g_s\[7\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks o
 user \.g_s\[7\]\.u_sva\.c_a[rw]_fixed # behind the apb adapter the VIP sees single INCR beats
 user \.g_s\[7\]\.u_sva\.c_[rb]_wait # the apb test shim raises READY in the state after the request handshake, before the slave can answer
 user \.g_s\[8\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+toggle mini_mesh_soc_pkg dram_ready:1->0 # testbench flag: set once after DDR4 init (1 from the start without DDR4 channels), never cleared
 toggle u_apb (awaddr|araddr|paddr|\w+_paddr)\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\] # APB window 0x10000000/0x10000: address bits 16..31 are constant
 toggle u_apb (awid|arid|bid|rid)\[(4|5|6|7)\] # the NoC forwards 4-bit master IDs into the 8-bit APB-port ID
 toggle u_apb [br]resp\[0\] # axi2apb_bridge answers OKAY/SLVERR only
