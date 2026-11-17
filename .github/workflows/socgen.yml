@@ -13,12 +13,18 @@ jobs:
       VERILATOR_VERSION: v5.052
       VERILATOR_PREFIX: /opt/verilator
       OPEN_IP_ROOT: ${{ github.workspace }}/open-ip-portfolio
+      MINISIM_ROOT: ${{ github.workspace }}/minisim
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
           repository: tonythetiger168/open-ip-portfolio
           path: open-ip-portfolio
+      - uses: actions/checkout@v4
+        with:
+          repository: tonythetiger168/minisim
+          path: minisim
+          sparse-checkout: bench
       - name: Python deps
         run: pip install pyyaml jinja2
       - name: Unit tests
@@ -34,6 +40,8 @@ jobs:
           python3 socgen/socgen.py socgen/specs/chi_mesh_soc.yaml --no-direct
           python3 socgen/socgen.py socgen/specs/chi_chiplet_soc.yaml
           python3 socgen/socgen.py socgen/specs/phone_soc.yaml --noc-model mesh
+          python3 socgen/socgen.py socgen/specs/manycore_4x4.yaml
+          python3 socgen/socgen.py socgen/specs/manycore_8x8.yaml
           git status --short socgen/out regress
       - name: Cache Verilator
         uses: actions/cache@v4
@@ -46,8 +54,8 @@ jobs:
           sudo mkdir -p /opt/verilator && sudo chown "$USER" /opt/verilator
           bash scripts/install_tools.sh
           echo "/opt/verilator/bin" >> "$GITHUB_PATH"
-      - name: mini_soc regression (behavioural NoC; generated mesh RTL with every AMBA protocol; two-die UCIe chiplet; CHI coherence)
-        run: python3 regress/regress.py --suite mini_soc --suite mini_mesh_soc --suite chiplet_soc --suite chi_mesh_soc --suite chi_chiplet_soc --jobs "$(nproc)"
+      - name: mini_soc regression (behavioural NoC; generated mesh RTL with every AMBA protocol; two-die UCIe chiplet; CHI coherence; tiled many-core)
+        run: python3 regress/regress.py --suite mini_soc --suite mini_mesh_soc --suite chiplet_soc --suite chi_mesh_soc --suite chi_chiplet_soc --suite manycore_4x4 --jobs "$(nproc)"
       - name: VIP self-tests
         run: python3 regress/regress.py --list regress/vip_testlist.txt --jobs "$(nproc)" --out regress_out/vip
       - name: Summary

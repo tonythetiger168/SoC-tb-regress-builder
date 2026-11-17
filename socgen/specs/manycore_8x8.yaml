@@ -1,0 +1,8 @@
+# 8x8 tiles (64 cores) of the manycore_4x4 design: scale and the directory's
+# broadcast path (more sharers than pointers on every barrier flag).
+socgen: 1
+soc: {name: manycore_8x8, desc: 8x8 tiled many-core with coherent shared memory (mcrv cores)}
+manycore:
+  mesh: 8x8
+  core: mcrv
+  dir_ptrs: 4

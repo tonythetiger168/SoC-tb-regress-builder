@@ -1,0 +1,11 @@
+# OpenPiton-style tiled many-core: 4x4 tiles, each with an RV32I core (mcrv),
+# private RAM, a write-through L1, a slice of the shared L2 with a
+# limited-pointer directory, and three NoC routers. The RTL comes from
+# minisim's bench/gen_manycore.py; see socgen/lib/manycore.py.
+socgen: 1
+soc: {name: manycore_4x4, desc: 4x4 tiled many-core with coherent shared memory (mcrv cores)}
+manycore:
+  mesh: 4x4
+  core: mcrv
+  l2_lines: 64
+  dir_ptrs: 4
