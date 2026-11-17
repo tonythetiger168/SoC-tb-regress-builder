@@ -226,7 +226,7 @@ package phone_env_pkg;
             f_valid[i] = 1; f_write[i] = t.write; f_perm[i] = (f == 2); f_addr[i] = t.addr;
           end
           foreach (t.resp[k])
-            check(t.resp[k] == AXI4_SLVERR, $sformatf("IOMMU%0d %s fault on %s: resp[%0d] %s, expected SLVERR",
+            chk(t.resp[k] == AXI4_SLVERR, $sformatf("IOMMU%0d %s fault on %s: resp[%0d] %s, expected SLVERR",
                   i, f == 2 ? "permission" : "translation", t.convert2string(), k, t.resp[k].name()));
           return;
         end
@@ -261,18 +261,18 @@ package phone_env_pkg;
       int i = iommu_of(m);
       string tag = $sformatf("walk ch%0d %s", t.port, t.convert2string());
       if (i < 0) begin
-        check(0, {tag, ": walker ID from a master without an IOMMU"});
+        chk(0, {tag, ": walker ID from a master without an IOMMU"});
         return;
       end
       n_walks[i]++;
-      check(!t.write && t.len == 0 && t.size == 2 && t.addr[1:0] == 0, {tag, ": not a single-word read"});
-      check(int'(dram_channel(t.addr)) == t.port, {tag, ": wrong channel"});
+      chk(!t.write && t.len == 0 && t.size == 2 && t.addr[1:0] == 0, {tag, ": not a single-word read"});
+      chk(int'(dram_channel(t.addr)) == t.port, {tag, ": wrong channel"});
       if (rm != null) begin
         bit [31:0] pb = mir(rm.iommu[i], "PT_BASE"), vs = mir(rm.iommu[i], "VA_SIZE");
-        check(t.addr >= pb && t.addr < pb + (vs >> 10), $sformatf("%s: outside IOMMU%0d's table [%08h, +%0h)",
+        chk(t.addr >= pb && t.addr < pb + (vs >> 10), $sformatf("%s: outside IOMMU%0d's table [%08h, +%0h)",
               tag, i, pb, vs >> 10));
       end
-      check(t.resp[0] == AXI4_OKAY && t.data[0] == shadow32(t.addr),
+      chk(t.resp[0] == AXI4_OKAY && t.data[0] == shadow32(t.addr),
             $sformatf("%s: PTE %08h, shadow %08h", tag, t.data[0], shadow32(t.addr)));
     endfunction
 
@@ -286,7 +286,7 @@ package phone_env_pkg;
       axi4_item e;
       int c = dram_channel(t.addr);
       if (t.write) begin
-        check(t.resp[0] == exp, $sformatf("%s: BRESP %s, expected %s", tag, t.resp[0].name(), exp.name()));
+        chk(t.resp[0] == exp, $sformatf("%s: BRESP %s, expected %s", tag, t.resp[0].name(), exp.name()));
         if (!err)
           for (int unsigned i = 0; i < t.beats(); i++) begin
             bit [31:0] base = t.beat_addr(i) & ~32'h3;
@@ -297,14 +297,14 @@ package phone_env_pkg;
         for (int unsigned i = 0; i < t.beats(); i++) begin
           bit [31:0] base = t.beat_addr(i) & ~32'h3;
           bit [3:0]  ln   = t.lanes(i);
-          check(t.resp[i] == exp, $sformatf("%s: beat %0d RRESP %s, expected %s", tag, i,
+          chk(t.resp[i] == exp, $sformatf("%s: beat %0d RRESP %s, expected %s", tag, i,
                 t.resp[i].name(), exp.name()));
           if (!err) begin
             bit [31:0] exp_d = 0;
             bit [31:0] msk = 0;
             for (int b = 0; b < 4; b++)
               if (ln[b]) begin exp_d[8*b +: 8] = ddr_byte(base + b); msk[8*b +: 8] = 8'hFF; end
-            check((t.data[i] & msk) == exp_d, $sformatf("%s: beat %0d data %08h, expected %08h (lanes %04b, addr %08h)",
+            chk((t.data[i] & msk) == exp_d, $sformatf("%s: beat %0d data %08h, expected %08h (lanes %04b, addr %08h)",
                   tag, i, t.data[i] & msk, exp_d, ln, base));
           end
         end
@@ -325,12 +325,12 @@ package phone_env_pkg;
           if (e.write == m.write && e.id == m.id && e.addr == m.addr && e.len == m.len) begin
             string tag = $sformatf("ch%0d: master{%s} channel{%s}", c, m.convert2string(), e.convert2string());
             bit ok = 1;
-            check(e.size == m.size && e.burst == m.burst, {tag, ": size/burst differ"});
+            chk(e.size == m.size && e.burst == m.burst, {tag, ": size/burst differ"});
             for (int unsigned k = 0; k < m.beats(); k++)
               if (m.write ? (e.data[k] != m.data[k] || e.strb[k] != m.strb[k])
                           : (e.data[k] != m.data[k] || e.resp[k] != m.resp[k])) ok = 0;
-            check(ok, {tag, ": beat data / strobes / responses differ"});
-            if (m.write) check(e.resp[0] == m.resp[0], {tag, ": BRESP differs"});
+            chk(ok, {tag, ": beat data / strobes / responses differ"});
+            if (m.write) chk(e.resp[0] == m.resp[0], {tag, ": BRESP differs"});
             pend_m[c].delete(i);
             pend_e[c].delete(j);
             i--;
@@ -364,7 +364,7 @@ package phone_env_pkg;
       super.check_phase(phase);
       foreach (pend_m[c])
         if (pend_m[c].size() || pend_e[c].size())
-          check(0, $sformatf("ch%0d: %0d predicted bursts never seen on the channel, %0d channel bursts never predicted",
+          chk(0, $sformatf("ch%0d: %0d predicted bursts never seen on the channel, %0d channel bursts never predicted",
                 c, pend_m[c].size(), pend_e[c].size()));
     endfunction
 

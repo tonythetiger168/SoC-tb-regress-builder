@@ -292,7 +292,7 @@ module chi_chiplet_soc_noc
   logic         gw_ovf [2], lerr [2], replay [2];
   logic [31:0]  n_replay;
   // die 0: gateway on router [1, 1]
-  noc_d2d_gw #(.SELF(NM + NS + 0), .QD(112)) u_gw0 (.clk, .rst_n,
+  noc_d2d_gw #(.SELF(NM + NS + 0), .QD(232)) u_gw0 (.clk, .rst_n,
     .inj_flit(inj_flit[NM + NS + 0]), .inj_valid(inj_valid[NM + NS + 0]), .inj_ready(inj_ready[NM + NS + 0]),
     .ej_flit(ej_flit[NM + NS + 0]), .ej_valid(ej_valid[NM + NS + 0]), .ej_ready(ej_ready[NM + NS + 0]),
     .tx_valid(tx_v[0]), .tx_data(tx_d[0]), .tx_ready(tx_r[0]), .rx_valid(rx_v[0]), .rx_data(rx_d[0]),
@@ -305,7 +305,7 @@ module chi_chiplet_soc_noc
     .state(lstate[0]), .cap(), .tx_pend(), .ev_crc(), .ev_replay(replay[0]), .ev_retrain(),
     .ev_pmnak(), .ev_proto(), .ev_lerr(lerr[0]));
   // die 1: gateway on router [0, 0]
-  noc_d2d_gw #(.SELF(NM + NS + 1), .QD(112)) u_gw1 (.clk, .rst_n,
+  noc_d2d_gw #(.SELF(NM + NS + 1), .QD(232)) u_gw1 (.clk, .rst_n,
     .inj_flit(inj_flit[NM + NS + 1]), .inj_valid(inj_valid[NM + NS + 1]), .inj_ready(inj_ready[NM + NS + 1]),
     .ej_flit(ej_flit[NM + NS + 1]), .ej_valid(ej_valid[NM + NS + 1]), .ej_ready(ej_ready[NM + NS + 1]),
     .tx_valid(tx_v[1]), .tx_data(tx_d[1]), .tx_ready(tx_r[1]), .rx_valid(rx_v[1]), .rx_data(rx_d[1]),
@@ -343,7 +343,7 @@ module chi_chiplet_soc_noc
   // ---------------- master 1: dma (AXI4) ----------------
   noc_ni_mst #(.SELF(1), .DW(32), .IDW(ID_WIDTH), .MAXB(4), .MAXO(8)) u_ni_dma (
     .clk, .rst_n,
-    .s_awid(dma_awid), .s_awaddr(dma_awaddr), .s_awlen(dma_awlen), .s_awsize(dma_awsize), .s_awburst(dma_awburst), .s_awprot(dma_awprot), .s_awvalid(dma_awvalid), .s_awready(dma_awready), .s_wdata(dma_wdata), .s_wstrb(dma_wstrb), .s_wlast(dma_wlast), .s_wvalid(dma_wvalid), .s_wready(dma_wready), .s_bid(dma_bid), .s_bresp(dma_bresp), .s_bvalid(dma_bvalid), .s_bready(dma_bready), .s_arid(dma_arid), .s_araddr(dma_araddr), .s_arlen(dma_arlen), .s_arsize(dma_arsize), .s_arburst(dma_arburst), .s_arprot(dma_arprot), .s_arvalid(dma_arvalid), .s_arready(dma_arready), .s_rid(dma_rid), .s_rdata(dma_rdata), .s_rresp(dma_rresp), .s_rlast(dma_rlast), .s_rvalid(dma_rvalid), .s_rready(dma_rready),
+    .s_awid(dma_awid), .s_awaddr(dma_awaddr), .s_awlen(dma_awlen), .s_awsize(dma_awsize), .s_awburst(dma_awburst), .s_awprot(dma_awprot), .s_awvalid(dma_awvalid), .s_awready(dma_awready), .s_wdata(dma_wdata), .s_wstrb(dma_wstrb), .s_wlast(dma_wlast), .s_wvalid(dma_wvalid), .s_wready(dma_wready), .s_bid(dma_bid), .s_bresp(dma_bresp), .s_bvalid(dma_bvalid), .s_bready(dma_bready), .s_arid(dma_arid), .s_araddr(dma_araddr), .s_arlen(dma_arlen), .s_arsize(dma_arsize), .s_arburst(dma_arburst), .s_arprot(dma_arprot), .s_arvalid(dma_arvalid), .s_arready(dma_arready), .s_rid(dma_rid), .s_rdata(dma_rdata), .s_rresp(dma_rresp), .s_rlast(dma_rlast), .s_rvalid(dma_rvalid), .s_rready(dma_rready), .s_awnosnp(1'b0), .s_arnosnp(1'b0),
     .inj_flit(inj_flit[1]), .inj_valid(inj_valid[1]), .inj_ready(inj_ready[1]),
     .ej_flit(ej_flit[1]), .ej_valid(ej_valid[1]), .ej_ready(ej_ready[1]));
 
@@ -356,7 +356,7 @@ module chi_chiplet_soc_noc
   // ---------------- master 3: npu (AXI4) ----------------
   noc_ni_mst #(.SELF(3), .DW(32), .IDW(ID_WIDTH), .MAXB(4), .MAXO(8)) u_ni_npu (
     .clk, .rst_n,
-    .s_awid(npu_awid), .s_awaddr(npu_awaddr), .s_awlen(npu_awlen), .s_awsize(npu_awsize), .s_awburst(npu_awburst), .s_awprot(npu_awprot), .s_awvalid(npu_awvalid), .s_awready(npu_awready), .s_wdata(npu_wdata), .s_wstrb(npu_wstrb), .s_wlast(npu_wlast), .s_wvalid(npu_wvalid), .s_wready(npu_wready), .s_bid(npu_bid), .s_bresp(npu_bresp), .s_bvalid(npu_bvalid), .s_bready(npu_bready), .s_arid(npu_arid), .s_araddr(npu_araddr), .s_arlen(npu_arlen), .s_arsize(npu_arsize), .s_arburst(npu_arburst), .s_arprot(npu_arprot), .s_arvalid(npu_arvalid), .s_arready(npu_arready), .s_rid(npu_rid), .s_rdata(npu_rdata), .s_rresp(npu_rresp), .s_rlast(npu_rlast), .s_rvalid(npu_rvalid), .s_rready(npu_rready),
+    .s_awid(npu_awid), .s_awaddr(npu_awaddr), .s_awlen(npu_awlen), .s_awsize(npu_awsize), .s_awburst(npu_awburst), .s_awprot(npu_awprot), .s_awvalid(npu_awvalid), .s_awready(npu_awready), .s_wdata(npu_wdata), .s_wstrb(npu_wstrb), .s_wlast(npu_wlast), .s_wvalid(npu_wvalid), .s_wready(npu_wready), .s_bid(npu_bid), .s_bresp(npu_bresp), .s_bvalid(npu_bvalid), .s_bready(npu_bready), .s_arid(npu_arid), .s_araddr(npu_araddr), .s_arlen(npu_arlen), .s_arsize(npu_arsize), .s_arburst(npu_arburst), .s_arprot(npu_arprot), .s_arvalid(npu_arvalid), .s_arready(npu_arready), .s_rid(npu_rid), .s_rdata(npu_rdata), .s_rresp(npu_rresp), .s_rlast(npu_rlast), .s_rvalid(npu_rvalid), .s_rready(npu_rready), .s_awnosnp(1'b0), .s_arnosnp(1'b0),
     .inj_flit(inj_flit[3]), .inj_valid(inj_valid[3]), .inj_ready(inj_ready[3]),
     .ej_flit(ej_flit[3]), .ej_valid(ej_valid[3]), .ej_ready(ej_ready[3]));
 

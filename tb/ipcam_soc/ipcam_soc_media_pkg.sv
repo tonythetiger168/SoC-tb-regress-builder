@@ -84,7 +84,7 @@ package ipcam_soc_media_pkg;
       axi4_api::read32(env.m_agent[M_CPU].sqr, a, d, r);
       if (r != AXI4_OKAY) `uvm_error("MEDIA", $sformatf("CPU read %08h: %s", a, r.name()))
     endtask
-    function void check(string what, longint got, longint exp);
+    function void chk(string what, longint got, longint exp);
       n_media++;
       if (got != exp) `uvm_error("MEDIA", $sformatf("%s: got %0h, expected %0h", what, got, exp))
     endfunction
@@ -162,7 +162,7 @@ package ipcam_soc_media_pkg;
     // ---------------------------------------------------------- JPEG (c1p_jpe_regs)
     task run_jpeg();
       bit [31:0] v, nbytes, B = slot(APB_SLOT_JPEG_CFG);
-      rd32(B + 'hF8, v); check("JPE_ID", v, 32'h4A50_4501);
+      rd32(B + 'hF8, v); chk("JPE_ID", v, 32'h4A50_4501);
       wr32(B + 'h10, 0);                                   // NV12
       wr32(B + 'h14, {2'b0, 14'(h), 2'b0, 14'(w)});
       wr32(B + 'h18, y_base);
@@ -174,9 +174,9 @@ package ipcam_soc_media_pkg;
       wr32(B + 'h0C, 32'h3);
       wr32(B + 'h00, 32'h1);                               // start
       wait_bit("JPEG", B + 'h08, 32'h3, 20000);
-      rd32(B + 'h08, v); check("JPE_IRQ_STATUS", v & 32'h3, 32'h1);
+      rd32(B + 'h08, v); chk("JPE_IRQ_STATUS", v & 32'h3, 32'h1);
       wr32(B + 'h08, 32'h3);
-      rd32(B + 'h04, v); check("JPE_STATUS idle, no error", v & 32'hF1, 0);
+      rd32(B + 'h04, v); chk("JPE_STATUS idle, no error", v & 32'hF1, 0);
       rd32(B + 'h30, nbytes);
       rd32(B + 'h34, v);
       `uvm_info("MEDIA", $sformatf("JPEG: %0d bytes in %0d cycles", nbytes, v), UVM_LOW)
@@ -190,7 +190,7 @@ package ipcam_soc_media_pkg;
       if (!$value$plusargs("qp=%d", qp)) qp = 30;
       if (!$value$plusargs("level=%d", level)) level = 30;
       cw16 = (w + 15) / 16 * 16;
-      rd32(B + 'hF8, v); check("HVE_ID", v, 32'h4856_4501);
+      rd32(B + 'hF8, v); chk("HVE_ID", v, 32'h4856_4501);
       wr32(B + 'h10, {2'b0, 14'(h), 2'b0, 14'(w)});
       wr32(B + 'h14, y_base);
       wr32(B + 'h18, c_base);
@@ -207,9 +207,9 @@ package ipcam_soc_media_pkg;
       wr32(B + 'h0C, 32'h7);
       wr32(B + 'h00, 32'h1);
       wait_bit("VENC", B + 'h08, 32'h3, 40000);
-      rd32(B + 'h08, v); check("HVE_IRQ_STATUS", v & 32'h3, 32'h1);
+      rd32(B + 'h08, v); chk("HVE_IRQ_STATUS", v & 32'h3, 32'h1);
       wr32(B + 'h08, 32'h7);
-      rd32(B + 'h04, v); check("HVE_STATUS idle, no error", v & 32'hF1, 0);
+      rd32(B + 'h04, v); chk("HVE_STATUS idle, no error", v & 32'hF1, 0);
       rd32(B + 'h48, nbytes);
       rd32(B + 'h50, v);
       `uvm_info("MEDIA", $sformatf("VENC: %0d bytes in %0d cycles", nbytes, v), UVM_LOW)
@@ -223,7 +223,7 @@ package ipcam_soc_media_pkg;
       int nl, rounds;
       if (!$value$plusargs("npu_lines=%d", nl)) nl = 16;
       if (!$value$plusargs("npu_rounds=%d", rounds)) rounds = 2;
-      rd32(B + 'h000, v); check("NPU ID", v, 32'h584E_0200);
+      rd32(B + 'h000, v); chk("NPU ID", v, 32'h584E_0200);
       for (int r = 0; r < rounds; r++) begin
         bit [31:0] s = src + r * nl * 64, d = dst + r * nl * 64;
         bit [7:0] got [$];
@@ -242,15 +242,15 @@ package ipcam_soc_media_pkg;
           if (v[31]) got.push_back(v[7:0]);
           else #(100 * TCK * 1ns);
         end
-        check($sformatf("NPU round %0d completions", r), got.size(), 2);
+        chk($sformatf("NPU round %0d completions", r), got.size(), 2);
         if (got.size() == 2) begin
-          check("NPU completion id LD", got[0], 2 * r + 1);
-          check("NPU completion id ST", got[1], 2 * r + 2);
+          chk("NPU completion id LD", got[0], 2 * r + 1);
+          chk("NPU completion id ST", got[1], 2 * r + 2);
         end
         for (int i = 0; i < nl * 64; i++) if (peek(s + i) !== peek(d + i)) bad++;
-        check($sformatf("NPU round %0d: bytes differing between src and dst", r), bad, 0);
+        chk($sformatf("NPU round %0d: bytes differing between src and dst", r), bad, 0);
       end
-      rd32(B + 'h010, v); check("NPU IRQ_STATUS errors", v & 32'h8000_0006, 0);
+      rd32(B + 'h010, v); chk("NPU IRQ_STATUS errors", v & 32'h8000_0006, 0);
     endtask
 
     task body();
@@ -275,11 +275,11 @@ package ipcam_soc_media_pkg;
     // timeout or compare problem sets IRQ_STATUS.ERR.
     task check_sd();
       bit [31:0] v, B = slot(APB_SLOT_SD);
-      rd32(B + 'h000, v); check("SD ID", v, 32'h5344_0200);
-      rd32(B + 'h004, v); check("SD IRQ_STATUS.ERR (card model on the pins)", v & 32'h1, 0);
+      rd32(B + 'h000, v); chk("SD ID", v, 32'h5344_0200);
+      rd32(B + 'h004, v); chk("SD IRQ_STATUS.ERR (card model on the pins)", v & 32'h1, 0);
       B = slot(APB_SLOT_EMMC_CTL);
-      rd32(B + 'h000, v); check("eMMC ID", v, 32'h654D_0300);
-      rd32(B + 'h004, v); check("eMMC IRQ_STATUS.ERR (device model on the pins)", v & 32'h1, 0);
+      rd32(B + 'h000, v); chk("eMMC ID", v, 32'h654D_0300);
+      rd32(B + 'h004, v); chk("eMMC IRQ_STATUS.ERR (device model on the pins)", v & 32'h1, 0);
     endtask
 
     // CSI-2 receiver fed by csi2_tx_model (2 frames x 4 RAW8 lines of 16 B):
@@ -287,16 +287,16 @@ package ipcam_soc_media_pkg;
     // (pixel j of line l, frame f = j ^ l*37 ^ f*101, l and f counted from 1).
     task check_csi2();
       bit [31:0] v, B = slot(APB_SLOT_CSI2);
-      rd32(B + 'h000, v); check("CSI2 ID", v, 32'h4332_0200);
-      rd32(B + 'h018, v); check("CSI2 frames received", v[15:0], 2);
-                          check("CSI2 lines in the last frame", v[31:16], 4);
-      rd32(B + 'h014, v); check("CSI2 err_flags", v[4:1], 0);
-                          check("CSI2 line buffer length", v[20:5], 16);
-      rd32(B + 'h01C, v); check("CSI2 last header is Frame End (VC 0, DT 0x01)", v[7:0], 8'h01);
+      rd32(B + 'h000, v); chk("CSI2 ID", v, 32'h4332_0200);
+      rd32(B + 'h018, v); chk("CSI2 frames received", v[15:0], 2);
+                          chk("CSI2 lines in the last frame", v[31:16], 4);
+      rd32(B + 'h014, v); chk("CSI2 err_flags", v[4:1], 0);
+                          chk("CSI2 line buffer length", v[20:5], 16);
+      rd32(B + 'h01C, v); chk("CSI2 last header is Frame End (VC 0, DT 0x01)", v[7:0], 8'h01);
       for (int j = 0; j < 16; j++) begin
         wr32(B + 'h020, j);
         rd32(B + 'h024, v);
-        check($sformatf("CSI2 last line byte %0d", j), v[7:0], 8'(j) ^ 8'(4 * 37) ^ 8'(2 * 101));   // line 4 of frame 2
+        chk($sformatf("CSI2 last line byte %0d", j), v[7:0], 8'(j) ^ 8'(4 * 37) ^ 8'(2 * 101));   // line 4 of frame 2
       end
     endtask
 
@@ -312,11 +312,11 @@ package ipcam_soc_media_pkg;
 
     task check_eth();
       bit [31:0] v, B = slot(APB_SLOT_ETH_MAC);
-      rd32(B + 'h000, v); check("ETH ID", v, 32'h4554_0200);
-      rd32(B + 'h004, v); check("ETH RX_AVAIL", v[5], 1);
-                          check("ETH RX_FRAG", v[2], 0);
-      rd32(B + 'h024, v); check("ETH RX first byte is DA[47:40] of the station address", v[7:0], 8'h02);
-                          check("ETH RX first beat is not rx_last", v[8], 0);
+      rd32(B + 'h000, v); chk("ETH ID", v, 32'h4554_0200);
+      rd32(B + 'h004, v); chk("ETH RX_AVAIL", v[5], 1);
+                          chk("ETH RX_FRAG", v[2], 0);
+      rd32(B + 'h024, v); chk("ETH RX first byte is DA[47:40] of the station address", v[7:0], 8'h02);
+                          chk("ETH RX first beat is not rx_last", v[8], 0);
     endtask
 
     // I2S port, i2s_codec_model is the clock master: frames arrive and the
@@ -325,17 +325,17 @@ package ipcam_soc_media_pkg;
     task check_i2s();
       bit [31:0] v, l, r, B = slot(APB_SLOT_I2S);
       bit hit = 0;
-      rd32(B + 'h000, v); check("I2S ID", v, 32'h4932_0200);
-      rd32(B + 'h004, v); check("I2S FRAME irq", v[0], 1);
+      rd32(B + 'h000, v); chk("I2S ID", v, 32'h4932_0200);
+      rd32(B + 'h004, v); chk("I2S FRAME irq", v[0], 1);
       rd32(B + 'h01C, l);
       rd32(B + 'h020, r);
       for (int unsigned n = 1; n < 20000 && !hit; n++)
         if (l[15:0] == (16'(n * 32'h10123) ^ 16'h3C3C)) hit = 1;
-      check($sformatf("I2S RX_LEFT %04h is a codec ADC word", l[15:0]), hit, 1);
+      chk($sformatf("I2S RX_LEFT %04h is a codec ADC word", l[15:0]), hit, 1);
       hit = 0;
       for (int unsigned n = 1; n < 20000 && !hit; n++)
         if (r[15:0] == (16'(n * 32'h10123) ^ 16'hA55A)) hit = 1;
-      check($sformatf("I2S RX_RIGHT %04h is a codec ADC word", r[15:0]), hit, 1);
+      chk($sformatf("I2S RX_RIGHT %04h is a codec ADC word", r[15:0]), hit, 1);
     endtask
 
     // Boot flash: QSPI_XIP serves the spi_nor window from snor_model (spec pins_vip), whose
@@ -348,21 +348,21 @@ package ipcam_soc_media_pkg;
     task check_xip();
       bit [31:0] v, n0, B = slot(APB_SLOT_QSPI_XIP);
       bit [31:0] offs[5] = '{32'h0000_0000, 32'h0000_0104, 32'h0000_1234, 32'h0012_FFFC, 32'h0000_0108};
-      rd32(B + 'h000, v); check("QSPI_XIP ID", v, 32'h5C53_0100);
+      rd32(B + 'h000, v); chk("QSPI_XIP ID", v, 32'h5C53_0100);
       rd32(B + 'h030, n0);
       foreach (offs[k]) begin
         bit [31:0] a = SPI_NOR_BASE + (offs[k] & ~32'h3);
         rd32(a, v);
-        check($sformatf("XIP word at flash %06h", a[23:0]), v,
+        chk($sformatf("XIP word at flash %06h", a[23:0]), v,
               {flash_byte(a + 3), flash_byte(a + 2), flash_byte(a + 1), flash_byte(a)});
       end
       rd32(B + 'h030, v);
-      check("XIP_CMDS counts the reads", v[15:0] - n0[15:0] inside {[4:5]}, 1);   // 0x104 -> 0x108 may continue the stream
+      chk("XIP_CMDS counts the reads", v[15:0] - n0[15:0] inside {[4:5]}, 1);   // 0x104 -> 0x108 may continue the stream
       wr32(B + 'h004, 32'h1);                                       // clear PC_DONE
       wr32(B + 'h018, 32'h9F | (3 << 12));                          // 0x9F read ID, 3 bytes in
       wr32(B + 'h024, 32'h1);
       wait_bit("QSPI_XIP 0x9F", B + 'h004, 32'h1, 200);
-      rd32(B + 'h028, v); check("SPI-NOR JEDEC ID (EF 40 18)", v[23:0], 24'h1840EF);
+      rd32(B + 'h028, v); chk("SPI-NOR JEDEC ID (EF 40 18)", v[23:0], 24'h1840EF);
     endtask
 
     // Sensor control: I2C_Host on i2c_sns talks SCCB to sccb_model (spec pins_vip) at 0x3C:
@@ -377,7 +377,7 @@ package ipcam_soc_media_pkg;
     task sccb_wr(bit [31:0] B, bit [7:0] tx, bit sta, bit sto, string what);
       bit [31:0] v;
       sccb_cmd(B, tx, 6'h05 | (sta << 1) | (sto << 4), what);   // valid | wr (| sta) (| sto)
-      rd32(B + 'h020, v); check({what, " ACK"}, v[8], 0);
+      rd32(B + 'h020, v); chk({what, " ACK"}, v[8], 0);
     endtask
     task sccb_read(bit [31:0] B, bit [15:0] r, int n, output bit [7:0] d[$]);
       bit [31:0] v;
@@ -396,19 +396,19 @@ package ipcam_soc_media_pkg;
     task check_sccb();
       bit [31:0] v, B = slot(APB_SLOT_I2C_SNS);
       bit [7:0] d[$];
-      rd32(B + 'h000, v); check("I2C_Host ID", v, 32'h5C51_0100);
+      rd32(B + 'h000, v); chk("I2C_Host ID", v, 32'h5C51_0100);
       wr32(B + 'h014, 32'h4);                                       // quarter SCL = 5 clocks
       sccb_read(B, 16'h0000, 2, d);
-      check("SCCB chip ID", {d[0], d[1]}, 16'h5A31);
+      chk("SCCB chip ID", {d[0], d[1]}, 16'h5A31);
       sccb_wr(B, SCCB_ADDR, 1, 0, "SCCB addr W (wr 0100)");
       sccb_wr(B, 8'h01, 0, 0, "SCCB reg hi");
       sccb_wr(B, 8'h00, 0, 0, "SCCB reg lo");
       sccb_wr(B, 8'hC3, 0, 0, "SCCB data 0");
       sccb_wr(B, 8'h5E, 0, 1, "SCCB data 1");
       sccb_read(B, 16'h0100, 2, d);
-      check("SCCB reg 0100 read back", d[0], 8'hC3);
-      check("SCCB reg 0101 read back", d[1], 8'h5E);
-      rd32(B + 'h024, v); check("I2C bus released", v[1:0], 0);
+      chk("SCCB reg 0100 read back", d[0], 8'hC3);
+      chk("SCCB reg 0101 read back", d[1], 8'h5E);
+      rd32(B + 'h024, v); chk("I2C bus released", v[1:0], 0);
     endtask
 
     function void report_phase(uvm_phase phase);

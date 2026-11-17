@@ -157,6 +157,9 @@ def elaborate(raw, path="<spec>"):
                 ni=num(t.get("ni_cycles", 1), "ni_cycles"),
                 router=num(t.get("router_cycles", 1), "router_cycles"),
                 link=num(t.get("link_cycles", 1), "link_cycles"))
+    if model == "mesh" and m.noc.num_vc != 4:
+        # the generated NoC puts each CHI channel (REQ, RSP, SNP, DAT) on its own VC
+        raise SpecError(f"noc.num_vc: 4 with noc.model: mesh (REQ, RSP, SNP and DAT each have a VC), got {m.noc.num_vc}")
 
     # ---- chiplet: several dies, one mesh each, joined by a UCIe die-to-die link ----
     ch = raw.get("chiplet")
@@ -449,7 +452,7 @@ def elaborate(raw, path="<spec>"):
     return m
 
 
-MASTER_PROTOCOLS = ("axi4", "axi4lite", "ahb", "chi")
+MASTER_PROTOCOLS = ("axi4", "axi4lite", "ahb", "chi", "ace_lite")
 SLAVE_PROTOCOLS = ("axi4", "axi4lite", "ahb", "apb")
 
 
@@ -474,9 +477,9 @@ def _chi(m, c, model, cols, rows):
         if rn:
             raise SpecError(f"masters {rn[0].name}: protocol chi needs a chi section")
         m.chi = Obj(home=None, homes=[], coherent=[], lines=0, rn=[], coh_targets=set(), base=None,
-                    dmt=False, dct=False, granule=4096, hbits=0)
+                    dmt=False, dct=False, granule=4096, hbits=0, slots=1)
         return
-    keys(c, ["home", "coherent", "cache_lines", "dmt", "dct", "home_granule"], "chi",
+    keys(c, ["home", "coherent", "cache_lines", "dmt", "dct", "home_granule", "home_slots"], "chi",
          required=["home", "coherent"])
     if model != "mesh":
         raise SpecError("chi: needs noc.model: mesh")
@@ -501,6 +504,9 @@ def _chi(m, c, model, cols, rows):
         homes.append(Obj(node=_node(nd, w, cols, rows), die=die))
     if len(homes) not in (1, 2, 4):
         raise SpecError("chi.home: 1, 2 or 4 homes (the address interleaves over them)")
+    slots = num(c.get("home_slots", 4), "chi.home_slots")
+    if not 1 <= slots <= 16:
+        raise SpecError("chi.home_slots: 1 to 16 transactions per home")
     gran = num(c.get("home_granule", 4096), "chi.home_granule")
     if not pow2(gran) or gran < 4096:
         raise SpecError("chi.home_granule: power of two >= 4 KB (an AXI burst never crosses a home)")
@@ -526,7 +532,7 @@ def _chi(m, c, model, cols, rows):
     m.chi = Obj(home=homes[0].node, homes=homes, coherent=list(coh), lines=lines,
                 rn=[x.index for x in rn], coh_targets=ts, base=base,
                 dmt=bool(c.get("dmt", True)), dct=bool(c.get("dct", True)),
-                granule=gran, hbits=int(math.log2(len(homes))))
+                granule=gran, hbits=int(math.log2(len(homes))), slots=slots)
 
 
 def home_of(m, a):
@@ -837,7 +843,7 @@ def hops(a, b):
 # same numbers): a single-beat read costs MESH_REQ + MESH_RSP + 2 * hops + access
 # cycles from AR to R, plus the protocol adapters' cycles; writes about 2 more.
 MESH_REQ, MESH_RSP, MESH_HOP = 5, 4, 1
-MESH_ADAPTER = {"axi4": 0, "axi4lite": 2, "ahb": 4, "apb": 5}
+MESH_ADAPTER = {"axi4": 0, "axi4lite": 2, "ahb": 4, "apb": 5, "ace_lite": 0}
 # chiplet: one way across the UCIe link (gateways + two UCIe adapters, measured with
 # socgen/specs/chiplet_soc.yaml), plus the PHY delay each way
 MESH_D2D = 5

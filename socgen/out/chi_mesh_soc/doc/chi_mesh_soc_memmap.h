@@ -13,4 +13,5 @@
 #define PERIPH_SIZE 0x00010000u
 #define GPIO_BASE 0x10000000u
 #define UART_BASE 0x10001000u
+#define EXT_BASE 0x10002000u
 #endif

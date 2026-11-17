@@ -34,6 +34,8 @@ rtl/noc/noc_d2d_phy.sv
 rtl/noc/noc_ni_chi.sv
 rtl/noc/noc_hnf.sv
 rtl/noc/noc_chi_rnf.sv
+rtl/noc/noc_acelite2axi.sv
+rtl/noc/noc_axi2acelite.sv
 socgen/out/phone_soc_mesh/rtl/phone_soc_mesh_noc.sv
 socgen/out/phone_soc_mesh/rtl/phone_soc_mesh_iommu_regs.sv
 socgen/out/phone_soc_mesh/rtl/phone_soc_mesh_apb_subsys.sv

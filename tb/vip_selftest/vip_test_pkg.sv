@@ -45,7 +45,7 @@ package vip_test_pkg;
       apb_s_imp = new("apb_s_imp", this);
     endfunction
 
-    function void check(bit ok, string what);
+    function void chk(bit ok, string what);
       n_checks++;
       if (!ok) begin n_errors++; `uvm_error("VIP_CHK", what) end
     endfunction
@@ -66,16 +66,16 @@ package vip_test_pkg;
           if (exp == AXI4_OKAY)
             for (int b = 0; b < 4; b++) if (t.strb[i][b]) axi_shadow[base + b] = t.data[i][8*b +: 8];
         end else begin
-          check(t.resp[i] == exp, $sformatf("AXI %s beat %0d resp %s, expected %s", t.convert2string(), i,
+          chk(t.resp[i] == exp, $sformatf("AXI %s beat %0d resp %s, expected %s", t.convert2string(), i,
                 t.resp[i].name(), exp.name()));
           if (exp == AXI4_OKAY)
             for (int b = 0; b < 4; b++) if (t.lanes(i)[b])
-              check(t.data[i][8*b +: 8] == axi_exp(base + b),
+              chk(t.data[i][8*b +: 8] == axi_exp(base + b),
                     $sformatf("AXI %s beat %0d byte %0d = %02h, expected %02h", t.convert2string(), i, b,
                               t.data[i][8*b +: 8], axi_exp(base + b)));
         end
       end
-      if (t.write) check(t.resp[0] == exp, $sformatf("AXI %s BRESP, expected %s", t.convert2string(), exp.name()));
+      if (t.write) chk(t.resp[0] == exp, $sformatf("AXI %s BRESP, expected %s", t.convert2string(), exp.name()));
       axi_m_q.push_back(t);
       match_axi();
     endfunction
@@ -91,24 +91,24 @@ package vip_test_pkg;
         axi4_item m = axi_m_q.pop_front(), s = axi_s_q.pop_front();
         bit ok = m.write == s.write && m.addr == s.addr && m.len == s.len && m.id == s.id &&
                  m.data == s.data && m.resp == s.resp;
-        check(ok, $sformatf("AXI monitors disagree: {%s} vs {%s}", m.convert2string(), s.convert2string()));
+        chk(ok, $sformatf("AXI monitors disagree: {%s} vs {%s}", m.convert2string(), s.convert2string()));
       end
     endfunction
 
     virtual function void write_apb_m(apb_item t);
       bit [31:0] base = t.addr & ~32'h3;
       bit err = apb_slv_cfg.is_err(t.addr);
-      check(t.slverr == err, $sformatf("APB %s: PSLVERR expected %0b", t.convert2string(), err));
+      chk(t.slverr == err, $sformatf("APB %s: PSLVERR expected %0b", t.convert2string(), err));
       if (t.write && !err)
         for (int b = 0; b < 4; b++) if (t.strb[b]) apb_shadow[base + b] = t.data[8*b +: 8];
       if (!t.write && !err)
         for (int b = 0; b < 4; b++)
-          check(t.data[8*b +: 8] == apb_exp(base + b), $sformatf("APB %s: byte %0d expected %02h",
+          chk(t.data[8*b +: 8] == apb_exp(base + b), $sformatf("APB %s: byte %0d expected %02h",
                 t.convert2string(), b, apb_exp(base + b)));
       apb_m_q.push_back(t);
       while (apb_m_q.size() && apb_s_q.size()) begin
         apb_item a = apb_m_q.pop_front(), c = apb_s_q.pop_front();
-        check(a.addr == c.addr && a.data == c.data && a.write == c.write && a.slverr == c.slverr,
+        chk(a.addr == c.addr && a.data == c.data && a.write == c.write && a.slverr == c.slverr,
               $sformatf("APB monitors disagree: {%s} vs {%s}", a.convert2string(), c.convert2string()));
       end
     endfunction
@@ -119,9 +119,9 @@ package vip_test_pkg;
 
     function void check_phase(uvm_phase phase);
       // backdoor: the memory model must hold exactly what the shadow holds
-      foreach (axi_shadow[a]) check(axi_mem.read_byte(a) == axi_shadow[a],
+      foreach (axi_shadow[a]) chk(axi_mem.read_byte(a) == axi_shadow[a],
                                     $sformatf("AXI memory backdoor at %08h", a));
-      foreach (apb_shadow[a]) check(apb_mem.read_byte(a) == apb_shadow[a],
+      foreach (apb_shadow[a]) chk(apb_mem.read_byte(a) == apb_shadow[a],
                                     $sformatf("APB memory backdoor at %08h", a));
       if (n_checks == 0) `uvm_error("VIP_CHK", "no checks were made")
     endfunction

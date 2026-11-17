@@ -4,9 +4,12 @@
 // adapters (UCIe_top): main band and sideband in each direction, DELAY
 // clocks each way, link always up.
 // ----------------------------------------------------------------------------
-// Simulation only: +D2D_ERR_EVERY=<n> flips one bit of every n-th main-band
-// flit from die 0 to die 1 (and of every n-th one back), so the adapters'
-// CRC check and Retry (Nak, replay) are exercised. 0 (default): no errors.
+// Simulation only: +D2D_ERR_EVERY=<n> flips one bit of one main-band flit
+// in n on average, in each direction, so the adapters' CRC check and Retry
+// (Nak, replay) are exercised. 0 (default): no errors. The flits are picked
+// pseudo-randomly (xorshift, fixed seeds): a fixed period could equal the
+// replay length and hit the same replayed flit every time, so the link would
+// never recover.
 // ============================================================================
 module noc_d2d_phy #(
   parameter int DELAY = 4                 // clocks, >= 1
@@ -38,13 +41,21 @@ module noc_d2d_phy #(
   logic [543:0] ab_f  [DELAY], ba_f  [DELAY];
   logic [15:0]  abs_m [DELAY], bas_m [DELAY];
   int unsigned  every = 0, n_ab = 0, n_ba = 0;
+  logic [31:0]  r_ab = 32'h2545_F491, r_ba = 32'h9E37_79B9;   // xorshift32 state per direction
 
   // synopsys translate_off
   initial void'($value$plusargs("D2D_ERR_EVERY=%d", every));
   // synopsys translate_on
 
-  function automatic logic [543:0] hit(logic [543:0] f, int unsigned n);
-    return (every != 0 && n % every == every - 1) ? f ^ (544'd1 << (100 + n % 300)) : f;
+  function automatic logic [31:0] xs(logic [31:0] x);
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    return x;
+  endfunction
+  function automatic logic bad(logic [31:0] r);
+    return every != 0 && r % every == 0;
+  endfunction
+  function automatic logic [543:0] hit(logic [543:0] f, logic [31:0] r, int unsigned n);
+    return bad(r) ? f ^ (544'd1 << (100 + n % 300)) : f;
   endfunction
 
   always_ff @(posedge clk or negedge rst_n) begin
@@ -55,16 +66,11 @@ module noc_d2d_phy #(
       end
       n_err <= '0;
     end else begin
-      ab_v[0] <= a_lt_valid; ab_f[0] <= a_lt_valid ? hit(a_lt_flit, n_ab) : a_lt_flit;
-      ba_v[0] <= b_lt_valid; ba_f[0] <= b_lt_valid ? hit(b_lt_flit, n_ba) : b_lt_flit;
-      if (a_lt_valid) begin
-        n_ab <= n_ab + 1;
-        if (every != 0 && n_ab % every == every - 1) n_err <= n_err + 1;
-      end
-      if (b_lt_valid) begin
-        n_ba <= n_ba + 1;
-        if (every != 0 && n_ba % every == every - 1) n_err <= n_err + 1;
-      end
+      ab_v[0] <= a_lt_valid; ab_f[0] <= a_lt_valid ? hit(a_lt_flit, r_ab, n_ab) : a_lt_flit;
+      ba_v[0] <= b_lt_valid; ba_f[0] <= b_lt_valid ? hit(b_lt_flit, r_ba, n_ba) : b_lt_flit;
+      n_err <= n_err + 32'(a_lt_valid && bad(r_ab)) + 32'(b_lt_valid && bad(r_ba));
+      if (a_lt_valid) begin n_ab <= n_ab + 1; r_ab <= xs(r_ab); end
+      if (b_lt_valid) begin n_ba <= n_ba + 1; r_ba <= xs(r_ba); end
       abs_v[0] <= a_sb_tx_valid; abs_m[0] <= a_sb_tx_msg;
       bas_v[0] <= b_sb_tx_valid; bas_m[0] <= b_sb_tx_msg;
       for (int i = 1; i < DELAY; i++) begin

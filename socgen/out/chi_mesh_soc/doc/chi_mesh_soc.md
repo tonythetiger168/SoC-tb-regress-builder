@@ -10,7 +10,7 @@ NoC: generated RTL `chi_mesh_soc_noc` (2x2 mesh of orca_noc_router (open router 
 |---|---|---|
 | master cpu0 | CHI RN-F | [0, 0] |
 | master cpu1 | CHI RN-F | [0, 1] |
-| master dma | AXI4 | [1, 1] |
+| master dma | ACE-Lite | [1, 1] |
 | master mcu | AHB-Lite | [1, 1] |
 | slave ddr0 | AXI4 | [0, 1] |
 | slave ddr1 | AXI4 | [1, 1] |
@@ -33,8 +33,9 @@ NoC: generated RTL `chi_mesh_soc_noc` (2x2 mesh of orca_noc_router (open router 
 |---|---|---|---|---|
 | 0 | 0x10000000 | gpio | open-ip GPIO | 0x47500200 |
 | 1 | 0x10001000 | uart | open-ip UART | 0x55410200 |
+| 2 | 0x10002000 | ext | APB VIP | - |
 
-open-ip-portfolio commit `359f40a67051a7da5dba4d0bf57c01e67bdcf2fa`.
+open-ip-portfolio commit `35cc545ed27330e451ea432d76f94e2dc4db8c47`.
 
 ## Placement
 

@@ -9,6 +9,7 @@
 #   make covmerge DIRS="out1 out2" OUT=cumulative
 #   make cov [TB=soc LIST=...]       coverage regression, scored against waivers
 #   make vip_build / make vip_run TEST=vip_axi4_loopback_test
+#   make build TB=axil / make run TB=axil TEST=axil_loopback_test   (AXI4-Lite VIP)
 #   make build TB=<soc> for a socgen-generated bench (socgen/out/<soc>/socgen.mk)
 # SIM=verilator (default) | vcs | xrun | questa
 SIM      ?= verilator
@@ -22,6 +23,7 @@ TOP_vip  := vip_tb_top
 TOP_phone := phone_tb_top
 TOP_phone_real := phone_tb_top
 TOP_phone_aon := phone_aon_tb_top
+TOP_axil := axil_tb
 TOP_tv8k_noc := tv8k_noc_tb_top
 TOP_tv8k_noc_open := tv8k_noc_tb_top
 TOP_tv8k_vdec := tv8k_noc_tb_top

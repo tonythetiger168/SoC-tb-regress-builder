@@ -7,6 +7,8 @@
 
 //   slot  1  0x10001000  uart             open-ip UART_apb
 
+//   slot  2  0x10002000  ext              external APB port (VIP)
+
 //   empty slots answer PSLVERR
 // ============================================================================
 module chi_mesh_soc_nodirect_apb_subsys (
@@ -24,7 +26,12 @@ module chi_mesh_soc_nodirect_apb_subsys (
   input  logic        arvalid, output logic       arready,
   output logic [7:0]  rid,    output logic [31:0] rdata,  output logic [1:0] rresp,
   output logic        rlast,  output logic        rvalid, input  logic rready,
-  output logic [1:0] irq        // one per mapped slot, slot order (0 when the block has none)
+  // external APB completer port: ext (slot 2)
+  output logic [31:0] ext_paddr,  output logic ext_psel, output logic ext_penable,
+  output logic        ext_pwrite, output logic [31:0] ext_pwdata, output logic [3:0] ext_pstrb,
+  output logic [2:0]  ext_pprot,
+  input  logic [31:0] ext_prdata, input logic ext_pready, input logic ext_pslverr,
+  output logic [2:0] irq        // one per mapped slot, slot order (0 when the block has none)
 );
   logic [31:0] paddr, pwdata, prdata;
   logic        psel, penable, pwrite, pready, pslverr;
@@ -41,13 +48,13 @@ module chi_mesh_soc_nodirect_apb_subsys (
   );
 
   // ---------------- slot decode ----------------
-  localparam int NMAP = 2;
+  localparam int NMAP = 3;
   wire [3:0] slot = paddr[15:12];
   logic        s_psel    [NMAP];
   logic [31:0] s_prdata  [NMAP];
   logic        s_pready  [NMAP];
   logic        s_pslverr [NMAP];
-  localparam logic [3:0] SLOT [NMAP] = '{ 0, 1 };
+  localparam logic [3:0] SLOT [NMAP] = '{ 0, 1, 2 };
   always_comb begin
     prdata  = 32'h0;
     pready  = 1'b1;
@@ -82,5 +89,18 @@ module chi_mesh_soc_nodirect_apb_subsys (
     .txd(uart_txd)
 
   );
+
+  // ---------------- slot 2: ext ----------------
+  assign ext_paddr   = paddr;
+  assign ext_psel    = s_psel[2];
+  assign ext_penable = penable & s_psel[2];
+  assign ext_pwrite  = pwrite;
+  assign ext_pwdata  = pwdata;
+  assign ext_pstrb   = pstrb;
+  assign ext_pprot   = pprot;
+  assign s_prdata[2]  = ext_prdata;
+  assign s_pready[2]  = ext_pready;
+  assign s_pslverr[2] = ext_pslverr;
+  assign irq[2] = 1'b0;
 
 endmodule

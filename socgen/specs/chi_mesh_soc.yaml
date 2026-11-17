@@ -1,6 +1,7 @@
 # CHI coherence on the generated NoC RTL: two CPU clusters as CHI RN-Fs (each a
 # noc_chi_rnf cache in the bench), two HN-Fs (4 KB-interleaved) with exact snoop
-# filters keeping the DDR coherent, DMT and DCT, and AMBA masters as RN-Is
+# filters keeping the DDR coherent, DMT and DCT, AMBA masters as RN-Is (the DMA as an ACE-Lite
+# IO-coherent port)
 # (their DDR accesses go through the home, which snoops the caches). Other
 # slaves are reached with ReadNoSnp / WriteNoSnpPtl through a home. CI-sized:
 # 2x2 mesh.
@@ -30,7 +31,7 @@ traffic:
 masters:
   - {name: cpu0, node: [0, 0], traffic: cpu, protocol: chi}
   - {name: cpu1, node: [0, 1], traffic: cpu, protocol: chi}
-  - {name: dma,  node: [1, 1], traffic: dma}
+  - {name: dma,  node: [1, 1], traffic: dma, protocol: ace_lite}   # IO coherent: barriers, CMOs, non-shareable
   - {name: mcu,  node: [1, 1], traffic: mcu, protocol: ahb}
 
 memories:
@@ -54,6 +55,7 @@ slaves:
     peripherals:
       - {name: gpio, ip: GPIO}
       - {name: uart, ip: UART, pins: {rxd: "1'b1"}}
+      - {name: ext,  vip: apb}                       # APB slave VIP: every read-data bit of the peripheral port
 
 regress:
   ral_master: cpu0

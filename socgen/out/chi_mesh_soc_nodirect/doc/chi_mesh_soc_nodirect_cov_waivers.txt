@@ -2,12 +2,352 @@
 # (scripts/cov/score_cov.py; <metric> <regex> # reason)
 line chi_mesh_soc_nodirect_pkg  # package functions are called only by testbench classes (no hardware)
 branch chi_mesh_soc_nodirect_pkg  # package functions are called only by testbench classes (no hardware)
+toggle \S+ rst_n:1->0\S* \S*rtl/noc/noc_\w+\.sv$|chi_mesh_soc_nodirect_noc\.sv$ # power-on reset only: the benches do not reset mid-run
+toggle \S+ (ej_ready(\[\d+\])?|l_tx_r\[\d+\]|local_tx_ready):1->0\S* \S*rtl/noc/noc_(ni_slv|ni_mst|mesh|router_open|d2d_gw)\.sv$|chi_mesh_soc_nodirect_noc\.sv$ # every NI ejects at once (master NI: a response slot per chunk in flight; slave NI: request queues sized for every chunk all masters can have in flight), so the local output is always ready
+toggle \S+ out_r\[4\]:1->0\S* \S*noc_router_open\.sv$ # local output: every NI ejects at once (see ej_ready)
+branch \.u_mesh(_d\S+)? if \S*rtl/noc/noc_mesh\.sv:117$ # no NI ever deasserts ej_ready
+line \.u_mesh(_d\S+)? \S+ \S*rtl/noc/noc_mesh\.sv:(47|48|49|50|51|52|53|54)$ # nb(): elaboration-time neighbour function (generate localparams), never called at run time
+branch \.u_mesh(_d\S+)? \S+ \S*rtl/noc/noc_mesh\.sv:(47|48|49|50|51|52|53|54)$ # nb(): elaboration-time neighbour function
+line noc_cfg_pkg \S+ \S*/noc_cfg_pkg\.sv:(63|64|65|66|67|68|69|70|71|72|73|74|75|76|77|78)$ # ep_name() names endpoints in messages only
+line \S+ case \S*rtl/noc/noc_ahb2axi[.]sv:121$ # FSM default arm: every state encoding in use is decoded
+line \S+ case \S*rtl/noc/noc_axi2ahb[.]sv:138$ # FSM default arm: every state encoding in use is decoded
+line \S+ case \S*rtl/noc/noc_axi2lite[.]sv:147$ # FSM default arm: every state encoding in use is decoded
+line \S+ case \S*rtl/noc/noc_apb2axi[.]sv:83$ # FSM default arm: every state encoding in use is decoded
+branch \S+ else \S*rtl/noc/noc_axi2ahb[.]sv:115$ # HREADY is high in the address phase: this master never pipelines (address phase only after the previous data phase completed), and an AHB slave inserts wait states only in a data phase
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[0\]\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 [0, 0] south side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt (south_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[1\]|g_in\[1\]\.\w+|rr\[1\]|win\[1\])\S* \S*noc_router_open\.sv$ # router 0 [0, 0] south port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[0\]\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 [0, 0] west side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt (west_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[3\]|g_in\[3\]\.\w+|rr\[3\]|win\[3\])\S* \S*noc_router_open\.sv$ # router 0 [0, 0] west port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[0\]\[0\]\S* \S*noc_router_open\.sv$ # router 0 output 0 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[0\]\[2\]\S* \S*noc_router_open\.sv$ # router 0 output 0: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 0 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 0 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 0 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 0 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[2\]\[2\]\S* \S*noc_router_open\.sv$ # router 0 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[4\]\[0\]\S* \S*noc_router_open\.sv$ # router 0 output 4 is fed by inputs [0, 2] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[4\]\[0\]:1->0\S* \S*noc_router_open\.sv$ # router 0 output 4: round-robin pointer takes [1, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 0 output 4 is fed by inputs [0, 2] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 0 output 4: round-robin pointer takes [1, 3] only
+line \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:54$ # router 0 [0, 0]: no destination lies south of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:102$ # router 0: south output on the mesh edge
+line \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:52$ # router 0 [0, 0]: no destination lies west of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[0\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:104$ # router 0: west output on the mesh edge
+toggle \.u_mesh g_r\[0\]\.rr\[0\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux pointer takes [1, 7] only
+toggle \.u_mesh g_r\[0\]\.pick\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux: endpoints [0, 6] only
+toggle \.u_mesh g_r\[0\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 0 node mux pointer takes [1, 7] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[1\]\[1\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 [1, 0] south side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt (south_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[1\]|g_in\[1\]\.\w+|rr\[1\]|win\[1\])\S* \S*noc_router_open\.sv$ # router 1 [1, 0] south port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[1\]\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 [1, 0] east side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt (east_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[2\]|g_in\[2\]\.\w+|rr\[2\]|win\[2\])\S* \S*noc_router_open\.sv$ # router 1 [1, 0] east port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[0\]\[0\]\S* \S*noc_router_open\.sv$ # router 1 output 0: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[0\]\[1\]\S* \S*noc_router_open\.sv$ # router 1 output 0: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 1 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 1 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt win\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 1 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 1 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 1 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt rr\[4\]\[1\]\S* \S*noc_router_open\.sv$ # router 1 output 4: round-robin pointer takes [0, 1, 4] only
+line \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:54$ # router 1 [1, 0]: no destination lies south of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:102$ # router 1: south output on the mesh edge
+line \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:51$ # router 1 [1, 0]: no destination lies east of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[1\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:103$ # router 1: east output on the mesh edge
+toggle \.u_mesh g_r\[1\]\.rr\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 node mux pointer takes [8, 9, 10] only
+toggle \.u_mesh g_r\[1\]\.rr\[3\]:1->0\S* \S*rtl/noc/noc_mesh\.sv$ # router 1 node mux pointer takes [8, 9, 10] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[2\]\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 [0, 1] north side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt (north_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[0\]|g_in\[0\]\.\w+|rr\[0\]|win\[0\])\S* \S*noc_router_open\.sv$ # router 2 [0, 1] north port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[2\]\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 [0, 1] west side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt (west_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[3\]|g_in\[3\]\.\w+|rr\[3\]|win\[3\])\S* \S*noc_router_open\.sv$ # router 2 [0, 1] west port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt win\[1\]\[0\]\S* \S*noc_router_open\.sv$ # router 2 output 1 is fed by inputs [2, 4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[1\]\[2\]\S* \S*noc_router_open\.sv$ # router 2 output 1: round-robin pointer takes [0, 3] only
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt win\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 2 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[2\]\[0\]\S* \S*noc_router_open\.sv$ # router 2 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt win\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 2 output 2 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[2\]\[1\]\S* \S*noc_router_open\.sv$ # router 2 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[2\]\[2\]\S* \S*noc_router_open\.sv$ # router 2 output 2: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt rr\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 2 output 4: round-robin pointer takes [0, 2, 3] only
+line \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:53$ # router 2 [0, 1]: no destination lies north of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:101$ # router 2: north output on the mesh edge
+line \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:52$ # router 2 [0, 1]: no destination lies west of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[2\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:104$ # router 2: west output on the mesh edge
+toggle \.u_mesh g_r\[2\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 2 node mux pointer takes [0, 2, 5] only
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[3\]\[0\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 [1, 1] north side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt (north_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[0\]|g_in\[0\]\.\w+|rr\[0\]|win\[0\])\S* \S*noc_router_open\.sv$ # router 3 [1, 1] north port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)? (rx_v|tx_v|tx_r|rx_r)\[3\]\[2\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 [1, 1] east side is the mesh edge (tied off)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt (east_(rx|tx)_(valid|ready)|(in_v|in_r|ne|nempty|pop|ov|out_r)\[2\]|g_in\[2\]\.\w+|rr\[2\]|win\[2\])\S* \S*noc_router_open\.sv$ # router 3 [1, 1] east port is on the mesh edge: nothing enters or leaves there
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt test_en\S* \S*noc_router_open\.sv$ # test_en is tied to 0
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[1\]\[0\]\S* \S*noc_router_open\.sv$ # router 3 output 1: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[1\]\[1\]\S* \S*noc_router_open\.sv$ # router 3 output 1: round-robin pointer takes [0, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt win\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 3 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[3\]\[0\]\S* \S*noc_router_open\.sv$ # router 3 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt win\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 3 output 3 is fed by inputs [4] only (XY routes of this SoC)
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[3\]\[1\]\S* \S*noc_router_open\.sv$ # router 3 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[3\]\[2\]\S* \S*noc_router_open\.sv$ # router 3 output 3: round-robin pointer takes [0] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt rr\[4\]\[0\]\S* \S*noc_router_open\.sv$ # router 3 output 4: round-robin pointer takes [2, 4] only
+toggle \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt win\[4\]\[2\]\S* \S*noc_router_open\.sv$ # router 3 output 4 is fed by inputs [1, 3] only (XY routes of this SoC)
+line \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:53$ # router 3 [1, 1]: no destination lies north of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:101$ # router 3: north output on the mesh edge
+line \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt \S+ \S*rtl/noc/noc_router_open[.]sv:51$ # router 3 [1, 1]: no destination lies east of the mesh edge
+branch \.u_mesh(_d\S+)?\.g_r\[3\]\.u_rt cond_then \S*rtl/noc/noc_router_open[.]sv:103$ # router 3: east output on the mesh edge
+toggle \.u_mesh g_r\[3\]\.pick\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 node mux: endpoints [2, 3, 5] only
+toggle \.u_mesh g_r\[3\]\.rr\[3\]\S* \S*rtl/noc/noc_mesh\.sv$ # router 3 node mux pointer takes [3, 4, 6] only
+toggle \.u_ni_cpu0 (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc cpu0_(ax_)?a[rw]size\[2\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_cpu0 whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+toggle \.u_ni_cpu0 (s_a[rw]nosnp|(rb\[\d+\]|rh|wh|whb\.b)\.nosnp)\S* \S*noc_ni_mst\.sv$ # cpu0 is not ACE-Lite: nosnp tied 0 (coherent memory always through its home)
+branch \.u_ni_cpu0 cond_then \S*rtl/noc/noc_ni_mst[.]sv:162$ # cpu0 is not ACE-Lite: nosnp tied 0
+branch \.u_ni_cpu0 cond_then \S*rtl/noc/noc_ni_mst[.]sv:287$ # cpu0 is not ACE-Lite: nosnp tied 0
+branch \.u_ni_cpu0 if \S*rtl/noc/noc_ni_mst[.]sv:176$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_cpu0 cond_then \S*rtl/noc/noc_ni_mst[.]sv:215$ # DW = 32: R = 1
+branch \.u_ni_cpu0 cond_then \S*rtl/noc/noc_ni_mst[.]sv:346$ # DW = 32: R = 1
+branch \.u_ni_cpu0 cond_then \S*rtl/noc/noc_ni_mst[.]sv:336$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_cpu1 (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc cpu1_(ax_)?a[rw]size\[2\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_cpu1 whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+toggle \.u_ni_cpu1 (s_a[rw]nosnp|(rb\[\d+\]|rh|wh|whb\.b)\.nosnp)\S* \S*noc_ni_mst\.sv$ # cpu1 is not ACE-Lite: nosnp tied 0 (coherent memory always through its home)
+branch \.u_ni_cpu1 cond_then \S*rtl/noc/noc_ni_mst[.]sv:162$ # cpu1 is not ACE-Lite: nosnp tied 0
+branch \.u_ni_cpu1 cond_then \S*rtl/noc/noc_ni_mst[.]sv:287$ # cpu1 is not ACE-Lite: nosnp tied 0
+branch \.u_ni_cpu1 if \S*rtl/noc/noc_ni_mst[.]sv:176$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_cpu1 cond_then \S*rtl/noc/noc_ni_mst[.]sv:215$ # DW = 32: R = 1
+branch \.u_ni_cpu1 cond_then \S*rtl/noc/noc_ni_mst[.]sv:346$ # DW = 32: R = 1
+branch \.u_ni_cpu1 cond_then \S*rtl/noc/noc_ni_mst[.]sv:336$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_dma (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc dma_(ax_)?a[rw]size\[2\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_dma whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+branch \.u_ni_dma if \S*rtl/noc/noc_ni_mst[.]sv:176$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:215$ # DW = 32: R = 1
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:346$ # DW = 32: R = 1
+branch \.u_ni_dma cond_then \S*rtl/noc/noc_ni_mst[.]sv:336$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \.u_ni_mcu (s_a[rw]size|(rb\[\d+\]|rh|wh|whb\.b)\.size)\[2\]\S* \S*noc_ni_mst\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_noc mcu_(ax_)?a[rw]size\[2\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_mcu whb\.(nchunk|nrsp)\[[6-7]\]\S* \S*noc_ni_mst\.sv$ # at most 32 chunks per burst (256 beats, 8 beats per chunk; WRAP <= 16 beats)
+toggle \.u_ni_mcu (s_a[rw]nosnp|(rb\[\d+\]|rh|wh|whb\.b)\.nosnp)\S* \S*noc_ni_mst\.sv$ # mcu is not ACE-Lite: nosnp tied 0 (coherent memory always through its home)
+branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:162$ # mcu is not ACE-Lite: nosnp tied 0
+branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:287$ # mcu is not ACE-Lite: nosnp tied 0
+toggle \.u_ni_mcu (s_a[rw](id|len)\[|s_[br]id\[|s_a[rw]burst\[1\]|s_a[rw]burst\[0\]:1->0|s_wlast:1->0|(rb\[\d+\]|rh|wh|whb\.b)\.(id|len)\[|(rb\[\d+\]|rh|wh|whb\.b)\.burst\[1\]|(rb\[\d+\]|rh|wh|whb\.b)\.burst\[0\]:1->0|(rb_i|wb_i|wc_n|rs_k)\[|wc_(data|strb)\[[1-7]\]|whb\.(nchunk|nrsp)\[[1-7]\]|(rb_cnt|wb_cnt|wb_pend|rs_cnt|w_infl)\[[1-9]\]|s_a[rw]ready:1->0|(r_slot_end|rh_last|wh_lastc):1->0)\S* \S*noc_ni_mst\.sv$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+toggle \.u_mcu_ahb m_a[rw]ready:1->0\S* \S*rtl/noc/noc_ahb2axi\.sv$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_mcu_ahb else \S*rtl/noc/noc_ahb2axi[.]sv:114$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight: the master NI always has a free read-burst slot, so ARREADY is high
+toggle \.u_noc mcu_ax_(a[rw](id|len)\[|[br]id\[|a[rw]burst\[1\]|a[rw]burst\[0\]:1->0|wlast:1->0|a[rw]ready:1->0)\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu cond_else \S*rtl/noc/noc_ni_mst[.]sv:100$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:224$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:241$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:326$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:356$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+branch \.u_ni_mcu else \S*rtl/noc/noc_ni_mst[.]sv:113$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight
+line \.u_ni_mcu \S+ \S*rtl/noc/noc_ni_mst[.]sv:95$ # mcu is an AHB-Lite port: single beats, ID 0, INCR, one transfer in flight: no WRAP bursts
+toggle (\.u_ni_mcu|\.u_noc) (s_a[rw]prot|(rb\[\d+\]|rh|wh|whb\.b)\.prot|mcu_ax_a[rw]prot)\[1\]\S* \S*noc_ni_mst\.sv$|chi_mesh_soc_nodirect_noc\.sv$ # AHB has no secure bit: noc_ahb2axi drives AxPROT[1] = 0
+toggle \.u_noc mcu_(hburst\[|hprot\[[23]\]|htrans\[0\]|hsel:1->0|hsize\[2\])\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # the AHB test shim (noc_axi2ahb) issues SINGLE NONSEQ transfers, HPROT[3:2] = 0, HSIZE <= 2, HSEL tied high
+branch \.u_ni_mcu if \S*rtl/noc/noc_ni_mst[.]sv:176$ # DW = 32: one word per beat, nothing to merge
+branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:215$ # DW = 32: R = 1
+branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:346$ # DW = 32: R = 1
+branch \.u_ni_mcu cond_then \S*rtl/noc/noc_ni_mst[.]sv:336$ # a burst's chunks all decode alike (windows are 4 KB aligned and an AXI burst stays in 4 KB), so a DECERR chunk never meets a response of the same burst
+toggle \S+ (m_a[rw](id|len)\[|m_[br]id\[|m_a[rw]burst\[1\]|m_a[rw]burst\[0\]:1->0|m_wlast:1->0|(m_a[rw]size|size_q|hsize)\[2\]|hburst\[|hprot\[[23]\]|htrans\[0\]|hsel:1->0|(m_a[rw]prot|prot_q)\[1\])\S* \S*rtl/noc/noc_ahb2axi\.sv$ # noc_ahb2axi issues single INCR beats with ID 0 and AxPROT[1] = 0; its AHB masters (noc_axi2ahb) issue SINGLE NONSEQ transfers, HSIZE <= 2, HPROT[3:2] = 0, HSEL tied high
+toggle \S+ ((s_a[rw]size|size_q|hsize)\[2\]|hburst\[|hprot\[[23]\]|htrans\[0\]|s_[br]resp\[0\])\S* \S*rtl/noc/noc_axi2ahb\.sv$ # noc_axi2ahb: 32-bit bus (size <= 2), SINGLE NONSEQ transfers, HPROT[3:2] = 0, answers OKAY / SLVERR only
+toggle \S+ (s_a[rw]size|size_q)\[2\]\S* \S*rtl/noc/noc_axi2lite\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \S+ (m_a[rw](id|len)\[|m_[br]id\[|m_a[rw]burst\[1\]|m_a[rw]burst\[0\]:1->0|m_wlast:1->0|m_a[rw]size\[[02]\]|m_a[rw]size\[1\]:1->0)\S* \S*rtl/noc/noc_apb2axi\.sv$ # noc_apb2axi issues single 32-bit INCR beats with ID 0
+toggle \.u_ni_ddr0 m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc ddr0_(ax_)?(awid|arid|bid|rid)\[\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_ddr0 m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc ddr0_(ax_)?a[rw]len\[[3-7]\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_ddr0 m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc ddr0_(ax_)?a[rw]burst\[1\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_ddr0 m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_ddr0 wp\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # writes to coherent memory come from its homes [9] (write-backs, RN-I chunks): no CHI fields
+toggle \.u_ni_ddr0 wp\[\d+\]\.src\[0\]:1->0\S* \S*noc_ni_slv\.sv$ # writes to coherent memory come from its homes [9] (write-backs, RN-I chunks): no CHI fields
+toggle \.u_ni_ddr0 wp\[\d+\]\.src\[1\]\S* \S*noc_ni_slv\.sv$ # writes to coherent memory come from its homes [9] (write-backs, RN-I chunks): no CHI fields
+toggle \.u_ni_ddr0 wp\[\d+\]\.src\[2\]\S* \S*noc_ni_slv\.sv$ # writes to coherent memory come from its homes [9] (write-backs, RN-I chunks): no CHI fields
+toggle \.u_ni_ddr0 wp\[\d+\]\.src\[3\]:1->0\S* \S*noc_ni_slv\.sv$ # writes to coherent memory come from its homes [9] (write-backs, RN-I chunks): no CHI fields
+toggle \.u_ni_ddr0 rp\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # reads come from its homes [9]: no CHI fields (no DMT)
+toggle \.u_ni_ddr0 rp\[\d+\]\.src\[0\]:1->0\S* \S*noc_ni_slv\.sv$ # reads come from its homes [9]: no CHI fields (no DMT)
+toggle \.u_ni_ddr0 rp\[\d+\]\.src\[1\]\S* \S*noc_ni_slv\.sv$ # reads come from its homes [9]: no CHI fields (no DMT)
+toggle \.u_ni_ddr0 rp\[\d+\]\.src\[2\]\S* \S*noc_ni_slv\.sv$ # reads come from its homes [9]: no CHI fields (no DMT)
+toggle \.u_ni_ddr0 rp\[\d+\]\.src\[3\]:1->0\S* \S*noc_ni_slv\.sv$ # reads come from its homes [9]: no CHI fields (no DMT)
+toggle \.u_ni_ddr0 rp\[\d+\]\.tag\[(4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8) or a home's {slot, kind} (4 bits)
+toggle \.u_ni_ddr0 wp\[\d+\]\.tag\[(4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4) or a home's {slot, kind} (4 bits)
+toggle \.u_ni_ddr0 (rq_cnt|wq_cnt)\[(4|5|6|7)\]\S* \S*noc_ni_slv\.sv$ # at most 11 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_ddr0 m_a[rw]addr\[(28|29|30|31)\]\S* \S*noc_ni_slv\.sv$ # window 0x80000000 / 0x10000000: address bits 28..31 are constant
+toggle \.u_noc ddr0_(ax_)?(a[rw]addr|haddr|paddr)\[(28|29|30|31)\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # window 0x80000000 / 0x10000000: address bits 28..31 are constant
+toggle \.u_ddr0_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(28|29|30|31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x80000000 / 0x10000000: address bits 28..31 are constant
+toggle \.u_ni_ddr1 m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc ddr1_(ax_)?(awid|arid|bid|rid)\[\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_ddr1 m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc ddr1_(ax_)?a[rw]len\[[3-7]\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_ddr1 m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc ddr1_(ax_)?a[rw]burst\[1\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_ddr1 m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_ddr1 wp\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # writes to coherent memory come from its homes [10] (write-backs, RN-I chunks): no CHI fields
+toggle \.u_ni_ddr1 wp\[\d+\]\.src\[0\]\S* \S*noc_ni_slv\.sv$ # writes to coherent memory come from its homes [10] (write-backs, RN-I chunks): no CHI fields
+toggle \.u_ni_ddr1 wp\[\d+\]\.src\[1\]:1->0\S* \S*noc_ni_slv\.sv$ # writes to coherent memory come from its homes [10] (write-backs, RN-I chunks): no CHI fields
+toggle \.u_ni_ddr1 wp\[\d+\]\.src\[2\]\S* \S*noc_ni_slv\.sv$ # writes to coherent memory come from its homes [10] (write-backs, RN-I chunks): no CHI fields
+toggle \.u_ni_ddr1 wp\[\d+\]\.src\[3\]:1->0\S* \S*noc_ni_slv\.sv$ # writes to coherent memory come from its homes [10] (write-backs, RN-I chunks): no CHI fields
+toggle \.u_ni_ddr1 rp\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # reads come from its homes [10]: no CHI fields (no DMT)
+toggle \.u_ni_ddr1 rp\[\d+\]\.src\[0\]\S* \S*noc_ni_slv\.sv$ # reads come from its homes [10]: no CHI fields (no DMT)
+toggle \.u_ni_ddr1 rp\[\d+\]\.src\[1\]:1->0\S* \S*noc_ni_slv\.sv$ # reads come from its homes [10]: no CHI fields (no DMT)
+toggle \.u_ni_ddr1 rp\[\d+\]\.src\[2\]\S* \S*noc_ni_slv\.sv$ # reads come from its homes [10]: no CHI fields (no DMT)
+toggle \.u_ni_ddr1 rp\[\d+\]\.src\[3\]:1->0\S* \S*noc_ni_slv\.sv$ # reads come from its homes [10]: no CHI fields (no DMT)
+toggle \.u_ni_ddr1 rp\[\d+\]\.tag\[(4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8) or a home's {slot, kind} (4 bits)
+toggle \.u_ni_ddr1 wp\[\d+\]\.tag\[(4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4) or a home's {slot, kind} (4 bits)
+toggle \.u_ni_ddr1 (rq_cnt|wq_cnt)\[(4|5|6|7)\]\S* \S*noc_ni_slv\.sv$ # at most 11 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_ddr1 m_a[rw]addr\[(28|29|30|31)\]\S* \S*noc_ni_slv\.sv$ # window 0x80000000 / 0x10000000: address bits 28..31 are constant
+toggle \.u_noc ddr1_(ax_)?(a[rw]addr|haddr|paddr)\[(28|29|30|31)\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # window 0x80000000 / 0x10000000: address bits 28..31 are constant
+toggle \.u_ddr1_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(28|29|30|31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x80000000 / 0x10000000: address bits 28..31 are constant
+toggle \.u_ni_sram m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc sram_(ax_)?(awid|arid|bid|rid)\[\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_sram m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc sram_(ax_)?a[rw]len\[[3-7]\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_sram m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc sram_(ax_)?a[rw]burst\[1\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_sram m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_sram (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero (no DMT read to a slave outside the coherent memory)
+toggle \.u_ni_sram (rp|wp)\[\d+\]\.src\[2\]\S* \S*noc_ni_slv\.sv$ # requesters are the homes [9, 10] (RN-F NoSnp) and the RN-I masters
+toggle \.u_ni_sram rp\[\d+\]\.tag\[(4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8) or a home's {slot, kind} (4 bits)
+toggle \.u_ni_sram wp\[\d+\]\.tag\[(4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4) or a home's {slot, kind} (4 bits)
+toggle \.u_ni_sram (rq_cnt|wq_cnt)\[(4|5|6|7)\]\S* \S*noc_ni_slv\.sv$ # at most 11 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_sram m_a[rw]addr\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*noc_ni_slv\.sv$ # window 0x00000000 / 0x10000: address bits 16..31 are constant
+toggle \.u_noc sram_(ax_)?(a[rw]addr|haddr|paddr)\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # window 0x00000000 / 0x10000: address bits 16..31 are constant
+toggle \.u_sram_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x00000000 / 0x10000: address bits 16..31 are constant
+toggle \.u_ni_apb_ram m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc apb_ram_(ax_)?(awid|arid|bid|rid)\[\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_apb_ram m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc apb_ram_(ax_)?a[rw]len\[[3-7]\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_apb_ram m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc apb_ram_(ax_)?a[rw]burst\[1\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_apb_ram m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_apb_ram (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero (no DMT read to a slave outside the coherent memory)
+toggle \.u_ni_apb_ram (rp|wp)\[\d+\]\.src\[2\]\S* \S*noc_ni_slv\.sv$ # requesters are the homes [9, 10] (RN-F NoSnp) and the RN-I masters
+toggle \.u_ni_apb_ram rp\[\d+\]\.tag\[(4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8) or a home's {slot, kind} (4 bits)
+toggle \.u_ni_apb_ram wp\[\d+\]\.tag\[(4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4) or a home's {slot, kind} (4 bits)
+toggle \.u_ni_apb_ram (rq_cnt|wq_cnt)\[(4|5|6|7)\]\S* \S*noc_ni_slv\.sv$ # at most 11 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_apb_ram m_a[rw]addr\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*noc_ni_slv\.sv$ # window 0x20020000 / 0x10000: address bits 16..31 are constant
+toggle \.u_noc apb_ram_(ax_)?(a[rw]addr|haddr|paddr)\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # window 0x20020000 / 0x10000: address bits 16..31 are constant
+toggle \.u_apb_ram_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x20020000 / 0x10000: address bits 16..31 are constant
+toggle \.u_ni_apb_ram (rp_cnt|wp_cnt)\[[1-9]\]\S* \S*noc_ni_slv\.sv$ # axi2apb_bridge takes the next burst only when idle: one burst in flight
+toggle \.u_ni_apb_ram (m_[br]resp\[0\]|r_resp\[\d+\]\[0\])\S* \S*noc_ni_slv\.sv$ # answers OKAY / SLVERR only (AHB / APB have one error response)
+toggle \.u_noc apb_ram_(ax_)?[br]resp\[0\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # answers OKAY / SLVERR only (AHB / APB have one error response)
+toggle \.u_ni_periph m_a[rw]id\[\S* \S*noc_ni_slv\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_noc periph_(ax_)?(awid|arid|bid|rid)\[\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # the slave NI issues ID 0 (one ID, in-order answers)
+toggle \.u_ni_periph m_a[rw]len\[[3-7]\]\S* \S*noc_ni_slv\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_noc periph_(ax_)?a[rw]len\[[3-7]\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # one burst per chunk: at most 8 beats
+toggle \.u_ni_periph m_a[rw]burst\[1\]\S* \S*noc_ni_slv\.sv$ # chunks are FIXED or INCR (WRAP bursts split at the wrap point)
+toggle \.u_noc periph_(ax_)?a[rw]burst\[1\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # chunks are FIXED or INCR
+toggle \.u_ni_periph m_a[rw]size\[2\]\S* \S*noc_ni_slv\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_ni_periph (rp|wp)\[\d+\]\.(copc|cresp|dataid|hnid)\[\S* \S*noc_ni_slv\.sv$ # CHI fields: zero (no DMT read to a slave outside the coherent memory)
+toggle \.u_ni_periph (rp|wp)\[\d+\]\.src\[2\]\S* \S*noc_ni_slv\.sv$ # requesters are the homes [9, 10] (RN-F NoSnp) and the RN-I masters
+toggle \.u_ni_periph rp\[\d+\]\.tag\[(4|5)\]\S* \S*noc_ni_slv\.sv$ # read tag = the master NI's response slot (< MAXO = 8) or a home's {slot, kind} (4 bits)
+toggle \.u_ni_periph wp\[\d+\]\.tag\[(4|5)\]\S* \S*noc_ni_slv\.sv$ # write tag = the master NI's burst slot (< MAXB = 4) or a home's {slot, kind} (4 bits)
+toggle \.u_ni_periph (rq_cnt|wq_cnt)\[(4|5|6|7)\]\S* \S*noc_ni_slv\.sv$ # at most 11 chunks in flight to one slave (MAXO = 8 per AXI4 master, one per AXI4-Lite / AHB master)
+toggle \.u_ni_periph m_a[rw]addr\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*noc_ni_slv\.sv$ # window 0x10000000 / 0x10000: address bits 16..31 are constant
+toggle \.u_noc periph_(ax_)?(a[rw]addr|haddr|paddr)\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # window 0x10000000 / 0x10000: address bits 16..31 are constant
+toggle \.u_periph_shim (m_a[rw]addr|paddr|haddr|addr_q)\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\]\S* \S*rtl/noc/noc_\w+\.sv$ # window 0x10000000 / 0x10000: address bits 16..31 are constant
+toggle \.u_ni_periph (rp_cnt|wp_cnt)\[[1-9]\]\S* \S*noc_ni_slv\.sv$ # axi2apb_bridge takes the next burst only when idle: one burst in flight
+toggle \.u_ni_periph (m_[br]resp\[0\]|r_resp\[\d+\]\[0\])\S* \S*noc_ni_slv\.sv$ # answers OKAY / SLVERR only (AHB / APB have one error response)
+toggle \.u_noc periph_(ax_)?[br]resp\[0\]\S* \S*chi_mesh_soc_nodirect_noc\.sv$ # answers OKAY / SLVERR only (AHB / APB have one error response)
+toggle \.u_apb ((awid|arid|bid|rid)\[|a[rw]len\[[3-7]\]|a[rw]burst\[1\])\S* \S*\.sv$ # the slave NI issues ID 0, at most 8 beats, FIXED / INCR
+toggle \.u_mesh(_d\S+)?\.g_r\[\d+\]\.u_rt (in_r\[\d\]:1->0|out_r\[[0-3]\]:1->0|(north|south|east|west|local)_(rx|tx)_ready:1->0|g_in\[\d\]\.cnt\[[2-9]\])\S* \S*noc_router_open\.sv$ # router flow control (input FIFO full, ready 1->0) is closed at 100% by the noc_router_open unit bench (tb/noc_router, suite noc_router: random ready stalls on all five ports, scoreboard per output); in this SoC it is NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way
+toggle \.u_mesh(_d\S+)? ((rx_r|tx_r)\[\d+\]\[\d\]|l_rx_r\[\d+\]):1->0\S* \S*rtl/noc/noc_mesh\.sv$ # the routers' ready wires between mesh nodes: router flow control (input FIFO full, ready 1->0) is closed at 100% by the noc_router_open unit bench (tb/noc_router, suite noc_router: random ready stalls on all five ports, scoreboard per output); in this SoC it is NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way
+user \.g_s\[0\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[1\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[2\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[3\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[4\]\.u_sva\.c_[rb]_wait # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the slave NI holds READY low only while its previous response flit waits for injection)
+user \.g_s\[0\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[1\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[2\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[3\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+user \.g_s\[3\]\.u_sva\.c_a[rw]_fixed # behind the apb adapter the VIP sees single INCR beats
+user \.g_s\[3\]\.u_sva\.c_[rb]_wait # the apb test shim raises READY in the state after the request handshake, before the slave can answer
+user \.g_s\[4\]\.u_sva\.c_a[rw]_wrap # the slave NI issues FIXED / INCR chunks only (WRAP split at the wrap point)
+line \.u_\S+_shim \S+ \S*rtl/noc/noc_chi_rnf[.]sv(:\d+)?$ # bench model: the CHI RN-F model (AXI4 VIP -> MESI cache -> CHI) standing in for a CPU; a testbench instance in the tb_top like the VIPs, not NoC RTL (what it sends is checked by the home's single-writer assertion, its own assertions and the coherence test)
+branch \.u_\S+_shim \S+ \S*rtl/noc/noc_chi_rnf[.]sv(:\d+)?$ # bench model: the CHI RN-F model (AXI4 VIP -> MESI cache -> CHI) standing in for a CPU; a testbench instance in the tb_top like the VIPs, not NoC RTL (what it sends is checked by the home's single-writer assertion, its own assertions and the coherence test)
+toggle \.u_\S+_shim \S+ \S*rtl/noc/noc_chi_rnf[.]sv(:\d+)?$ # bench model: the CHI RN-F model (AXI4 VIP -> MESI cache -> CHI) standing in for a CPU; a testbench instance in the tb_top like the VIPs, not NoC RTL (what it sends is checked by the home's single-writer assertion, its own assertions and the coherence test)
+line \.u_\S+_shim \S+ \S*rtl/noc/noc_axi2acelite[.]sv(:\d+)?$ # bench model: the ACE-Lite source (AXI4 VIP -> ACE-Lite, own barriers and CMOs) standing in for an IO-coherent master; a testbench instance in the tb_top like the VIPs, not NoC RTL (what it sends is checked by the home's single-writer assertion, its own assertions and the coherence test)
+branch \.u_\S+_shim \S+ \S*rtl/noc/noc_axi2acelite[.]sv(:\d+)?$ # bench model: the ACE-Lite source (AXI4 VIP -> ACE-Lite, own barriers and CMOs) standing in for an IO-coherent master; a testbench instance in the tb_top like the VIPs, not NoC RTL (what it sends is checked by the home's single-writer assertion, its own assertions and the coherence test)
+toggle \.u_\S+_shim \S+ \S*rtl/noc/noc_axi2acelite[.]sv(:\d+)?$ # bench model: the ACE-Lite source (AXI4 VIP -> ACE-Lite, own barriers and CMOs) standing in for an IO-coherent master; a testbench instance in the tb_top like the VIPs, not NoC RTL (what it sends is checked by the home's single-writer assertion, its own assertions and the coherence test)
+toggle \.u_hnf\d+ ej_ready\S* \S*noc_hnf\.sv$ # the home always ejects (ej_ready tied high)
+toggle \.u_hnf\d+ rq_cnt\[(4|5|6|7)\]\S* \S*noc_hnf\.sv$ # at most 11 requests in flight to a home (one per RN-F, MAXO = 8 chunks per AXI4 / ACE-Lite master, one per AXI4-Lite / AHB master)
+toggle \.u_hnf\d+ overflow\S* \S*noc_hnf\.sv$ # the request queue (64) holds every request the masters can have in flight (11)
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:346$ # the request queue holds all 11
+toggle \.u_hnf\d+ mem_pend\[\d+\]\[2\]\S* \S*noc_hnf\.sv$ # a slot has at most two memory chunks in flight (the halves of one line)
+line \.u_hnf\d+ case \S*rtl/noc/noc_hnf[.]sv:542$ # FSM default arm: every state is decoded
+line \.u_hnf\d+ case \S*rtl/noc/noc_hnf[.]sv:390$ # a home is sent requests, memory responses, CHI RSP and DAT only (requests are taken above, snoops go to RN-Fs)
+branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:362$ # RN-Fs send a home CompAck, SnpResp and SnpRespFwded on RSP, nothing else
+branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:364$ # a home snoops only RN-Fs its exact filter lists, and the entry stays until the snoop response (the set is busy in this slot)
+branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:378$ # a home snoops only RN-Fs its exact filter lists, and the entry stays until the snoop response (the set is busy in this slot)
+branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:375$ # an RN-F answers a snoop with data only for a dirty line (SnpRespData_PD / SnpRespDataFwded_PD)
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:439$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+line \.u_hnf\d+ block \S*rtl/noc/noc_hnf[.]sv:439$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+line \.u_hnf\d+ block \S*rtl/noc/noc_hnf[.]sv:440$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:441$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:441$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ cond_then \S*rtl/noc/noc_hnf[.]sv:442$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ cond_then \S*rtl/noc/noc_hnf[.]sv:474$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ cond_else \S*rtl/noc/noc_hnf[.]sv:442$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ cond_else \S*rtl/noc/noc_hnf[.]sv:474$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+line \.u_hnf\d+ elsif \S*rtl/noc/noc_hnf[.]sv:472$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:363$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:374$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:573$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+toggle \.u_hnf\d+ (fwded|snp_op\[\d+\]\[4\])\S* \S*noc_hnf\.sv$ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+user \.u_\S+_shim\.c_ufwd_ # DCT off (chi.dct: false): no SnpSharedFwd / SnpUniqueFwd, so no forwarded CompData
+line \.u_hnf\d+ case \S*rtl/noc/noc_hnf[.]sv:220$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+line \.u_hnf\d+ case \S*rtl/noc/noc_hnf[.]sv:495$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:495$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:497$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:495$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+branch \.u_hnf\d+ else \S*rtl/noc/noc_hnf[.]sv:497$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+branch \.u_hnf\d+ if \S*rtl/noc/noc_hnf[.]sv:575$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+toggle \.u_ni_\w+ dmt\S* \S*noc_ni_chi\.sv$ # DMT off (chi.dmt: false): the home reads memory itself, no slave sends CompData
+toggle \.u_hnf\d+ (oq_cnt\[2\]|can_push:1->0)\S* \S*noc_hnf\.sv$ # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (the home's output queue fills only while its router input is full)
+toggle \.u_hnf\d+ ((L|LT|lost|nderr|is_\w+|wd_resp|wd_be|after_wb)\[[1-9]\d*\]|ln\[[1-9]\d*\]\[[01]\])\S* \S*noc_hnf\.sv$ # NOT REACHED in every slot (analysis, not a proof): home slot k >= 1 takes a request only while the lower slots are busy, so the rarer values (address bits only decode misses carry, NoSnp kinds and strobes, race outcomes such as a CleanUnique losing its line or a write-back after a SnpSharedFwd) do not all reach every upper slot; slot 0 takes each of them (the K slots are identical registers written by one loop, and every slot's state machine is covered)
+toggle \.u_ni_sram (rp|wp)\[\d+\]\.tag\[3\]\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): a NoSnp request forwarded from home slot 2 or above to this slave (the home's lower slots busy at that moment); the lower slots' tags are covered
+toggle \.u_ni_apb_ram (rp|wp)\[\d+\]\.tag\[3\]\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): a NoSnp request forwarded from home slot 2 or above to this slave (the home's lower slots busy at that moment); the lower slots' tags are covered
+toggle \.u_ni_periph (rp|wp)\[\d+\]\.tag\[3\]\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): a NoSnp request forwarded from home slot 2 or above to this slave (the home's lower slots busy at that moment); the lower slots' tags are covered
+toggle \.u_ni_ddr0 ((rq_cnt|wq_cnt)\[[3-9]\]|(rp_cnt|wp_cnt)\[[2-9]\])\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (eight or more chunks queued at one slave NI, or four bursts pending: the RN-Fs reach it one line at a time per home slot, and only the RN-I masters send chunks of their own)
+toggle \.u_ni_ddr1 ((rq_cnt|wq_cnt)\[[3-9]\]|(rp_cnt|wp_cnt)\[[2-9]\])\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (eight or more chunks queued at one slave NI, or four bursts pending: the RN-Fs reach it one line at a time per home slot, and only the RN-I masters send chunks of their own)
+toggle \.u_ni_sram ((rq_cnt|wq_cnt)\[[3-9]\]|(rp_cnt|wp_cnt)\[[2-9]\])\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (eight or more chunks queued at one slave NI, or four bursts pending: the RN-Fs reach it one line at a time per home slot, and only the RN-I masters send chunks of their own)
+toggle \.u_ni_apb_ram ((rq_cnt|wq_cnt)\[[3-9]\]|(rp_cnt|wp_cnt)\[[2-9]\])\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (eight or more chunks queued at one slave NI, or four bursts pending: the RN-Fs reach it one line at a time per home slot, and only the RN-I masters send chunks of their own)
+toggle \.u_ni_periph ((rq_cnt|wq_cnt)\[[3-9]\]|(rp_cnt|wp_cnt)\[[2-9]\])\S* \S*noc_ni_slv\.sv$ # NOT REACHED (analysis, not a proof): needs several masters' flit trains to meet at one router output within a few cycles while each master NI holds at most 4 bursts / 8 chunks in flight; the cov test's stress phases fill these buffers part way (eight or more chunks queued at one slave NI, or four bursts pending: the RN-Fs reach it one line at a time per home slot, and only the RN-I masters send chunks of their own)
+toggle \.u_ni_cpu0 ej_ready\S* \S*noc_ni_chi\.sv$ # an RN-F takes every response, data and snoop (ej_ready tied high)
+toggle \.u_ni_cpu0 txrsp_flit\.(dbid|resperr)\[\S* \S*noc_ni_chi\.sv$ # the RN-F sends CompAck, SnpResp and SnpRespFwded on RSP: no DBID, no RespErr
+toggle \.u_ni_cpu0 txrsp_flit\.resp\[2\]\S* \S*noc_ni_chi\.sv$ # RSP carries no PassDirty (dirty data goes on DAT)
+toggle \.u_ni_cpu0 txrsp_flit\.opcode\[2\]\S* \S*noc_ni_chi\.sv$ # RSP opcodes of an RN-F: ['0x1', '0x2']
+toggle \.u_ni_cpu0 txrsp_flit\.opcode\[3\]\S* \S*noc_ni_chi\.sv$ # RSP opcodes of an RN-F: ['0x1', '0x2']
+toggle \.u_ni_cpu0 txreq_flit\.opcode\[5\]\S* \S*noc_ni_chi\.sv$ # REQ opcodes of the RN-F: ['0x1', '0x4', '0x7', '0xb', '0xd', '0x1b', '0x1c']
+toggle \.u_ni_cpu0 txrsp_flit\.nid\[2\]\S* \S*noc_ni_chi\.sv$ # RSP goes to a home ([9, 10]): CompAck to the HomeNID, snoop responses to the snooping home
+toggle \.u_ni_cpu0 rxsnp_flit\.fwdnid\[1\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
+toggle \.u_ni_cpu0 rxsnp_flit\.fwdnid\[2\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
+toggle \.u_ni_cpu0 rxsnp_flit\.fwdnid\[3\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
+toggle \.u_ni_cpu0 rxsnp_flit\.opcode\[4\]\S* \S*noc_ni_chi\.sv$ # DCT off: snoops ['0x1', '0x7', '0x8'] only
+toggle \.u_ni_cpu0 rx(rsp|dat|snp)_flit\.nid\[2\]\S* \S*noc_ni_chi\.sv$ # flits reach an RN-F from [9, 10] only (homes)
+toggle \.u_ni_cpu1 ej_ready\S* \S*noc_ni_chi\.sv$ # an RN-F takes every response, data and snoop (ej_ready tied high)
+toggle \.u_ni_cpu1 txrsp_flit\.(dbid|resperr)\[\S* \S*noc_ni_chi\.sv$ # the RN-F sends CompAck, SnpResp and SnpRespFwded on RSP: no DBID, no RespErr
+toggle \.u_ni_cpu1 txrsp_flit\.resp\[2\]\S* \S*noc_ni_chi\.sv$ # RSP carries no PassDirty (dirty data goes on DAT)
+toggle \.u_ni_cpu1 txrsp_flit\.opcode\[2\]\S* \S*noc_ni_chi\.sv$ # RSP opcodes of an RN-F: ['0x1', '0x2']
+toggle \.u_ni_cpu1 txrsp_flit\.opcode\[3\]\S* \S*noc_ni_chi\.sv$ # RSP opcodes of an RN-F: ['0x1', '0x2']
+toggle \.u_ni_cpu1 txreq_flit\.opcode\[5\]\S* \S*noc_ni_chi\.sv$ # REQ opcodes of the RN-F: ['0x1', '0x4', '0x7', '0xb', '0xd', '0x1b', '0x1c']
+toggle \.u_ni_cpu1 txrsp_flit\.nid\[2\]\S* \S*noc_ni_chi\.sv$ # RSP goes to a home ([9, 10]): CompAck to the HomeNID, snoop responses to the snooping home
+toggle \.u_ni_cpu1 rxsnp_flit\.fwdnid\[1\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
+toggle \.u_ni_cpu1 rxsnp_flit\.fwdnid\[2\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
+toggle \.u_ni_cpu1 rxsnp_flit\.fwdnid\[3\]\S* \S*noc_ni_chi\.sv$ # FwdNID is a requesting RN-F ([0, 1])
+toggle \.u_ni_cpu1 rxsnp_flit\.opcode\[4\]\S* \S*noc_ni_chi\.sv$ # DCT off: snoops ['0x1', '0x7', '0x8'] only
+toggle \.u_ni_cpu1 rx(rsp|dat|snp)_flit\.nid\[2\]\S* \S*noc_ni_chi\.sv$ # flits reach an RN-F from [9, 10] only (homes)
+toggle \.u_ni_\w+ rxsnp_flit\.addr\[(28|29|30)\]\S* \S*noc_ni_chi\.sv$ # snoops carry lines of the coherent memory 0x80000000..0x8FFFFFFF: these address bits are 0
+toggle \.u_ni_\w+ rxsnp_flit\.addr\[[0-5]\]\S* \S*noc_ni_chi\.sv$ # snoops carry line addresses
+toggle \.u_\w+_acel (s_a[rw]size|m_a[rw]size)\[2\]\S* \S*noc_acelite2axi\.sv$ # 32-bit data bus: AxSIZE <= 2
+toggle \.u_\w+_acel s_arsnoop\[1\]\S* \S*noc_acelite2axi\.sv$ # ACE-Lite read snoop codes: ReadNoSnoop / ReadOnce 0000, CleanShared 1000, CleanInvalid 1001, MakeInvalid 1101 (bit 1 only in ACE5 CleanSharedPersist, not supported)
+toggle \.u_\w+_acel s_awsnoop\[[12]\]\S* \S*noc_acelite2axi\.sv$ # ACE-Lite write snoop codes: WriteNoSnoop / WriteUnique 000, WriteLineUnique 001 (bits 1, 2 only in ACE5 WriteUniquePtlStash etc., not supported)
+toggle \.u_\w+_acel r_out\[(4|5|6|7)\]\S* \S*noc_acelite2axi\.sv$ # at most MAXB + MAXO = 12 reads without their last beat: the master NI holds MAXB = 4 bursts until issued and MAXO = 8 chunks until answered
+toggle \.u_\w+_acel w_out\[(3|4|5|6|7)\]\S* \S*noc_acelite2axi\.sv$ # at most MAXB = 4 writes without their B: the master NI holds a write burst until its B
 toggle chi_mesh_soc_nodirect_pkg dram_ready:1->0 # testbench flag: set once after DDR4 init (1 from the start without DDR4 channels), never cleared
 toggle u_apb (awaddr|araddr|paddr|\w+_paddr)\[(16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)\] # APB window 0x10000000/0x10000: address bits 16..31 are constant
 toggle u_apb (awid|arid|bid|rid)\[(4|5|6|7)\] # the NoC forwards 4-bit master IDs into the 8-bit APB-port ID
 toggle u_apb [br]resp\[0\] # axi2apb_bridge answers OKAY/SLVERR only
 toggle u_apb \w*a[rw]size\[2\] # 32-bit data bus: AxSIZE <= 2, bit 2 is always 0
 toggle u_apb(\.[\w*]+)? (rst_n|PRESETN):1->0 # power-on reset only: the socgen benches do not reset mid-run (each block's reset is checked by its own bench and the RAL reset test)
+toggle u_apb irq\[(2)\] # tied to 0: register blocks, APB VIP slots and IPs without an interrupt output (the IP interrupts are driven by the tb_top routing check)
 toggle u_apb gpio_(gpio)(\[|:) # GPIO pins: IP function, closed at 100% by its own bench in open-ip-portfolio
 toggle u_apb uart_(rxd|txd)(\[|:) # UART pins: IP function, closed at 100% by its own bench in open-ip-portfolio
 branch u_apb cond_(then|else) \S*chi_mesh_soc_nodirect_apb_subsys\.sv:\d+$ # device-model pin hookups (open-drain lines): IP function, see the IP pin waivers

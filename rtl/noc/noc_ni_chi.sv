@@ -12,7 +12,8 @@
 //  * RX: RSP, DAT and SNP packets are handed over the cycle they arrive, and
 //    so is read data a slave NI sends here for a home (DMT: OP_RDATA carrying
 //    the home's CompData fields). The RN-F always accepts (room for every
-//    response to its own requests and one snoop per home), so the NI always
+//    response to its own requests and one snoop per home
+//    transaction slot), so the NI always
 //    ejects.
 // ============================================================================
 module noc_ni_chi
@@ -77,11 +78,12 @@ module noc_ni_chi
       tp.copc   = txreq_flit.opcode;
       tp.addr   = txreq_flit.addr;
       tp.size   = txreq_flit.size;
+      tp.nm1    = txreq_flit.nm1;
     end
   end
 
   assign inj_valid   = txdat_valid || txrsp_valid || txreq_valid;
-  assign inj_flit    = mk_flit(tp, SELF, (tp.op == OP_CREQ) ? VC_REQ : VC_RSP);
+  assign inj_flit    = mk_flit(tp, SELF);
   assign txdat_ready = inj_ready;
   assign txrsp_ready = inj_ready && !txdat_valid;
   assign txreq_ready = inj_ready && !txdat_valid && !txrsp_valid;

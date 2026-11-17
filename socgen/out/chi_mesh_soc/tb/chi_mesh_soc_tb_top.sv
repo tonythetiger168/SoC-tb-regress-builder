@@ -24,6 +24,7 @@ module chi_mesh_soc_tb_top;
 
   axi4_if m_if [NM] (.aclk(aclk), .aresetn(aresetn));
   axi4_if s_if [NS] (.aclk(aclk), .aresetn(aresetn));
+  apb_if  apb_ext_if (.pclk(aclk), .presetn(aresetn));
 
   for (genvar i = 0; i < NM; i++) begin : g_m
     axi4_sva #(.NAME($sformatf("m_%0d", i))) u_sva (m_if[i]);
@@ -81,6 +82,46 @@ module chi_mesh_soc_tb_top;
     .txreq_valid(cpu1_shim_txreq_valid), .txreq_ready(cpu1_shim_txreq_ready), .txreq_flit(cpu1_shim_txreq_flit), .txrsp_valid(cpu1_shim_txrsp_valid), .txrsp_ready(cpu1_shim_txrsp_ready), .txrsp_flit(cpu1_shim_txrsp_flit), .txdat_valid(cpu1_shim_txdat_valid), .txdat_ready(cpu1_shim_txdat_ready), .txdat_flit(cpu1_shim_txdat_flit), .rxrsp_valid(cpu1_shim_rxrsp_valid), .rxrsp_flit(cpu1_shim_rxrsp_flit), .rxdat_valid(cpu1_shim_rxdat_valid), .rxdat_flit(cpu1_shim_rxdat_flit), .rxsnp_valid(cpu1_shim_rxsnp_valid), .rxsnp_flit(cpu1_shim_rxsnp_flit));
   assign m_if[M_CPU1].bid[7:ID_WIDTH] = '0;
   assign m_if[M_CPU1].rid[7:ID_WIDTH] = '0;
+  logic [ID_WIDTH-1:0] dma_shim_awid;
+  logic [31:0] dma_shim_awaddr;
+  logic [7:0] dma_shim_awlen;
+  logic [2:0] dma_shim_awsize;
+  logic [1:0] dma_shim_awburst;
+  logic [2:0] dma_shim_awprot;
+  logic [2:0] dma_shim_awsnoop;
+  logic [1:0] dma_shim_awdomain;
+  logic [1:0] dma_shim_awbar;
+  logic dma_shim_awvalid;
+  logic dma_shim_awready;
+  logic [31:0] dma_shim_wdata;
+  logic [3:0] dma_shim_wstrb;
+  logic dma_shim_wlast;
+  logic dma_shim_wvalid;
+  logic dma_shim_wready;
+  logic [ID_WIDTH-1:0] dma_shim_bid;
+  logic [1:0] dma_shim_bresp;
+  logic dma_shim_bvalid;
+  logic dma_shim_bready;
+  logic [ID_WIDTH-1:0] dma_shim_arid;
+  logic [31:0] dma_shim_araddr;
+  logic [7:0] dma_shim_arlen;
+  logic [2:0] dma_shim_arsize;
+  logic [1:0] dma_shim_arburst;
+  logic [2:0] dma_shim_arprot;
+  logic [3:0] dma_shim_arsnoop;
+  logic [1:0] dma_shim_ardomain;
+  logic [1:0] dma_shim_arbar;
+  logic dma_shim_arvalid;
+  logic dma_shim_arready;
+  logic [ID_WIDTH-1:0] dma_shim_rid;
+  logic [31:0] dma_shim_rdata;
+  logic [1:0] dma_shim_rresp;
+  logic dma_shim_rlast;
+  logic dma_shim_rvalid;
+  logic dma_shim_rready;
+  noc_axi2acelite #(.IDW(ID_WIDTH)) u_dma_shim (.clk(aclk), .rst_n(aresetn),
+    .s_awid(m_if[M_DMA].awid[ID_WIDTH-1:0]), .s_awaddr(m_if[M_DMA].awaddr), .s_awlen(m_if[M_DMA].awlen), .s_awsize(m_if[M_DMA].awsize), .s_awburst(m_if[M_DMA].awburst), .s_awprot(m_if[M_DMA].awprot), .s_awvalid(m_if[M_DMA].awvalid), .s_awready(m_if[M_DMA].awready), .s_wdata(m_if[M_DMA].wdata), .s_wstrb(m_if[M_DMA].wstrb), .s_wlast(m_if[M_DMA].wlast), .s_wvalid(m_if[M_DMA].wvalid), .s_wready(m_if[M_DMA].wready), .s_bid(m_if[M_DMA].bid[ID_WIDTH-1:0]), .s_bresp(m_if[M_DMA].bresp), .s_bvalid(m_if[M_DMA].bvalid), .s_bready(m_if[M_DMA].bready), .s_arid(m_if[M_DMA].arid[ID_WIDTH-1:0]), .s_araddr(m_if[M_DMA].araddr), .s_arlen(m_if[M_DMA].arlen), .s_arsize(m_if[M_DMA].arsize), .s_arburst(m_if[M_DMA].arburst), .s_arprot(m_if[M_DMA].arprot), .s_arvalid(m_if[M_DMA].arvalid), .s_arready(m_if[M_DMA].arready), .s_rid(m_if[M_DMA].rid[ID_WIDTH-1:0]), .s_rdata(m_if[M_DMA].rdata), .s_rresp(m_if[M_DMA].rresp), .s_rlast(m_if[M_DMA].rlast), .s_rvalid(m_if[M_DMA].rvalid), .s_rready(m_if[M_DMA].rready),
+    .awid(dma_shim_awid), .awaddr(dma_shim_awaddr), .awlen(dma_shim_awlen), .awsize(dma_shim_awsize), .awburst(dma_shim_awburst), .awprot(dma_shim_awprot), .awsnoop(dma_shim_awsnoop), .awdomain(dma_shim_awdomain), .awbar(dma_shim_awbar), .awvalid(dma_shim_awvalid), .awready(dma_shim_awready), .wdata(dma_shim_wdata), .wstrb(dma_shim_wstrb), .wlast(dma_shim_wlast), .wvalid(dma_shim_wvalid), .wready(dma_shim_wready), .bid(dma_shim_bid), .bresp(dma_shim_bresp), .bvalid(dma_shim_bvalid), .bready(dma_shim_bready), .arid(dma_shim_arid), .araddr(dma_shim_araddr), .arlen(dma_shim_arlen), .arsize(dma_shim_arsize), .arburst(dma_shim_arburst), .arprot(dma_shim_arprot), .arsnoop(dma_shim_arsnoop), .ardomain(dma_shim_ardomain), .arbar(dma_shim_arbar), .arvalid(dma_shim_arvalid), .arready(dma_shim_arready), .rid(dma_shim_rid), .rdata(dma_shim_rdata), .rresp(dma_shim_rresp), .rlast(dma_shim_rlast), .rvalid(dma_shim_rvalid), .rready(dma_shim_rready));
   assign m_if[M_DMA].bid[7:ID_WIDTH] = '0;
   assign m_if[M_DMA].rid[7:ID_WIDTH] = '0;
   logic mcu_shim_hsel;
@@ -102,6 +143,12 @@ module chi_mesh_soc_tb_top;
   assign mcu_shim_hready = mcu_shim_hreadyout;
   assign m_if[M_MCU].bid[7:ID_WIDTH] = '0;
   assign m_if[M_MCU].rid[7:ID_WIDTH] = '0;
+  // ---------------- CHI coherence invariant (single writer, many readers) ----------------
+  for (genvar i = 0; i < noc_cfg_pkg::CHI_LINES; i++) begin : g_swmr
+    a_swmr: assert property (@(posedge aclk) disable iff (!aresetn) !(
+      (u_cpu0_shim.cs[i] != 2'd0 && u_cpu1_shim.cs[i] != 2'd0 && u_cpu0_shim.ctag[i] == u_cpu1_shim.ctag[i] && (u_cpu0_shim.cs[i][1] || u_cpu1_shim.cs[i][1]))))
+      else $error("coherence: line entry %0d is unique (UC / UD) in one RN-F and valid in another", i);
+  end
   assign s_if[S_DDR0].awid[7:ID_WIDTH] = '0;
   assign s_if[S_DDR0].arid[7:ID_WIDTH] = '0;
   assign s_if[S_DDR0].awlock = 1'b0;
@@ -176,37 +223,43 @@ module chi_mesh_soc_tb_top;
     .cpu1_rxdat_flit(cpu1_shim_rxdat_flit),
     .cpu1_rxsnp_valid(cpu1_shim_rxsnp_valid),
     .cpu1_rxsnp_flit(cpu1_shim_rxsnp_flit),
-    .dma_awid(m_if[M_DMA].awid[ID_WIDTH-1:0]),
-    .dma_awaddr(m_if[M_DMA].awaddr),
-    .dma_awlen(m_if[M_DMA].awlen),
-    .dma_awsize(m_if[M_DMA].awsize),
-    .dma_awburst(m_if[M_DMA].awburst),
-    .dma_awprot(m_if[M_DMA].awprot),
-    .dma_awvalid(m_if[M_DMA].awvalid),
-    .dma_awready(m_if[M_DMA].awready),
-    .dma_wdata(m_if[M_DMA].wdata),
-    .dma_wstrb(m_if[M_DMA].wstrb),
-    .dma_wlast(m_if[M_DMA].wlast),
-    .dma_wvalid(m_if[M_DMA].wvalid),
-    .dma_wready(m_if[M_DMA].wready),
-    .dma_bid(m_if[M_DMA].bid[ID_WIDTH-1:0]),
-    .dma_bresp(m_if[M_DMA].bresp),
-    .dma_bvalid(m_if[M_DMA].bvalid),
-    .dma_bready(m_if[M_DMA].bready),
-    .dma_arid(m_if[M_DMA].arid[ID_WIDTH-1:0]),
-    .dma_araddr(m_if[M_DMA].araddr),
-    .dma_arlen(m_if[M_DMA].arlen),
-    .dma_arsize(m_if[M_DMA].arsize),
-    .dma_arburst(m_if[M_DMA].arburst),
-    .dma_arprot(m_if[M_DMA].arprot),
-    .dma_arvalid(m_if[M_DMA].arvalid),
-    .dma_arready(m_if[M_DMA].arready),
-    .dma_rid(m_if[M_DMA].rid[ID_WIDTH-1:0]),
-    .dma_rdata(m_if[M_DMA].rdata),
-    .dma_rresp(m_if[M_DMA].rresp),
-    .dma_rlast(m_if[M_DMA].rlast),
-    .dma_rvalid(m_if[M_DMA].rvalid),
-    .dma_rready(m_if[M_DMA].rready),
+    .dma_awid(dma_shim_awid),
+    .dma_awaddr(dma_shim_awaddr),
+    .dma_awlen(dma_shim_awlen),
+    .dma_awsize(dma_shim_awsize),
+    .dma_awburst(dma_shim_awburst),
+    .dma_awprot(dma_shim_awprot),
+    .dma_awsnoop(dma_shim_awsnoop),
+    .dma_awdomain(dma_shim_awdomain),
+    .dma_awbar(dma_shim_awbar),
+    .dma_awvalid(dma_shim_awvalid),
+    .dma_awready(dma_shim_awready),
+    .dma_wdata(dma_shim_wdata),
+    .dma_wstrb(dma_shim_wstrb),
+    .dma_wlast(dma_shim_wlast),
+    .dma_wvalid(dma_shim_wvalid),
+    .dma_wready(dma_shim_wready),
+    .dma_bid(dma_shim_bid),
+    .dma_bresp(dma_shim_bresp),
+    .dma_bvalid(dma_shim_bvalid),
+    .dma_bready(dma_shim_bready),
+    .dma_arid(dma_shim_arid),
+    .dma_araddr(dma_shim_araddr),
+    .dma_arlen(dma_shim_arlen),
+    .dma_arsize(dma_shim_arsize),
+    .dma_arburst(dma_shim_arburst),
+    .dma_arprot(dma_shim_arprot),
+    .dma_arsnoop(dma_shim_arsnoop),
+    .dma_ardomain(dma_shim_ardomain),
+    .dma_arbar(dma_shim_arbar),
+    .dma_arvalid(dma_shim_arvalid),
+    .dma_arready(dma_shim_arready),
+    .dma_rid(dma_shim_rid),
+    .dma_rdata(dma_shim_rdata),
+    .dma_rresp(dma_shim_rresp),
+    .dma_rlast(dma_shim_rlast),
+    .dma_rvalid(dma_shim_rvalid),
+    .dma_rready(dma_shim_rready),
     .mcu_hsel(mcu_shim_hsel),
     .mcu_haddr(mcu_shim_haddr),
     .mcu_htrans(mcu_shim_htrans),
@@ -357,7 +410,7 @@ module chi_mesh_soc_tb_top;
 
   // ---------------- APB subsystem on S_PERIPH ----------------
 
-  logic [1:0] apb_irq;
+  logic [2:0] apb_irq;
   chi_mesh_soc_apb_subsys u_apb (
     .clk(aclk), .rst_n(aresetn),
     .awid(s_if[S_PERIPH].awid),
@@ -391,6 +444,10 @@ module chi_mesh_soc_tb_top;
     .rlast(s_if[S_PERIPH].rlast),
     .rvalid(s_if[S_PERIPH].rvalid),
     .rready(s_if[S_PERIPH].rready),
+    .ext_paddr(apb_ext_if.paddr), .ext_psel(apb_ext_if.psel), .ext_penable(apb_ext_if.penable),
+    .ext_pwrite(apb_ext_if.pwrite), .ext_pwdata(apb_ext_if.pwdata), .ext_pstrb(apb_ext_if.pstrb),
+    .ext_pprot(apb_ext_if.pprot), .ext_prdata(apb_ext_if.prdata), .ext_pready(apb_ext_if.pready),
+    .ext_pslverr(apb_ext_if.pslverr),
     .irq(apb_irq)
   );
 
@@ -408,7 +465,7 @@ module chi_mesh_soc_tb_top;
     @(posedge aclk);
     force u_apb.u_gpio.irq = 1'b1;
     repeat (2) @(posedge aclk);
-    if (apb_irq !== 2'(1) << 0)
+    if (apb_irq !== 3'(1) << 0)
       `uvm_error("IRQ_ROUTE", $sformatf("gpio interrupt: apb_irq = 'b%b, expected only bit 0", apb_irq))
     force u_apb.u_gpio.irq = 1'b0;
     repeat (2) @(posedge aclk);
@@ -416,7 +473,7 @@ module chi_mesh_soc_tb_top;
       `uvm_error("IRQ_ROUTE", $sformatf("gpio interrupt released: apb_irq = 'b%b", apb_irq))
     force u_apb.u_uart.irq = 1'b1;
     repeat (2) @(posedge aclk);
-    if (apb_irq !== 2'(1) << 1)
+    if (apb_irq !== 3'(1) << 1)
       `uvm_error("IRQ_ROUTE", $sformatf("uart interrupt: apb_irq = 'b%b, expected only bit 1", apb_irq))
     force u_apb.u_uart.irq = 1'b0;
     repeat (2) @(posedge aclk);
@@ -426,6 +483,8 @@ module chi_mesh_soc_tb_top;
     release u_apb.u_uart.irq;
     `uvm_info("IRQ_ROUTE", "2 IP interrupts reach their apb_irq bits", UVM_LOW)
   end
+  apb_sva #(.NAME("apb_ext")) u_apb_ext_sva (apb_ext_if);
+  initial uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top.env.apb_ext.*", "vif", apb_ext_if);
 
   initial begin
     if ($test$plusargs("VCD")) begin

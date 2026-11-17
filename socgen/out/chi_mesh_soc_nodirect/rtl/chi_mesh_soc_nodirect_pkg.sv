@@ -85,11 +85,12 @@ package chi_mesh_soc_nodirect_pkg;
   localparam int APB_NSLOTS = 16;            // slots in the window
   localparam int APB_SLOT_GPIO = 0;   // 0x10000000 ip GPIO
   localparam int APB_SLOT_UART = 1;   // 0x10001000 ip UART
-  localparam int APB_NMAPPED = 2;
-  localparam int APB_MAPPED_SLOT [APB_NMAPPED] = '{ 0, 1 };
-  localparam string APB_SLOT_NAME [APB_NMAPPED] = '{ "gpio", "uart" };
+  localparam int APB_SLOT_EXT = 2;   // 0x10002000 vip apb vip
+  localparam int APB_NMAPPED = 3;
+  localparam int APB_MAPPED_SLOT [APB_NMAPPED] = '{ 0, 1, 2 };
+  localparam string APB_SLOT_NAME [APB_NMAPPED] = '{ "gpio", "uart", "ext" };
   // ID register value per mapped slot (0: no ID register)
-  localparam logic [31:0] APB_SLOT_ID [APB_NMAPPED] = '{ 32'h47500200, 32'h55410200 };
+  localparam logic [31:0] APB_SLOT_ID [APB_NMAPPED] = '{ 32'h47500200, 32'h55410200, 32'h00000000 };
   function automatic int apb_slot_of(logic [31:0] a);
     return int'((a - APB_BASE) >> 12);
   endfunction
@@ -148,7 +149,7 @@ package chi_mesh_soc_nodirect_pkg;
   localparam bit M_IS_RTL [NM] = '{ 1'b0, 1'b0, 1'b0, 1'b0 };
 
   // ---------------- AMBA protocol of each NoC port (noc.model: mesh) ----------------
-  localparam string M_PROTO [NM] = '{ "chi", "chi", "axi4", "ahb" };
+  localparam string M_PROTO [NM] = '{ "chi", "chi", "ace_lite", "ahb" };
   localparam string S_PROTO [NS] = '{ "axi4", "axi4", "axi4", "apb", "axi4" };
   // slave ports inside the memory the CHI home keeps coherent (chi.coherent)
   localparam bit S_COH [NS+1] = '{ 1, 1, 0, 0, 0, 0 };
