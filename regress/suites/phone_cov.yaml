@@ -1,0 +1,13 @@
+# Coverage-closure suite of the hand-written phone SoC bench (tb/phone/phone_cov_test.svh):
+# every master on every channel and on SRAM, APB and the default slave, all IDs,
+# AxPROT and burst shapes, address-bit walks, IOMMU registers, TLB, faults and
+# counters, APB error slots. Scored by scripts/cov/phone_cov.sh.
+name: phone_cov
+level: soc
+soc: phone
+description: Coverage closure stimulus for the phone SoC glue (NoC, IOMMUs, APB fabric).
+filelist: sim/phone.f
+top: phone_tb_top
+pass_markers: [SB_PASS]
+timeout: 5400
+list: regress/lists/phone_cov.txt

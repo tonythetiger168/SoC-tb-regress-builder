@@ -1,0 +1,24 @@
+# coverage list of the hand-written phone bench: <tb> <test> <seeds> [plusargs]
+phone phone_smoke_test       5
+phone phone_camera_test      3
+phone phone_video_test       3
+phone phone_gaming_test      3
+phone phone_ai_test          3
+phone phone_stress_test      3
+phone phone_stress_test      2  +SOC_TIMING=2 +LP5_SPEED=0
+phone phone_iommu_test       8
+phone phone_iommu_test       2  +LP5_PAGE=1
+phone phone_lpddr5_test      2  +LP5_SPEED=0
+phone phone_lpddr5_test      2  +LP5_SPEED=1
+phone phone_lpddr5_test      2  +LP5_SPEED=2
+phone phone_lpddr5_test      2  +LP5_SPEED=3
+phone phone_lpddr5_test      2  +LP5_PAGE=1
+phone phone_lpddr5_test      2  +LP5_REF=1
+phone phone_ral_test         5
+phone phone_ral_test         2  +SOC_TIMING=2
+phone_real phone_ss_test          5
+phone_real phone_ss_test          2  +SS_LEN=1024
+phone_real phone_ss_test          2  +SOC_TIMING=2 +LP5_SPEED=0
+phone_real phone_ral_test         2
+phone phone_cov_test         1
+phone_real phone_ss_cov_test      1  +SS_PINS

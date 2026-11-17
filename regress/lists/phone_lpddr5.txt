@@ -1,0 +1,2 @@
+phone_lpddr5_test      1
+phone_lpddr5_test      1  +LP5_SPEED=0 +LP5_PAGE=1 +LP5_REF=1

@@ -1,0 +1,7 @@
+# test                 seeds  plusargs
+phone_smoke_test       2
+phone_camera_test      1
+phone_video_test       1
+phone_gaming_test      1
+phone_ai_test          1
+phone_stress_test      1
