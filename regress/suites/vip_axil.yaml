@@ -1,0 +1,8 @@
+# AXI4-Lite VIP self-test: master <-> memory-backed slave over axil_if
+name: vip_axil
+level: vip
+soc: vip
+description: Loopback self-test of the AXI4-Lite VIP (master, slave, monitor, SVA).
+filelist: sim/axil.f
+top: axil_tb
+list: {default: regress/lists/vip_axil.txt, nightly: regress/lists/vip_axil_nightly.txt}

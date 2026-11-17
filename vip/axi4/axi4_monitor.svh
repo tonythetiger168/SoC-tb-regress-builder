@@ -34,7 +34,7 @@ class axi4_monitor extends uvm_monitor;
       `uvm_fatal("NOCFG", {get_full_name(), ": axi4_cfg not set"})
   endfunction
 
-  protected function void flush();
+  protected function void flush_state();
     aw_q.delete(); b_wait_q.delete(); r_wait_q.delete(); r_beat.delete();
     w_data.delete(); w_strb.delete();
     w_early_data.delete(); w_early_strb.delete();
@@ -61,7 +61,7 @@ class axi4_monitor extends uvm_monitor;
     forever begin
       @(vif.mon_cb);
       if (vif.aresetn !== 1'b1) begin
-        flush();
+        flush_state();
         continue;
       end
       // ---- AW ----
