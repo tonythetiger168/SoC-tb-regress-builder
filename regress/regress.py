@@ -56,7 +56,8 @@ try:
 except ImportError:  # pragma: no cover
     yaml = None
 
-LEGACY_TB = {"soc": ("sim/soc.f", "soc_tb_top"), "vip": ("sim/vip.f", "vip_tb_top")}
+LEGACY_TB = {"soc": ("sim/soc.f", "soc_tb_top"), "vip": ("sim/vip.f", "vip_tb_top"),
+             "axil": ("sim/axil.f", "axil_tb")}
 DEFAULT_PASS = ["SB_PASS", "RAL_PASS"]
 
 
