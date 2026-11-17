@@ -145,6 +145,54 @@ together (CI shards, several nights, a local run plus CI). CI
 three parallel jobs and merges them into one `regress_cumulative` artifact; the
 nightly schedule uses the `nightly` profile.
 
+## Tiled many-core SoCs (`socgen` manycore specs)
+
+A spec with a `manycore:` section describes an OpenPiton-style chip instead of
+an AMBA SoC: an X x Y mesh of tiles, each with a RISC-V core, private RAM, a
+write-through L1, a slice of the shared L2 with a limited-pointer coherence
+directory, and three NoC routers (requests; data, acks and invalidations;
+invalidation acks). The cores talk to each other through coherent shared
+memory: every core runs rounds of computation, a barrier and an exchange
+with tiles i+1 and i+X.
+
+```sh
+python3 socgen/socgen.py socgen/specs/manycore_4x4.yaml --minisim-root ../minisim
+make build TB=manycore_4x4
+make run TB=manycore_4x4 TEST=manycore_4x4_random_test SEED=3
+make regress SUITE=manycore_4x4
+```
+
+The RTL comes from minisim's `bench/gen_manycore.py`, so one generator serves
+both projects (`--minisim-root` or `MINISIM_ROOT`; the generated RTL is checked
+in under `socgen/out/`, so building does not need minisim). The default core
+is `mcrv`, a small RV32I core of minisim's; `picorv32`, `femtorv32`, `cva6`
+(OpenHW CVA6) or mixes need their sources in `manycore.core_files`.
+`socgen/lib/manycore.py` writes the UVM bench:
+
+* **NoC monitor**: probes on every tile's local router ports. Functional
+  coverage (`FCOV`) of message types per network, request hop counts, which
+  L2 slice serves requests, and invalidation fan-out per write (none, one,
+  two up to the pointer count, broadcast). One latency sample per request
+  (`LAT T<tile> L2_<home> R|W <cycles>`), so the report's heatmap is
+  requesting tile x home slice.
+* **Scoreboard**: a SystemVerilog model of the program. At the end it reads
+  every core's final value out of the L2 slices and compares it, plus the
+  checksum core 0 computed: N + N + 1 checks, `SB_PASS checks=<n>`.
+* **Tests**: the test writes the program's round count and work per round
+  into every tile's RAM before reset, so seeds vary the run.
+
+| Test | Rounds / work |
+|---|---|
+| `<soc>_smoke_test` | 2 / 8 |
+| `<soc>_random_test` | 1-6 / 1-64 per seed |
+| `<soc>_barrier_test` | 8 / 1: barriers and invalidations back to back |
+| `<soc>_long_test` | 4 / 96: most cores wait while the slowest compute |
+
+`+MC_ROUNDS=` and `+MC_WORK=` override them. Specs: `manycore_4x4` (in the
+default regression) and `manycore_8x8` (64 tiles, `make regress
+SUITE=manycore_8x8`). On Verilator 5.054 all four tests pass on 4x4
+(66 checks each).
+
 ## Results
 
 On Verilator 5.052, the default profile passes 36/36 runs over 6 suites and
