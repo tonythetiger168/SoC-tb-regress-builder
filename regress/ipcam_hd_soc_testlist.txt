@@ -3,3 +3,4 @@ ipcam_hd_soc ipcam_hd_soc_smoke_test 1
 ipcam_hd_soc ipcam_hd_soc_ral_test 1
 ipcam_hd_soc ipcam_hd_soc_path_latency_test 1
 ipcam_hd_soc ipcam_hd_soc_traffic_test 3
+ipcam_hd_soc ipcam_hd_soc_cov_test 1

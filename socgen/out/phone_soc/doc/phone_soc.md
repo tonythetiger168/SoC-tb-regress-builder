@@ -30,7 +30,7 @@ NoC: mesh 4x4, XY routing, one way = 2*1 + (hops+1)*1 + hops*1 cycles, clock 2.0
 | 11 | 0x1000B000 | iommu_venc_regs | register_blocks.iommu | 0x494F0100 |
 | 12 | 0x1000C000 | iommu_disp_regs | register_blocks.iommu | 0x494F0100 |
 
-open-ip-portfolio commit `359f40a67051a7da5dba4d0bf57c01e67bdcf2fa`.
+open-ip-portfolio commit `35cc545ed27330e451ea432d76f94e2dc4db8c47`.
 
 ## Placement
 

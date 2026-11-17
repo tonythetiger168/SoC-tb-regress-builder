@@ -4,7 +4,8 @@
 // ----------------------------------------------------------------------------
 // Checks, per channel: no X on VALID out of reset, VALID held until READY,
 // payload stable while VALID && !READY. Plus: VALIDs low during reset, no
-// reserved burst type, WRAP length 2/4/8/16, bursts do not cross 4 KB.
+// reserved burst type, WRAP length 2/4/8/16, FIXED at most 16 beats, bursts
+// do not cross 4 KB. Cover properties show each antecedent occurred.
 // Failures are reported through UVM (`uvm_error) so they fail the test.
 // ============================================================================
 `ifndef AXI4_SVA_SV
@@ -72,13 +73,29 @@ module axi4_sva #(parameter string NAME = "axi4") (axi4_if vif);
   aw_burst_legal: assert property (@(posedge clk) disable iff (!rst_n)
                     vif.awvalid |-> (vif.awburst != 2'b11) &&
                                     (vif.awburst != 2'b10 || vif.awlen inside {8'd1, 8'd3, 8'd7, 8'd15}) &&
+                                    (vif.awburst != 2'b00 || vif.awlen <= 8'd15) &&
                                     !crosses_4k(vif.awaddr, vif.awlen, vif.awsize, vif.awburst))
-    else `uvm_error({NAME, "_SVA"}, "illegal AW burst (reserved type, WRAP length or 4 KB crossing)");
+    else `uvm_error({NAME, "_SVA"}, "illegal AW burst (reserved type, WRAP/FIXED length or 4 KB crossing)");
 
   ar_burst_legal: assert property (@(posedge clk) disable iff (!rst_n)
                     vif.arvalid |-> (vif.arburst != 2'b11) &&
                                     (vif.arburst != 2'b10 || vif.arlen inside {8'd1, 8'd3, 8'd7, 8'd15}) &&
+                                    (vif.arburst != 2'b00 || vif.arlen <= 8'd15) &&
                                     !crosses_4k(vif.araddr, vif.arlen, vif.arsize, vif.arburst))
-    else `uvm_error({NAME, "_SVA"}, "illegal AR burst (reserved type, WRAP length or 4 KB crossing)");
+    else `uvm_error({NAME, "_SVA"}, "illegal AR burst (reserved type, WRAP/FIXED length or 4 KB crossing)");
+
+  // ---- coverage: every assertion's antecedent occurs (no vacuous pass) ----
+  c_aw_wait:  cover property (@(posedge clk) disable iff (!rst_n) vif.awvalid && !vif.awready);
+  c_w_wait:   cover property (@(posedge clk) disable iff (!rst_n) vif.wvalid && !vif.wready);
+  c_b_wait:   cover property (@(posedge clk) disable iff (!rst_n) vif.bvalid && !vif.bready);
+  c_ar_wait:  cover property (@(posedge clk) disable iff (!rst_n) vif.arvalid && !vif.arready);
+  c_r_wait:   cover property (@(posedge clk) disable iff (!rst_n) vif.rvalid && !vif.rready);
+  c_in_reset: cover property (@(posedge clk) !rst_n);
+  c_aw_fixed: cover property (@(posedge clk) disable iff (!rst_n) vif.awvalid && vif.awburst == 2'b00);
+  c_aw_incr:  cover property (@(posedge clk) disable iff (!rst_n) vif.awvalid && vif.awburst == 2'b01);
+  c_aw_wrap:  cover property (@(posedge clk) disable iff (!rst_n) vif.awvalid && vif.awburst == 2'b10);
+  c_ar_fixed: cover property (@(posedge clk) disable iff (!rst_n) vif.arvalid && vif.arburst == 2'b00);
+  c_ar_incr:  cover property (@(posedge clk) disable iff (!rst_n) vif.arvalid && vif.arburst == 2'b01);
+  c_ar_wrap:  cover property (@(posedge clk) disable iff (!rst_n) vif.arvalid && vif.arburst == 2'b10);
 endmodule
 `endif

@@ -1,0 +1,8 @@
+# VIP self-tests: AXI4 master <-> memory slave, APB requester <-> completer
+name: vip_selftest
+level: vip
+soc: vip
+description: Loopback self-tests that check the AXI4 and APB VIPs against each other.
+filelist: sim/vip.f
+top: vip_tb_top
+list: {default: regress/lists/vip_selftest.txt, nightly: regress/lists/vip_selftest_nightly.txt}

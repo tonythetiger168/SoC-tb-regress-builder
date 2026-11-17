@@ -13,10 +13,13 @@ rtl/soc/soc_axi_ic.sv
 rtl/soc/axi2apb_bridge.sv
 rtl/soc/apb_decoder.sv
 rtl/soc/amba_soc_top.sv
+tb/soc/soc_ctl_if.sv
 vip/axi4/axi4_if.sv
 vip/apb/apb_if.sv
 vip/axi4/axi4_sva.sv
 vip/apb/apb_sva.sv
+vip/common/fcov_pkg.sv
+vip/common/lat_pkg.sv
 vip/mem/mem_vip_pkg.sv
 vip/axi4/axi4_pkg.sv
 vip/apb/apb_pkg.sv

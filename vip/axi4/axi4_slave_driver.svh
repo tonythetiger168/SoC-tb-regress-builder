@@ -52,6 +52,7 @@ class axi4_slave_driver extends uvm_component;
 
   task aw_thread();
     forever begin
+      if (cfg.ready_after_valid) while (vif.slv_cb.awvalid !== 1'b1) @(vif.slv_cb);
       repeat (axi4_cfg::rand_delay(cfg.max_aready_delay)) @(vif.slv_cb);
       vif.slv_cb.awready <= 1'b1;
       do @(vif.slv_cb); while (!(vif.slv_cb.awvalid === 1'b1 && vif.awready === 1'b1));
@@ -67,6 +68,10 @@ class axi4_slave_driver extends uvm_component;
       t.resp[0] = cfg.resp_for(t.addr);
       for (int unsigned i = 0; i < t.beats(); i++) begin
         int unsigned d = axi4_cfg::rand_delay(cfg.max_wready_delay);
+        if (cfg.ready_after_valid) begin
+          vif.slv_cb.wready <= 1'b0;
+          do @(vif.slv_cb); while (vif.slv_cb.wvalid !== 1'b1);
+        end
         if (d) begin
           vif.slv_cb.wready <= 1'b0;
           repeat (d) @(vif.slv_cb);
@@ -94,10 +99,8 @@ class axi4_slave_driver extends uvm_component;
     axi4_item t;
     forever begin
       b_mb.get(t);
-      // re-synchronize: a clocking drive issued right after a mailbox wakeup
-      // only matures one edge later, which merged back-to-back B responses
-      // into one handshake when the master held BREADY high
-      @(vif.slv_cb);
+      @(vif.slv_cb);                       // re-sync after the mailbox wakeup
+      repeat (cfg.access_latency) @(vif.slv_cb);
       repeat (axi4_cfg::rand_delay(cfg.max_b_latency)) @(vif.slv_cb);
       vif.slv_cb.bid    <= t.id;
       vif.slv_cb.bresp  <= t.resp[0];
@@ -110,6 +113,7 @@ class axi4_slave_driver extends uvm_component;
   task ar_thread();
     forever begin
       axi4_item t;
+      if (cfg.ready_after_valid) while (vif.slv_cb.arvalid !== 1'b1) @(vif.slv_cb);
       repeat (axi4_cfg::rand_delay(cfg.max_aready_delay)) @(vif.slv_cb);
       vif.slv_cb.arready <= 1'b1;
       do @(vif.slv_cb); while (!(vif.slv_cb.arvalid === 1'b1 && vif.arready === 1'b1));
@@ -128,8 +132,9 @@ class axi4_slave_driver extends uvm_component;
     forever begin
       axi4_resp_e rsp;
       ar_mb.get(t);
-      @(vif.slv_cb);                   // re-synchronize (see b_thread)
+      @(vif.slv_cb);                       // re-sync after the mailbox wakeup
       rsp = cfg.resp_for(t.addr);
+      repeat (cfg.access_latency) @(vif.slv_cb);
       repeat (axi4_cfg::rand_delay(cfg.max_r_latency)) @(vif.slv_cb);
       for (int unsigned i = 0; i < t.beats(); i++) begin
         int unsigned g = (i == 0) ? 0 : axi4_cfg::rand_delay(cfg.max_rvalid_gap);

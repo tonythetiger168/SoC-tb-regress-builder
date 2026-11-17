@@ -9,6 +9,9 @@
 //                                   path; latency must be within ideal + slack
 //   phone_soc_traffic_test       every master runs its traffic profile at once
 //   phone_soc_scenario_test      +SCENARIO=<name>: the scenario's masters only
+//   phone_soc_cov_test           coverage closure: RAL bit-bash, every burst type,
+//                                   size and length class on every VIP master and
+//                                   every port, error responses, READY after VALID
 // Plusargs: +SOC_ITEMS=<n> bursts per master (default 50), +SOC_TIMING=0|1|2,
 // +SOC_LAT_STRICT (a missed latency_target is an error), +VCD.
 // ============================================================================
@@ -133,6 +136,7 @@ package phone_soc_test_pkg;
 
     task run_phase(uvm_phase phase);
       phase.raise_objection(this);
+      wait (dram_ready);
       #(20 * TCK * 1ns);
       body();
       #(50 * TCK * 1ns);
@@ -278,6 +282,219 @@ package phone_soc_test_pkg;
       if (scn < 0) `uvm_fatal("SCN", {"unknown scenario ", name})
       `uvm_info("SCN", {"scenario ", name}, UVM_LOW)
       super.body();
+    endtask
+  endclass
+  // ==========================================================================
+  // phone_soc_cov_test -- directed coverage closure of the generated RTL, the
+  // protocol checkers' cover properties and the agents' covergroups:
+  //  * RAL bit-bash of every testable register, every bit of WO registers both
+  //    ways, unmapped offsets of every mapped APB slot (PSLVERR)
+  //  * every VIP master and every NoC port at least once: FIXED / WRAP / narrow /
+  //    unaligned / partially strobed / long bursts (the APB port gets them on an
+  //    empty slot, which answers SLVERR), DECERR outside the map
+  //  * external APB completers: strobed writes, reads, their PSLVERR window
+  //  * READY only after VALID on both sides of the NoC, heavy back-pressure
+  class phone_soc_cov_test extends phone_soc_base_test;
+    `uvm_component_utils(phone_soc_cov_test)
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void configure(phone_soc_env_cfg c);
+      c.set_timing(2);
+      foreach (c.m_cfg[i]) c.m_cfg[i].ready_after_valid = 1;
+      foreach (c.s_cfg[i]) c.s_cfg[i].ready_after_valid = 1;
+      for (int i = 0; i < NAPB_VIP; i++) begin
+        logic [31:0] b = apb_vip_base(i);
+        c.apb_cfg_h[i].err_lo = b + 32'hF00;
+        c.apb_cfg_h[i].err_hi = b + 32'hFFF;
+      end
+    endfunction
+
+    function logic [31:0] apb_vip_base(int i);
+      foreach (APB_SLOT_NAME[k])
+        if (APB_SLOT_NAME[k] == APB_VIP_NAME[i]) return APB_BASE + (APB_MAPPED_SLOT[k] << 12);
+      return APB_BASE;
+    endfunction
+
+    // first (or last) empty APB slot (answers SLVERR), 0 when every slot is mapped
+    function logic [31:0] empty_slot(bit last = 0);
+      logic [31:0] r = 0;
+      for (int sl = 0; sl < APB_NSLOTS; sl++) begin
+        bit used = 0;
+        foreach (APB_MAPPED_SLOT[k]) if (APB_MAPPED_SLOT[k] == sl) used = 1;
+        if (!used && (last || r == 0)) r = APB_BASE + (sl << 12);
+      end
+      return r;
+    endfunction
+
+    task run_item(int mi, bit wr, logic [31:0] a, int beats, bit [2:0] size, axi4_burst_e burst,
+                  int partial = 0, int w_gap = 0);
+      axi4_item t = axi4_api::make(wr, a, beats, size, burst, 8'($urandom_range((1 << ID_WIDTH) - 1, 0)));
+      t.prot = 3'($urandom);
+      t.w_gap = w_gap;
+      // partial 1: random strobes; partial 2+k: beat i drops byte (i + k) % 4, so
+      // passes k = 0..3 set and clear every byte lane of every chunk word
+      if (partial == 1) foreach (t.strb[i]) t.strb[i] = t.lanes(i) & 4'($urandom_range(14, 1));
+      else if (partial > 1) foreach (t.strb[i]) t.strb[i] = t.lanes(i) & ~(4'h1 << ((i + partial - 2) % 4));
+      axi4_api::run(env.m_agent[mi].sqr, t);
+    endtask
+
+    // every burst shape, written then read back
+    // every burst shape, written then read back. AHB-Lite has no write strobes
+    // and only aligned transfers (noc_axi2ahb / noc_ahb2axi), so a path with an
+    // AHB master or slave gets no partial strobes and no unaligned word beats.
+    task shapes(int mi, logic [31:0] a, bit long_ok, bit ahb = 0);
+      for (int wr = 1; wr >= 0; wr--) begin
+        run_item(mi, wr, a,          4,  2, AXI4_FIXED);
+        run_item(mi, wr, a,          1,  2, AXI4_FIXED);
+        run_item(mi, wr, a,          16, 2, AXI4_FIXED);
+        run_item(mi, wr, a + 32'h8,  4,  2, AXI4_WRAP);
+        run_item(mi, wr, a + 32'h20, 16, 2, AXI4_WRAP);
+        run_item(mi, wr, a + 32'h41, 6,  0, AXI4_INCR, wr && !ahb);   // byte beats, unaligned start
+        run_item(mi, wr, a + 32'h82, 5,  1, AXI4_INCR, wr && !ahb);   // halfword beats
+        if (!ahb) run_item(mi, wr, a + 32'hC2, 3, 2, AXI4_INCR, wr);  // unaligned word start, partial strobes
+        if (long_ok) run_item(mi, wr, a + 32'h100, 64, 2, AXI4_INCR);
+      end
+    endtask
+
+    task body();
+      logic [31:0] hole = empty_slot();
+      // +cov_part=N runs one part only (0 or none: all), so a big bench can
+      // spread the test over several runs whose coverage merges: 1 RAL, burst
+      // shapes, APB ports; 2 / 3 mesh error and address walks of the even / odd
+      // masters; 4 mesh stress phases; 5 random link fill
+      int part = 0;
+      void'($value$plusargs("cov_part=%d", part));
+      env.noc.ready_after_valid = 1;
+      if (part <= 1) begin
+      ral_bash();
+      // every VIP master and every NoC port gets the burst shapes at least once:
+      // pair k = 0 .. max(masters, ports) - 1 -> (k-th VIP master, port k)
+      begin
+        int vm[$];
+        for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) vm.push_back(mi);
+        for (int k = 0; k < (vm.size() > NS ? vm.size() : NS); k++) begin
+          int si = k % NS;
+          // a port paired with an AHB / AXI4-Lite master (single beats only) also
+          // gets the shapes from a full AXI4 master
+          for (int pass = 0; pass < 2; pass++) begin
+            int mi = pass ? first_vip() : vm[k % vm.size()];
+            bit ahb = M_PROTO[mi] == "ahb" || S_PROTO[si] == "ahb";
+            if (pass && (k >= NS || M_PROTO[vm[k % vm.size()]] == "axi4" || M_PROTO[mi] != "axi4")) break;
+            if (S_KIND[si] == "apb_bridge") begin
+              if (hole != 0) shapes(mi, hole, 0, ahb);
+            end else if (S_KIND[si] != "periph") begin
+              shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 1, ahb);   // stays in its 4 KB granule
+            end
+            else begin                                      // RTL slave
+              shapes(mi, PATH_ADDR[mi][si] & ~32'hFFF, 0, ahb);
+              if (k < NS) rtl_slave_walk(mi, si);
+            end
+          end
+        end
+        if (HAS_UNMAPPED) foreach (vm[i]) begin
+          run_item(vm[i], 1, UNMAPPED_ADDR, 2, 2, AXI4_INCR);
+          run_item(vm[i], 0, UNMAPPED_ADDR, 2, 2, AXI4_INCR);
+        end
+      end
+      if (hole != 0) apb_port_stress(hole, empty_slot(1));
+      end
+      if (part <= 1) for (int i = 0; i < NAPB_VIP; i++) begin
+        logic [31:0] b = apb_vip_base(i);
+        int mi = first_vip();
+        axi4_item t;
+        for (int p = 0; p < 2; p++) begin               // every read-data bit both ways
+          axi4_resp_e r;
+          bit [31:0] d;
+          axi4_api::write32(env.m_agent[mi].sqr, b + 32'h80, p ? 32'h0 : 32'hFFFF_FFFF, r);
+          axi4_api::read32(env.m_agent[mi].sqr, b + 32'h80, d, r);
+        end
+        t = axi4_api::make(1, b + 32'h84, 1, 2, AXI4_INCR, 0);    // write with no byte strobe
+        t.strb[0] = 4'h0;
+        axi4_api::run(env.m_agent[mi].sqr, t);
+        for (int k = 0; k < 4; k++) begin
+          run_item(mi, 1, b + 32'h40 + 4 * k, 1, 2, AXI4_INCR, k[0]);
+          run_item(mi, 0, b + 32'h40 + 4 * k, 1, 2, AXI4_INCR);
+        end
+        run_item(mi, 1, b + 32'hF00, 1, 2, AXI4_INCR);          // PSLVERR window
+        run_item(mi, 0, b + 32'hF00, 1, 2, AXI4_INCR);
+      end
+      $display("COV_PASS");
+    endtask
+
+
+
+    // RTL slave port: every address bit of its window both ways, 256-beat bursts
+    task rtl_slave_walk(int mi, int si);
+      logic [31:0] base = S_BASE[si], size = 32'h1000;
+      size = rtl_slave_size(si);
+      for (int b = 2; (32'd1 << b) < size; b++) begin
+        run_item(mi, 0, base + (32'd1 << b), 1, 2, AXI4_INCR);
+        run_item(mi, 1, base + (32'd1 << b), 1, 2, AXI4_INCR);
+      end
+      run_item(mi, 0, base + size - 32'h400, 256, 2, AXI4_INCR);
+      run_item(mi, 1, base + size - 32'h400, 256, 2, AXI4_INCR);
+      run_item(mi, 0, base, 1, 2, AXI4_INCR);
+    endtask
+
+    function logic [31:0] rtl_slave_size(int si);
+      if (si == S_BOOT_SRAM) return 32'h00010000;
+      if (si == S_PERIPH) return 32'h00010000;
+      return 32'h1000;
+    endfunction
+
+    // first VIP master, preferring a full AXI4 one (strobes, unaligned beats)
+    function int first_vip();
+      for (int mi = 0; mi < NM; mi++) if (vip_master(mi) && M_PROTO[mi] == "axi4") return mi;
+      for (int mi = 0; mi < NM; mi++) if (vip_master(mi)) return mi;
+      return 0;
+    endfunction
+
+    // APB port: 256-beat bursts, and a read racing a write so the bridge is
+    // busy when the next request arrives (READY low while VALID)
+    task apb_port_stress(logic [31:0] hole, logic [31:0] hole_hi);
+      int ma = first_vip(), mb = -1;
+      for (int mi = ma + 1; mi < NM; mi++) if (mb < 0 && vip_master(mi)) mb = mi;
+      run_item(ma, 1, hole, 256, 2, AXI4_INCR);
+      run_item(ma, 0, hole, 256, 2, AXI4_INCR);
+      run_item(ma, 0, hole, 1, 2, AXI4_INCR);
+      run_item(ma, 1, hole_hi + 32'hFFC, 1, 2, AXI4_INCR);     // top slot and offset bits
+      run_item(ma, 0, hole_hi + 32'hFFC, 1, 2, AXI4_INCR);
+      if (mb < 0) return;
+      for (int k = 0; k < 32; k++) fork             // the second request arrives while the first runs
+        begin #((k % 16) * 3 * TCK * 1ns); run_item(ma, k < 16, hole, 4, 2, AXI4_INCR); end
+        run_item(mb, k >= 16, hole + 32'h40, 4, 2, AXI4_INCR);
+      join
+    endtask
+
+    // RAL: bit-bash every testable register, WO registers all-ones then zero,
+    // an unmapped offset of every mapped slot (PSLVERR)
+    task ral_bash();
+      uvm_reg_bit_bash_seq bb = uvm_reg_bit_bash_seq::type_id::create("bb");
+      uvm_reg regs[$];
+      uvm_status_e st;
+      bb.model = env.regmodel;
+      bb.start(null);
+      env.regmodel.get_registers(regs);
+      foreach (regs[i]) begin
+        uvm_reg_field f[$];
+        bit wo = 1;
+        regs[i].get_fields(f);
+        foreach (f[j]) if (f[j].get_access() != "WO") wo = 0;
+        if (!wo) continue;
+        regs[i].write(st, '1);
+        regs[i].write(st, '0);
+      end
+      foreach (regs[i]) begin                           // every register read once
+        uvm_reg_data_t v;
+        regs[i].read(st, v);
+      end
+      foreach (APB_MAPPED_SLOT[k]) begin
+        int mi = first_vip();
+        run_item(mi, 0, APB_BASE + (APB_MAPPED_SLOT[k] << 12) + 32'hFFC, 1, 2, AXI4_INCR);
+        run_item(mi, 1, APB_BASE + (APB_MAPPED_SLOT[k] << 12) + 32'hFFC, 1, 2, AXI4_INCR);
+      end
     endtask
   endclass
 endpackage

@@ -1,0 +1,15 @@
+# Subsystem suite of the 8K TV SoC: the 4x4 NoC mesh with its AXI4 network
+# interfaces, 12 masters x 12 slave ports (8 interleaved DRAM ports, boot SRAM,
+# APB, VDEC and GPU registers). Router: xuanji-core orca_noc_router, fetched
+# into ext/ by scripts/fetch_private_ip.sh; without it the open stand-in.
+name: tv8k_noc
+level: subsystem
+soc: tv8k
+subsystem: noc
+description: Every master to every slave port, random narrow/FIXED/WRAP bursts with DECERR holes, through the NoC mesh.
+filelist: sim/tv8k_noc.f
+top: tv8k_noc_tb_top
+list: {default: regress/lists/tv8k_noc.txt, nightly: regress/lists/tv8k_noc_nightly.txt}
+cov_include: ["*rtl/tv8k/*"]
+requires: [ext/xuanji-core/rtl/noc/orca_noc_router.sv]
+fallback: {filelist: sim/tv8k_noc_open.f}

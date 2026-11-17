@@ -10,8 +10,10 @@ class axi4_single_seq extends uvm_sequence #(axi4_item);
     super.new(name);
   endfunction
   task body();
+    item.done = 0;
     start_item(item);
     finish_item(item);
+    wait (item.done);                    // the driver may still be collecting the response
   endtask
 endclass
 
@@ -91,6 +93,7 @@ class axi4_random_seq extends uvm_sequence #(axi4_item);
       end else
         beats = (max_beats > 1 && $urandom_range(3, 0) == 0) ? $urandom_range(max_beats, 1) :
                 $urandom_range(max_beats < 4 ? max_beats : 4, 1);
+      if (burst == AXI4_FIXED && beats > 16) beats = 16;   // AXI4: FIXED is 1..16 beats
       span = (burst == AXI4_FIXED) ? nb : beats * nb;
       if (hi - lo + 1 < span) continue;
       a = lo + $urandom_range(hi - lo + 1 - span, 0);

@@ -1,0 +1,5 @@
+# amba SoC level: every master and target at once
+soc_smoke_test           1
+soc_concurrent_test      5
+soc_stress_test          5
+soc_concurrent_test      2  +SOC_TIMING=0

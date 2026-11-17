@@ -34,7 +34,7 @@ the SRAM, GPIO and UART are reused unchanged from
 
 | VIP | Contents |
 |---|---|
-| `vip/axi4` | `axi4_if`; `axi4_agent` in master role (driver + sequencer) or slave role (reactive memory responder); monitor (W-before-AW, several outstanding bursts, per-ID ordering); coverage; `axi4_sva` (VALID/READY handshake and payload stability, reset, WRAP length, 4 KB crossing); random burst sequence (FIXED/INCR/WRAP, narrow, unaligned, partial strobes) and directed `axi4_api` helpers |
+| `vip/axi4` | `axi4_if`; `axi4_agent` in master role (driver + sequencer) or slave role (reactive memory responder); monitor (W-before-AW, several outstanding bursts, per-ID ordering); coverage; latency recorder (`axi4_latency`); `axi4_sva` (VALID/READY handshake and payload stability, reset, WRAP length, 4 KB crossing); random burst sequence (FIXED/INCR/WRAP, narrow, unaligned, partial strobes) and directed `axi4_api` helpers |
 | `vip/apb`  | `apb_if`; `apb_agent` as requester (master), completer (slave, with random wait states and a PSLVERR window) or passive monitor; coverage; `apb_sva` (SETUP->ACCESS, stability while waiting, PSTRB on reads, X checks) |
 | `vip/axi4lite` | `axil_if`; `axil_agent` as master (AW/W in either order with skew, random BREADY/RREADY) or slave (memory responder with wait states and SLVERR/DECERR windows); monitor; coverage; `axil_sva`; `axil_scoreboard`; random sequence and directed `axil_api` helpers. Self-test: `make build TB=axil && make run TB=axil TEST=axil_loopback_test` |
 | `vip/mem`  | `mem_model`: sparse byte memory shared by the AXI4/APB responders, with bus-word access, backdoor peek/poke/fill/load/dump, and a deterministic init pattern for unwritten bytes so models can predict them |
@@ -70,6 +70,7 @@ every port, and `soc_scoreboard`, a reference model of the whole SoC:
 | `soc_decerr_test` | bursts into unmapped holes of the map |
 | `soc_concurrent_test` | both masters at once over every target |
 | `soc_stress_test` | concurrent traffic with heavy back-pressure on every channel |
+| `soc_cov_test` | directed coverage closure: AxPROT/IDs, address-bit toggles, 256-beat bursts, DDR DECERR window, long APB bursts, GPIO pins and IRQ, UART loopback, mid-test reset |
 
 Plusargs: `+SOC_ITEMS=<n>` (traffic per test), `+SOC_TIMING=0|1|2` (delay
 profile), `+VCD` (waveform dump). A run prints `SB_PASS checks=<n>` when the
@@ -83,28 +84,122 @@ export PATH=/opt/verilator-5.052/bin:$PATH
 
 make build                                  # ~2 min with Verilator (uvm-core is compiled in)
 make run TEST=soc_stress_test SEED=7
-make regress                                # regress/testlist.txt, all CPUs
-python3 regress/regress.py --list regress/nightly.txt --jobs 8
-python3 regress/regress.py --filter apb --seeds 20 --no-build
+make regress                                # every suite, merged coverage + latency report
+make regress PROFILE=nightly                # longer lists
+make regress LEVEL=subsystem SOC=amba       # or SUITE='amba_*'
+make suites                                 # list the suites
+python3 regress/regress.py --list regress/testlist.txt   # the old single-list mode still works
 ```
 
 `SIM=vcs|xrun|questa` switches simulator in the Makefile (those flows use the
-simulator's own UVM library and are not exercised by CI).
+simulator's own UVM library and are not exercised by CI; the regression runner
+drives them for the legacy `soc`/`vip` benches without code-coverage merging).
 
-The regression runner builds each testbench once, runs every `<test> x seed`
-in parallel and writes `regress_out/`: one log per run, `summary.csv`,
-`summary.md` and `junit.xml`. A run passes when the simulator exits cleanly,
-`UVM_ERROR` and `UVM_FATAL` are 0 and the scoreboard printed `SB_PASS`.
-CI (`.github/workflows/regress.yml`) runs the default list on every push and
-the nightly list on a schedule.
+## Regression suites and cumulative coverage
+
+Suites live in `regress/suites/*.yaml` (schema and bench contract:
+[regress/suites/README.md](regress/suites/README.md)). Each one has a level
+(`soc`, `subsystem` or `vip`), the SoC it belongs to, a bench (filelist + top)
+and a test list per profile. Today's suites:
+
+| Suite | Level | Tests |
+|---|---|---|
+| `amba_soc` | SoC | smoke, concurrent and stress traffic from both masters to every target |
+| `amba_sram` | subsystem `sram` | SRAM window and its edges |
+| `amba_ddr` | subsystem `ddr` | external DDR port bursts and error window |
+| `amba_apb` | subsystem `apb_periph` | AXI-to-APB bridge, GPIO, UART, external slot |
+| `amba_noc` | subsystem `interconnect` | address decode and DECERR |
+| `vip_selftest` | VIP | AXI4 and APB VIP loopbacks |
+
+The phone, 8K TV and IP-camera SoCs (generated from the common SoC spec) and
+the subsystem VIP benches from open-vip-portfolio join by adding their own
+suite files; nothing in the runner changes.
+
+What each run collects, and how it adds up:
+
+* **Code coverage**: benches are built with Verilator line, branch, toggle and
+  assertion coverage, limited to design RTL (`cov_include`, default `*rtl/*`).
+  Per-run `coverage.dat` files merge into each suite's, and suites merge per RTL
+  module and source line, so an IP exercised by its subsystem suite and by the
+  SoC suite is credited once with the union of both.
+* **Functional coverage**: coverage models count their bins through
+  `vip/common/fcov_pkg.sv` (`FCOV` lines; Verilator's own covergroup data is
+  reported alongside). Bins merge per bench and instance, and are also folded
+  per coverage model across all benches.
+* **Per-path latency**: `vip/common/lat_pkg.sv` takes one sample per completed
+  transaction (master, slave, R/W, cycles); `axi4_latency` feeds it from any AXI
+  master monitor. The report gives min/avg/p50/p95/p99/max per path with a
+  read/write split, a master x slave heatmap, per-path range bars and
+  histograms of the busiest paths.
+
+`regress_out/` then holds `index.html` (the cumulative dashboard: suites,
+roll-ups by level and by SoC, coverage by RTL module with the uncovered lines,
+functional coverage holes, latency charts), a page per suite with its runs and
+logs, `summary.md`, `summary.csv`, `junit.xml`, and `cumulative/` with the
+merged `coverage.dat` (feed it to `verilator_coverage --annotate`),
+`fcov.json` and `latency.json`.
+
+`regress/covmerge.py out1 out2 ... -o merged` adds several output directories
+together (CI shards, several nights, a local run plus CI). CI
+(`.github/workflows/regress.yml`) runs the SoC, subsystem and VIP suites as
+three parallel jobs and merges them into one `regress_cumulative` artifact; the
+nightly schedule uses the `nightly` profile.
 
 ## Results
 
-On Verilator 5.052: `regress/testlist.txt` passes 36/36 runs and
-`regress/nightly.txt` passes 136/136 runs (about 800,000 scoreboard checks).
+On Verilator 5.052, the default profile passes 36/36 runs over 6 suites and
+the nightly profile 136/136 runs (about 800,000 scoreboard checks). Cumulative
+coverage of the AMBA SoC RTL after the nightly profile: line 86.0%, branch
+75.5%, toggle 85.8%; functional bins 97.0% counted per coverage instance, and every bin of the AXI4
+and APB coverage models is hit by at least one instance. The SoC-level suite alone
+reaches 86.0% / 72.5% / 79.4%; adding the subsystem suites lifts branch and
+toggle coverage, which is the point of running both.
 As a sanity check of the checker itself, forcing the bridge's PSTRB to 4'hF or
 dropping the master bit from the DDR-port ID makes `soc_apb_test` and
 `soc_concurrent_test` fail.
+
+## Coverage
+
+```sh
+make cov                                    # = scripts/cov/run_cov.sh soc regress/testlist.txt
+```
+
+`scripts/cov/run_cov.sh` builds the bench with Verilator line/branch, toggle
+and user coverage plus assertions, runs the test list, merges the runs into
+`build/cov/<tb>/merged.dat` (annotated sources next to it) and scores it with
+`scripts/cov/score_cov.py`:
+
+* code coverage (line, branch, toggle) of the SoC RTL in `rtl/soc/`;
+* SVA coverage: the cover properties in `axi4_sva` / `apb_sva` (each
+  assertion's antecedent must occur on every checked port);
+* functional coverage: every covergroup bin of the AXI4 and APB agents.
+
+Points that cannot be reached are waived in `scripts/cov/exclude/soc.txt`, one
+regex per line with its reason; the score fails on any unhit point that is not
+waived and on a waiver that no longer matches anything. With the default list
+all five metrics are at 100% (line 36, branch 78, toggle 6436, SVA cover 46,
+covergroup bins 63; 302 points waived): AxSIZE[2] on a 32-bit bus, PADDR[31:16]
+inside the 64 KB APB window, RESP[0] of the APB bridge (OKAY/SLVERR only), the
+SRAM-side IDs the interconnect ties to 0, FSM `default:` arms, and the bridge's
+simulation-only WLAST-mismatch message, which the interconnect makes
+unreachable. The vendored peripherals in `rtl/ip/` (AXI4 SRAM, GPIO, UART) are
+closed at 100% by their own benches in open-ip-portfolio.
+
+The socgen benches have a generated `<soc>_cov_test` in their test lists and
+a generated waiver list, `socgen/out/<soc>/doc/<soc>_cov_waivers.txt`, which
+`run_cov.sh` reads next to `scripts/cov/exclude/<soc>.txt`:
+
+```sh
+make cov TB=mini_soc LIST=regress/mini_soc_testlist.txt
+```
+
+The score covers the generated SoC glue (`<soc>_apb_subsys`, the register
+files, the AXI-to-APB bridge), the SVA covers on every NoC port and the AXI4
+and APB covergroups. The IPs' own logic and their external pins are measured
+by their benches in open-ip-portfolio, so their pins are waived here. On
+Verilator 5.052 all five metrics reach 100% for `mini_soc`, `phone_soc`,
+`ipcam_soc` and `ipcam_hd_soc` (IPCAM measured on the traffic-model build, since the private
+codec and CPU repos are fetched at build time).
 
 ## Notes for Verilator users
 

@@ -241,6 +241,11 @@ endmodule
         self.assertRaisesRegex(SpecError, "out and oe go together", self._dev_spec,
                                {"model": "x", "files": ["x.sv"], "inout": [{"pin": "dat", "out": "q"}]})
 
+    def test_mesh_needs_four_vcs(self):
+        r = raw("mini_mesh_soc.yaml")
+        r["noc"]["num_vc"] = 2
+        self.assertRaisesRegex(SpecError, "noc.num_vc: 4", spec.elaborate, r)
+
     def test_periph_slave_needs_ip_peripheral(self):
         r = raw("mini_soc.yaml")
         r["slaves"].insert(0, {"name": "xip", "kind": "periph", "periph": "nope", "base": 0x3000_0000,
@@ -315,5 +320,241 @@ endmodule
             self.assertEqual(len(re.findall(r"add_submap", ral)), 12)    # 13 slots minus the APB VIP
 
 
+class Mesh(unittest.TestCase):
+    """noc.model: mesh -- the generated NoC RTL (nocgen)"""
+
+    def bad(self, mutate, msg):
+        r = raw("mini_mesh_soc.yaml")
+        mutate(r)
+        with self.assertRaisesRegex(SpecError, msg):
+            spec.elaborate(r)
+
+    def test_protocols(self):
+        m = spec.load(os.path.join(SOCGEN, "specs", "mini_mesh_soc.yaml"))
+        self.assertEqual([x.protocol for x in m.masters], ["axi4", "axi4", "axi4", "ahb", "axi4lite"])
+        self.assertEqual({t.name: t.protocol for t in m.slaves},
+                         {"sram": "axi4", "ahb_ram": "ahb", "lite_ram": "axi4lite", "apb_ram": "apb",
+                          "periph": "axi4"})
+
+    def test_mesh_latency_model(self):
+        m = spec.load(os.path.join(SOCGEN, "specs", "mini_mesh_soc.yaml"))
+        cpu = m.masters[0]
+        t = {x.name: x.index for x in m.targets}
+        # measured on the RTL: cpu -> ddr0 (1 hop, access 12) 23 cycles; cpu -> ahb_ram (2 hops) 19
+        self.assertEqual(cpu.ideal[t["ddr0"]], 23)
+        self.assertEqual(cpu.ideal[t["ahb_ram"]], 19)
+        self.assertEqual(m.masters[1].ideal[t["ddr2"]], 23)     # the mesh has no IOMMU delay
+
+    def test_protocol_needs_mesh(self):
+        self.bad(lambda r: r["noc"].update(model="behavioral"), "needs noc.model: mesh")
+
+    def test_apb_master(self):
+        self.bad(lambda r: r["masters"][0].update(protocol="apb"), "protocol")
+
+    def test_orca_size(self):
+        self.bad(lambda r: r["noc"].update(rows=5, cols=5), "at most 4x4")
+
+    def test_ni_pow2(self):
+        self.bad(lambda r: r["noc"].update(ni={"max_chunks": 6}), "powers of two")
+
+    def test_generate(self):
+        import nocgen
+        m = spec.load(os.path.join(SOCGEN, "specs", "mini_mesh_soc.yaml"))
+        pkg = nocgen.cfg_pkg(m)
+        for want in ("package noc_cfg_pkg;", "localparam int NM  = 5;", "localparam int NS  = 9;", "localparam int NGW = 0;",
+                     "localparam int EPB = 4;", "mini_mesh_soc_pkg::mmesh_decode(a)"):
+            self.assertIn(want, pkg)
+        rtl = nocgen.noc_module(m)
+        for want in ("module mini_mesh_soc_noc", "noc_ahb2axi #(.IDW(ID_WIDTH)) u_mcu_ahb",
+                     "noc_axi2ahb #(.IDW(ID_WIDTH)) u_ahb_ram_ahb", "noc_axi2lite #(.IDW(ID_WIDTH)) u_lite_ram_lite",
+                     "axi2apb_bridge #(.IDW(ID_WIDTH)) u_apb_ram_apb", "input  logic ctl_awvalid",
+                     "output logic [31:0] apb_ram_paddr", "noc_ni_slv #(.SELF(13), .QD(40)"):
+            self.assertIn(want, rtl)
+        self.assertEqual(rtl.count("noc_ni_mst #"), 5)
+        self.assertEqual(rtl.count("noc_ni_slv #"), 9)
+
+
+class Chiplet(unittest.TestCase):
+    def bad(self, mutate, msg):
+        r = raw("chiplet_soc.yaml")
+        mutate(r)
+        with self.assertRaisesRegex(SpecError, msg):
+            spec.elaborate(r)
+
+    def test_paths(self):
+        m = spec.load(os.path.join(SOCGEN, "specs", "chiplet_soc.yaml"))
+        cpu = m.masters[0]
+        t = {x.name: x for x in m.targets}
+        # cpu [0,0] die 0 -> gateway [1,1]: 2 hops; die 1 gateway [0,0] -> ddr0 [0,1]: 1 hop
+        self.assertEqual(spec.path_hops(m, cpu, t["ddr0"]), 3)
+        # measured on the RTL: 45 cycles (27 on one die + 2 x (5 + 4 PHY))
+        self.assertEqual(cpu.ideal[t["ddr0"].index], 45)
+        self.assertEqual(cpu.ideal[t["sram"].index], 9 + 2 + 1)
+
+    def test_needs_mesh(self):
+        self.bad(lambda r: r["noc"].update(model="behavioral"), "needs noc.model: mesh")
+
+    def test_die_range(self):
+        self.bad(lambda r: r["masters"][0].update(die=2), "die: 0..1")
+
+    def test_generate(self):
+        import nocgen
+        m = spec.load(os.path.join(SOCGEN, "specs", "chiplet_soc.yaml"))
+        pkg = nocgen.cfg_pkg(m)
+        self.assertIn("localparam int NGW = 2;", pkg)
+        self.assertIn("function automatic int local_ep", pkg)
+        rtl = nocgen.noc_module(m)
+        for want in ("noc_mesh #(.NUM_VC(4), .BUF_DEPTH(8), .DIE(1)) u_mesh_d1", "noc_d2d_gw #(.SELF(NM + NS + 1)",
+                     "UCIe_top u_ucie0", "noc_d2d_phy #(.DELAY(4)) u_phy", "output logic d2d_up,"):
+            self.assertIn(want, rtl)
+
+
+class Chi(unittest.TestCase):
+    """chi: HN-F, RN-F ports, RN-I through the home"""
+
+    def bad(self, mutate, msg):
+        r = raw("chi_mesh_soc.yaml")
+        mutate(r)
+        with self.assertRaisesRegex(SpecError, msg):
+            spec.elaborate(r)
+
+    def test_elaborate(self):
+        m = spec.load(os.path.join(SOCGEN, "specs", "chi_mesh_soc.yaml"))
+        self.assertEqual(m.chi.rn, [0, 1])
+        self.assertEqual(m.chi.coh_targets, {0, 1})          # ddr0, ddr1
+        self.assertEqual(m.chi.base, 0x8000_0000)
+        self.assertIn("coherence", [e.test for e in m.lists["testlist"]])
+
+    def test_needs_section(self):
+        self.bad(lambda r: r.pop("chi"), "protocol chi needs a chi section")
+
+    def test_needs_rn(self):
+        self.bad(lambda r: [x.update(protocol="axi4") for x in r["masters"][:2]], "at least one master with protocol: chi")
+
+    def test_coherent_is_memory(self):
+        self.bad(lambda r: r["chi"].update(coherent=["periph"]), "is not a memory")
+
+    def test_homes(self):
+        r = raw("chi_mesh_soc.yaml")
+        r["chi"]["home"] = [[1, 0], [0, 1]]
+        m = spec.elaborate(r)
+        self.assertEqual(len(m.chi.homes), 2)
+        self.assertEqual({spec.home_of(m, a) for a in range(0x8000_0000, 0x8001_0000, 0x1000)}, {0, 1})
+        self.assertEqual(spec.home_of(m, 0x8000_0000), spec.home_of(m, 0x8000_0FC0))   # 4 KB granule
+
+    def test_latency_model(self):
+        # measured on the RTL (path_latency, clean misses with DMT)
+        m = spec.load(os.path.join(SOCGEN, "specs", "chi_mesh_soc.yaml"))
+        t = {x.name: x.index for x in m.targets}
+        self.assertEqual(m.masters[0].ideal[t["ddr0"]], 62)
+        self.assertEqual(m.masters[2].ideal[t["ddr1"]], 35)      # RN-I dma via home 1
+        m = spec.load(os.path.join(SOCGEN, "specs", "chi_chiplet_soc.yaml"))
+        t = {x.name: x.index for x in m.targets}
+        self.assertEqual(m.masters[0].ideal[t["ddr0"]], 82)      # die 0 cpu -> die 1 ddr
+        self.assertEqual(m.masters[3].ideal[t["ddr0"]], 77)      # die 1 npu via the die-0 home
+
+    def test_home_slots(self):
+        m = spec.elaborate(raw("chi_mesh_soc.yaml"))
+        self.assertEqual(m.chi.slots, 4)                          # default
+        r = raw("chi_mesh_soc.yaml")
+        r["chi"]["home_slots"] = 1
+        self.assertEqual(spec.elaborate(r).chi.slots, 1)
+        self.bad(lambda r: r["chi"].update(home_slots=17), "1 to 16")
+
+    def test_three_homes(self):
+        self.bad(lambda r: r["chi"].update(home=[[0, 0], [1, 0], [1, 1]]), "1, 2 or 4 homes")
+
+    def test_home_die(self):
+        r = raw("chiplet_soc.yaml")
+        r["chi"] = {"home": [{"node": [0, 0], "die": 2}], "coherent": ["ddr"]}
+        r["masters"][0]["protocol"] = "chi"
+        with self.assertRaisesRegex(SpecError, "die: 0..1"):
+            spec.elaborate(r)
+
+    def test_coherence_test_needs_chi(self):
+        r = raw("mini_mesh_soc.yaml")
+        r["regress"]["lists"]["testlist"].append({"test": "coherence"})
+        with self.assertRaisesRegex(SpecError, "needs a chi section"):
+            spec.elaborate(r)
+
+    def test_generate(self):
+        import nocgen
+        m = spec.load(os.path.join(SOCGEN, "specs", "chi_mesh_soc.yaml"))
+        pkg = nocgen.cfg_pkg(m)
+        for want in ("localparam int NHN = 2;", "localparam int HN_K = 1;", "localparam int RN_EP [NRN] = '{ 0, 1 };", "localparam int CHI_LINES = 16;",
+                     "return cacheable(a) ? hn_ep(a) : decode_tgt(a);", "typedef struct packed {", "chi_dat_t;"):
+            self.assertIn(want, pkg)
+        rtl = nocgen.noc_module(m)
+        for want in ("noc_ni_chi #(.SELF(0)) u_ni_cpu0", "noc_ni_chi #(.SELF(1)) u_ni_cpu1",
+                     "input  chi_req_t cpu0_txreq_flit", "output chi_snp_t cpu1_rxsnp_flit",
+                     "noc_hnf #(.SELF(HN_EP + 0), .QD(64), .NL(CHI_LINES)) u_hnf0", "u_hnf1"):
+            self.assertIn(want, rtl)
+        self.assertEqual(rtl.count("noc_ni_mst #"), 2)
+        tb = nocgen.tb_hookup(m)
+        self.assertIn("noc_chi_rnf #(.IDW(ID_WIDTH)) u_cpu0_shim", tb)
+        self.assertIn("noc_cfg_pkg::chi_dat_t cpu0_shim_txdat_flit;", tb)
+        # the DMA is an ACE-Lite (IO-coherent) port: adapter in the NoC, shim in the bench
+        self.assertIn("noc_acelite2axi #(.IDW(ID_WIDTH)) u_dma_acel", rtl)
+        self.assertIn("input  logic [3:0] dma_arsnoop", rtl)
+        self.assertIn(".s_awnosnp(dma_ax_awnosnp), .s_arnosnp(dma_ax_arnosnp)", rtl)
+        self.assertIn(".s_awnosnp(1'b0), .s_arnosnp(1'b0)", rtl)       # the AHB mcu: always via the home
+        self.assertIn("noc_axi2acelite #(.IDW(ID_WIDTH)) u_dma_shim", tb)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class DramModel(unittest.TestCase):
+    """memories[].model: ddr4 puts soc_ddr4_chan on every channel of that memory."""
+
+    def _spec(self, **mem):
+        r = raw("mini_soc.yaml")
+        r["memories"][0].update(mem)
+        return spec.elaborate(r, "mini_soc.yaml")
+
+    def test_default_is_vip(self):
+        m = self._spec()
+        self.assertTrue(all(t.model == "vip" for t in m.targets if t.kind == "channel"))
+
+    def test_ddr4_params_and_access(self):
+        m = self._spec(model="ddr4", timing="ddr4-2666", model_params={"NDEV": 2}, access_cycles=None)
+        t = next(t for t in m.targets if t.kind == "channel")
+        self.assertEqual(t.model, "ddr4")
+        self.assertEqual(t.params["TCK_PS"], 752)
+        self.assertEqual(t.params["CL"], 19)
+        self.assertEqual(t.params["T_RCD"], 19)       # 14.25 ns / 0.752 ns
+        self.assertEqual(t.params["NDEV"], 2)
+        self.assertNotIn("_zero_load_ps", t.params)
+        self.assertGreater(t.access, 20)              # closed-bank read, derived
+
+    def test_errors(self):
+        with self.assertRaises(SpecError):
+            self._spec(model="hbm9")
+        with self.assertRaises(SpecError):
+            self._spec(model_params={"NDEV": 2})                      # needs a DRAM model
+        with self.assertRaises(SpecError):
+            self._spec(model="ddr4", timing="lpddr5-6400")            # no ddr4 preset
+        with self.assertRaises(SpecError):
+            self._spec(model="ddr4", model_params={"FOO": 1})
+
+    @unittest.skipUnless(HAVE_IP and os.path.exists(os.path.join(IP_ROOT, "rtl", "DDR4_JEDEC_AXI_top.sv")),
+                         "open-ip-portfolio with DDR4_JEDEC_AXI not found")
+    def test_generate(self):
+        import socgen
+        m = self._spec(model="ddr4")
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "out")
+            socgen.generate(m, out, IP_ROOT, os.path.join(SOCGEN, "specs", "mini_soc.yaml"), False)
+            top = open(os.path.join(out, "tb", "mini_soc_tb_top.sv")).read()
+            env = open(os.path.join(out, "tb", "mini_soc_env_pkg.sv")).read()
+            pkg = open(os.path.join(out, "rtl", "mini_soc_pkg.sv")).read()
+            fl = open(os.path.join(out, "sim", "files.f")).read()
+        nch = sum(1 for t in m.targets if t.kind == "channel")
+        self.assertEqual(top.count("soc_ddr4_chan #("), nch)
+        self.assertIn("dram_ready = 1'b1;", top)
+        self.assertIn("bit dram_ready = 1'b0;", pkg)
+        self.assertRegex(env, r"NAXI_S = %d;" % (len(m.targets) - nch - sum(1 for t in m.targets if t.kind not in ("channel", "memory", "vip"))))
+        for f in ("rtl/ip/ddr4_jedec_ctrl.sv", "rtl/ip/ddr4_dev_model.sv", "rtl/ip/AXI_Async_Bridge_top.sv",
+                  "rtl/ip/axi_async_fifo.sv", "vip/dram/soc_ddr4_chan.sv"):
+            self.assertIn(f, fl)

@@ -1,0 +1,9 @@
+# Subsystem suite: AXI interconnect address decode and default slave
+name: amba_noc
+level: subsystem
+soc: amba
+subsystem: interconnect
+description: Bursts into unmapped holes of the address map (DECERR from the default slave).
+filelist: sim/soc.f
+top: soc_tb_top
+list: {default: regress/lists/amba_noc.txt, nightly: regress/lists/amba_noc_nightly.txt}

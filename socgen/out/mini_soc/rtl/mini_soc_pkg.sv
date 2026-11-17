@@ -46,6 +46,11 @@ package mini_soc_pkg;
 
   localparam logic [31:0] S_BASE [NS] = '{ 32'h80000000, 32'h80000000, 32'h80000000, 32'h80000000, 32'h00000000, 32'h10000000 };
   localparam int S_ACCESS [NS] = '{ 12, 12, 12, 12, 1, 4 };
+  // 1: an RTL DRAM model serves the port (memories[].model != vip), it takes its own time
+  // set by tb_top once every RTL DRAM channel has finished its power-up / MRS / ZQ
+  // sequence (the tests start their traffic after it, as boot code would)
+  bit dram_ready = 1'b1;
+  localparam bit S_DRAM [NS] = '{ 1'b0, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0 };
 
   // ddr: channel = off[13:12] ^ off[15:14], off = a - DDR_BASE
   function automatic int mini_ddr_channel(logic [31:0] a);
@@ -138,6 +143,10 @@ package mini_soc_pkg;
 
   // ---------------- master kind ----------------
   localparam bit M_IS_RTL [NM] = '{ 1'b0, 1'b0, 1'b0 };
+
+  // ---------------- AMBA protocol of each NoC port (noc.model: mesh) ----------------
+  localparam string M_PROTO [NM] = '{ "axi4", "axi4", "axi4" };
+  localparam string S_PROTO [NS] = '{ "axi4", "axi4", "axi4", "axi4", "axi4", "axi4" };
 
   // ---------------- QoS ----------------
   localparam int M_PRIORITY [NM] = '{ 8, 12, 1 };
