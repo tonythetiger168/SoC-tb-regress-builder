@@ -1,0 +1,2 @@
+# coverage closure test of the hand-written phone bench (traffic-model build)
+phone_cov_test         1

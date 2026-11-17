@@ -1,0 +1,11 @@
+# Subsystem suite: 32 LPDDR5 AXI slave VIPs and the channel interleave
+name: phone_lpddr5
+level: subsystem
+soc: phone
+subsystem: lpddr5
+description: 32 LPDDR5 channels across speed bins, open/closed page, all-bank/per-bank refresh, channel hash.
+filelist: sim/phone.f
+top: phone_tb_top
+pass_markers: [SB_PASS]
+timeout: 1800
+list: {default: regress/lists/phone_lpddr5.txt, nightly: regress/lists/phone_lpddr5_nightly.txt}

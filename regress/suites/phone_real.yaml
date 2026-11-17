@@ -1,0 +1,11 @@
+# SoC-level suite of the phone SoC, real-IP build: the open-ip subsystem IPs drive 12 of the 15 master ports
+name: phone_real
+level: soc
+soc: phone
+description: Real CPU, GPU, NPU, ISP, display, video codec, modem, DMA, audio, sensor-hub, interrupt and timer IPs run jobs checked against reference models.
+filelist: sim/phone.f
+top: phone_tb_top
+defines: [PHONE_REAL_IPS]
+pass_markers: [SB_PASS]
+timeout: 1800
+list: {default: regress/lists/phone_real.txt, nightly: regress/lists/phone_real_nightly.txt}
