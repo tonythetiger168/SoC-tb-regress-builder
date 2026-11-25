@@ -1,0 +1,7 @@
+phone_smoke_test       5
+phone_camera_test      3
+phone_video_test       3
+phone_gaming_test      3
+phone_ai_test          3
+phone_stress_test      3
+phone_stress_test      2  +SOC_TIMING=2 +LP5_SPEED=0

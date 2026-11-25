@@ -1,0 +1,11 @@
+# Subsystem suite: the six IOMMUs in front of APU, ISP, ICP, VDEC, VENC and DISP
+name: phone_iommu
+level: subsystem
+soc: phone
+subsystem: iommu
+description: IOMMU translation, TLB hits and misses, page walks, permission and range faults, invalidation.
+filelist: sim/phone.f
+top: phone_tb_top
+pass_markers: [SB_PASS]
+timeout: 1800
+list: {default: regress/lists/phone_iommu.txt, nightly: regress/lists/phone_iommu_nightly.txt}

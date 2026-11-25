@@ -1,5 +1,5 @@
 build/
-regress_out/
+regress_out*/
 uvm-core
 uvm-core/
 *.vcd

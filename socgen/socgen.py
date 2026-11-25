@@ -4,6 +4,8 @@
 
   python3 socgen/socgen.py socgen/specs/phone_soc.yaml --ip-root ../open-ip-portfolio
   python3 socgen/socgen.py SPEC --check            # validate only
+  python3 socgen/socgen.py socgen/specs/manycore_4x4.yaml --minisim-root ../minisim
+                                                   # tiled many-core (spec with a manycore: section)
   make build TB=<soc> && make run TB=<soc> TEST=<soc>_smoke_test
 
 Outputs go to socgen/out/<soc>/ (see SPEC.md, "What gets generated"), plus
@@ -1195,8 +1197,25 @@ def main():
     ap.add_argument("--no-direct", action="store_true",
                     help="CHI: turn DMT and DCT off and rename the SoC <name>_nodirect, for a latency "
                          "comparison against the same spec with them on")
+    ap.add_argument("--minisim-root", default=os.environ.get("MINISIM_ROOT", os.path.join(ROOT, "..", "minisim")),
+                    help="minisim checkout, for manycore specs (bench/gen_manycore.py; env MINISIM_ROOT)")
     a = ap.parse_args()
     try:
+        import yaml
+        with open(a.spec) as f:
+            raw0 = yaml.safe_load(f)
+        if isinstance(raw0, dict) and "manycore" in raw0:
+            # tiled many-core: RTL from minisim's generator, UVM bench from socgen/lib/manycore.py
+            import manycore
+            if a.check:
+                print(f"{a.spec}: ok (manycore {raw0['manycore'].get('mesh', '4x4')})")
+                return 0
+            out = a.out or os.path.join(HERE, "out", raw0["soc"]["name"])
+            files, info = manycore.generate(raw0, out, os.path.abspath(a.minisim_root), a.spec,
+                                            not a.no_repo_files, ROOT)
+            print(f"socgen: {raw0['soc']['name']}: {info['n']} tiles, {len(files)} files in "
+                  f"{os.path.relpath(out, os.getcwd())}")
+            return 0
         if a.noc_model or a.no_direct:
             import yaml
             with open(a.spec) as f:

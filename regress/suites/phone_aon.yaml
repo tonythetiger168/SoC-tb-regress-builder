@@ -1,0 +1,12 @@
+# Unit suite: the phone SoC's always-on cluster arbiter (rtl/phone/phone_aon_arb)
+# with three random AXI4 managers and a random subordinate, stalls on every
+# channel, 256-beat bursts and a mid-run reset (tb/phone_aon).
+name: phone_aon
+level: subsystem
+soc: phone
+subsystem: aon
+description: phone_aon_arb round-robin arbitration and channel routing under random stalls.
+filelist: sim/phone_aon.f
+top: phone_aon_tb_top
+list: regress/phone_aon_testlist.txt
+cov_include: ["*rtl/phone/phone_aon_arb.sv"]
